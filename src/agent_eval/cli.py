@@ -9,8 +9,8 @@ import click
 from huggingface_hub import HfApi
 from huggingface_hub.errors import RepositoryNotFoundError
 
+from .config import Task, get_tasks
 from .score import ResultSet, get_result_set
-from .tasks import NORABENCH_TASKS
 
 
 def upload_to_hf(repo_id: str, solver_name: str, log_dir: str):
@@ -45,11 +45,9 @@ def check_hf_repo(repo_id: str, create_repo: bool, create_private_repo: bool) ->
             )
 
 
-def find_missing_tasks(result_set: ResultSet) -> list[str]:
+def find_missing_tasks(result_set: ResultSet, taskset: list[Task]) -> list[str]:
     return [
-        task.task_name
-        for task in NORABENCH_TASKS
-        if task.task_name not in result_set.results
+        task.task_name for task in taskset if task.task_name not in result_set.results
     ]
 
 
@@ -89,6 +87,12 @@ def cli():
     default=True,
     help="Create the repository as private (default: True).",
 )
+@click.option(
+    "--taskset",
+    type=str,
+    default="astabench",
+    help="Name of the task configuration to use or path to a custom YAML file.",
+)
 def score_command(
     log_dir: str,
     upload_hf: bool,
@@ -96,6 +100,7 @@ def score_command(
     solver_name: str,
     create_repo: bool,
     create_private_repo: bool,
+    taskset: str,
 ):
     result_set = get_result_set(log_dir)
     result_set.submission_name = solver_name or None
@@ -113,10 +118,11 @@ def score_command(
     with open(static_path, "w", encoding="utf-8") as f:
         f.write(result_set.model_dump_json(indent=2))
 
-    missing_tasks = find_missing_tasks(result_set)
+    tasks = get_tasks(taskset)
+    missing_tasks = find_missing_tasks(result_set, tasks)
     if missing_tasks:
         click.echo(
-            f"Warning: Some norabench tasks are missing from this result set: {', '.join(missing_tasks)}"
+            f"Warning: Some tasks from the '{taskset}' configuration are missing from this result set: {', '.join(missing_tasks)}"
         )
 
     if upload_hf:
@@ -149,39 +155,44 @@ cli.add_command(score_command)
 
 @cli.command(
     name="eval",
-    help="Run inspect eval-set on norabench tasks with the given arguments",
+    help="Run inspect eval-set on specified tasks with the given arguments",
     context_settings={"ignore_unknown_options": True},
 )
 @click.option("--log-dir", type=str)
+@click.option(
+    "--taskset",
+    type=str,
+    default="astabench",
+    help="Name of the task configuration to use or path to a custom YAML file.",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def run_eval(log_dir: str | None, args: tuple[str]):
+def run_eval(log_dir: str | None, taskset: str, args: tuple[str]):
     """Run inspect eval-set with arguments and append tasks"""
     if not log_dir:
         log_dir = os.environ.get("INSPECT_LOG_DIR")
         if not log_dir:
             log_dir = (
-                f"./logs/norabench-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}/"
+                f"./logs/{taskset}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}/"
             )
             click.echo(f"No log dir was manually set; using {log_dir}")
     logd_args = ["--log-dir", log_dir]
+
+    tasks = get_tasks(taskset)
 
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
     full_command = (
-        ["inspect", "eval-set"]
-        + list(args)
-        + logd_args
-        + [x.task_path for x in NORABENCH_TASKS]
+        ["inspect", "eval-set"] + list(args) + logd_args + [x.task_path for x in tasks]
     )
-    click.echo(f"Running norabench: {' '.join(full_command)}")
+    click.echo(f"Running {taskset}: {' '.join(full_command)}")
     proc = subprocess.run(full_command)
 
     if proc.returncode != 0:
-        raise click.ClickException("inspect eval-set failed while running norabench")
+        raise click.ClickException(f"inspect eval-set failed while running {taskset}")
 
     click.echo(
-        f"You can now run 'norabench score {log_dir}' to score the results and (optionally) upload to the leaderboard"
+        f"You can now run '{cli.name} score {log_dir} --taskset {taskset}' to score the results and (optionally) upload to the leaderboard"
     )
 
 
