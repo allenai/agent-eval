@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-eval"
+version = "0.0.1"
+description = "Agent evaluation toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "click",
+  "inspect-ai",
+  "huggingface_hub",
+  "litellm",
+  "pydantic>=2.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/allenai/agent-eval"
+
+[project.optional-dependencies]
+dev = [
+  "black==24.2.0",
+  "isort",
+  "autoflake",
+  "pytest",
+  "pytest-asyncio",
+  "mypy==1.15",
+  "types-PyYAML",
+  "types-setuptools"
+]
+
+[project.scripts]
+agent_eval = "agent_eval.cli:cli"
+
+[tool.setuptools.package-data]
+"agent_eval" = ["config/*.yml"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
