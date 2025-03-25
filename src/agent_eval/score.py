@@ -1,5 +1,6 @@
 """Scoring utilities for the NoraBench suite."""
 
+from datetime import datetime
 from typing import Any
 
 from inspect_ai.log import EvalLog, list_eval_logs, read_eval_log, read_eval_log_samples
@@ -47,6 +48,12 @@ class ResultSet(BaseModel):
 
     submission_name: str | None = None
     """Leaderboard submission name for the results."""
+
+    created_at: datetime | None = None
+    """Timestamp of the results creation."""
+
+    logs_url: str | None = None
+    """Path to an fsspec compatible URL for the logs."""
 
 
 def get_metrics(log: EvalLog) -> dict[str, float]:

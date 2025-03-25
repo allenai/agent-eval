@@ -13,9 +13,8 @@ from .config import Task, get_tasks
 from .score import ResultSet, get_result_set
 
 
-def upload_to_hf(repo_id: str, solver_name: str, log_dir: str):
+def upload_to_hf(repo_id: str, path_in_repo: str, log_dir: str):
     hf_api = HfApi()
-    path_in_repo = f"results/{solver_name}"
     hf_api.upload_folder(
         folder_path=log_dir,
         path_in_repo=path_in_repo,
@@ -104,6 +103,7 @@ def score_command(
 ):
     result_set = get_result_set(log_dir)
     result_set.submission_name = solver_name or None
+    result_set.created_at = datetime.now()
     click.echo("Scores:\n" + str({t: r.metrics for t, r in result_set.results.items()}))
     click.echo(
         "Average cost for 1k samples:\n"
@@ -114,9 +114,7 @@ def score_command(
             }
         )
     )
-    static_path = os.path.join(log_dir, "results.json")
-    with open(static_path, "w", encoding="utf-8") as f:
-        f.write(result_set.model_dump_json(indent=2))
+    results_json_path = os.path.join(log_dir, "results.json")
 
     tasks = get_tasks(taskset)
     missing_tasks = find_missing_tasks(result_set, tasks)
@@ -141,13 +139,20 @@ def score_command(
                 check_hf_repo(results_repo_id, create_repo, create_private_repo)
             except RuntimeError as e:
                 raise click.ClickException(str(e))
+            path_in_repo = f"results/{solver_name}"
+            result_set.logs_url = f"hf://datasets/{results_repo_id}/{path_in_repo}"
+            with open(results_json_path, "w", encoding="utf-8") as f:
+                f.write(result_set.model_dump_json(indent=2))
             # Make a timestamped record of the results
-            timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            timestamp = result_set.created_at.strftime("%Y-%m-%dT%H-%M-%S")
             timestamped_path = os.path.join(log_dir, f"results_{timestamp}.json")
-            shutil.copy(static_path, timestamped_path)
-            upload_to_hf(results_repo_id, solver_name, log_dir)
+            shutil.copy(results_json_path, timestamped_path)
+            upload_to_hf(results_repo_id, path_in_repo, log_dir)
         else:
             click.echo("No repository ID provided for upload.")
+    else:
+        with open(results_json_path, "w", encoding="utf-8") as f:
+            f.write(result_set.model_dump_json(indent=2))
 
 
 cli.add_command(score_command)
