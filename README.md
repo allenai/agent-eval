@@ -7,8 +7,8 @@ This library provides utilites for evaluating agents on a suite of [Inspect](htt
 
 ## Usage
 It provides several CLI commands:
-- `agent_eval eval --taskset [TASK_SET] [INSPECT_EVAL_SET_OPTIONS]`: This will evaluate an agent on the supplied task set. You may use a task set that is distributed with this repo, like `astabench` (source at `src/agent_eval/config/astabench.yml`), or provide a path to your own `.yml` file.
-- `agent_eval score [LOG_DIR]`: This will score the results in `results.json` and optionally upload the directory to a HuggingFace dataset (using `--upload-hf` option)
+- `agenteval eval --config [CONFIG_PATH] [INSPECT_EVAL_SET_OPTIONS]`: This will evaluate an agent on the supplied eval suite configuration (see `src/agenteval/config.py` for the config model definition).
+- `agenteval score [LOG_DIR]`: This will score the results in `results.json` and optionally upload the logs and results to HuggingFace datasets (using `--upload-hf` option).
 
 ## Installation
 

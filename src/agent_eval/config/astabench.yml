@@ -1,8 +1,0 @@
-- task_name: litqa2
-  task_path: norabench/litqa2
-
-- task_name: arithmetic_demo
-  task_path: norabench/arithmetic_demo
-
-- task_name: gpqa_diamond
-  task_path: norabench/gpqa_diamond
