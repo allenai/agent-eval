@@ -31,7 +31,7 @@ class SubmissionMetadata(BaseModel):
     summary_url: str | None = None
 
 
-JSON_SERIALIZED_FIELDS = ["eval_specs", "suite_config"]
+JSON_SERIALIZED_FIELDS = ["suite_config"]
 
 
 class EvalResult(EvalConfig):
@@ -88,6 +88,7 @@ class EvalResult(EvalConfig):
             indent=indent,
             exclude_none=exclude_none,
             exclude_defaults=exclude_defaults,
+            exclude={"eval_specs"},
         )
         atomic_write_file(path, content, encoding="utf-8")
 
@@ -105,4 +106,5 @@ class EvalResult(EvalConfig):
             indent=indent,
             exclude_none=exclude_none,
             exclude_defaults=exclude_defaults,
+            exclude={"eval_specs"},
         ).encode("utf-8")
