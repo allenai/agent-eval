@@ -45,6 +45,15 @@ class EvalResult(EvalConfig):
         except ValueError:
             return []
 
+    def is_scored(self) -> bool:
+        """
+        Check if the evaluation result is scored.
+
+        Returns:
+            bool: True if the evaluation result is scored, False otherwise.
+        """
+        return self.results is not None and len(self.results) > 0
+
     def save_json(
         self,
         path: Union[str, Path],

@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from .config import load_suite_config
-from .models import EvalConfig
+from .models import EvalConfig, EvalResult
 from .processor import score_directory
 from .summary import compute_summary_statistics
 
@@ -81,72 +81,25 @@ def cli():
 
 @click.command(
     name="score",
-    help="Score a directory of evaluation logs and optionally upload to leaderboard.",
+    help="Score a directory of evaluation logs.",
 )
 @click.argument("log_dir", type=click.Path(exists=True, file_okay=False))
 @click.option(
     "--config",
     type=str,
-    help="Path to a yml config file.",
+    help=f"Path to a yml config file. Ignored if {EVAL_FILENAME} exists.",
     default=None,
 )
 @click.option(
     "--split",
     type=str,
-    help="Config data split.",
+    help="Config data split. Ignored if {EVAL_FILENAME} exists.",
     default=None,
-)
-@click.option(
-    "--upload-hf",
-    is_flag=True,
-    help="Upload results to Huggingface leaderboard after scoring.",
-)
-@click.option(
-    "--submissions-repo-id",
-    type=str,
-    default=lambda: os.environ.get("SUBMISSIONS_REPO_ID", ""),
-    help="Hugging Face repository id for submissions. Defaults to SUBMISSIONS_REPO_ID env var.",
-)
-@click.option(
-    "--results-repo-id",
-    type=str,
-    default=lambda: os.environ.get("RESULTS_REPO_ID", ""),
-    help="Hugging Face repository id for result stats. Defaults to RESULTS_REPO_ID env var.",
-)
-@click.option(
-    "--username",
-    type=str,
-    default=None,
-    help="User or organization name for submission. Defaults to Hugging Face account name when not provided.",
-)
-@click.option(
-    "--agent-name",
-    type=str,
-    help="Descriptive agent name for submission. Required when using --upload-hf.",
-)
-@click.option(
-    "--agent-description",
-    type=str,
-    default=None,
-    help="Description of the agent being submitted.",
-)
-@click.option(
-    "--agent-url",
-    type=str,
-    default=None,
-    help="URL to the agent's repository or documentation.",
 )
 def score_command(
     log_dir: str,
     config: str | None,
     split: str | None,
-    upload_hf: bool,
-    submissions_repo_id: str,
-    results_repo_id: str,
-    username: str | None,
-    agent_name: str | None,
-    agent_description: str | None,
-    agent_url: str | None,
 ):
     # Load or create EvalResult, process logs
     eval_result = score_directory(
@@ -180,69 +133,127 @@ def score_command(
     # Persist updated EvalResult JSON
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
 
-    # Perform Hugging Face upload and update submission metadata
-    if upload_hf:
-        from huggingface_hub import HfApi
-
-        from .upload import upload_folder_to_hf, upload_summary_to_hf
-
-        hf_api = HfApi()
-        # Default username to Hugging Face account if not provided
-        if not username:
-            try:
-                username = hf_api.whoami()["name"]
-                click.echo(f"Defaulting username to Hugging Face account: {username}")
-            except Exception:
-                raise click.ClickException(
-                    "--username must be provided or ensure HF authentication is configured"
-                )
-
-        # Require only agent name explicitly
-        if not agent_name:
-            raise click.ClickException(
-                "--agent-name must be provided when using --upload-hf."
-            )
-
-        eval_result.submission.username = username
-        eval_result.submission.agent_name = agent_name
-        eval_result.submission.agent_description = agent_description
-        eval_result.submission.agent_url = agent_url
-        eval_result.submission.submit_time = datetime.now(timezone.utc)
-        config_name = eval_result.suite_config.version
-        if not config_name:
-            raise click.ClickException(
-                "Suite config version is required for uploading to Hugging Face."
-            )
-        timestamp = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
-        submission_name = f"{username}_{agent_name}_{timestamp}"
-
-        logs_url = upload_folder_to_hf(
-            hf_api,
-            log_dir,
-            submissions_repo_id,
-            config_name,
-            eval_result.split,
-            submission_name,
-        )
-        click.echo(f"Uploaded submission logs dir to {logs_url}")
-        eval_result.submission.logs_url = logs_url
-
-        summary_url = upload_summary_to_hf(
-            hf_api,
-            eval_result,
-            results_repo_id,
-            config_name,
-            eval_result.split,
-            submission_name,
-        )
-        click.echo(f"Uploaded results summary file to {summary_url}")
-        eval_result.submission.summary_url = summary_url
-
-        # Save scored eval file with submission metadata
-        eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
-
 
 cli.add_command(score_command)
+
+
+@click.command(
+    name="publish",
+    help="Publish scored results in log_dir to Hugging Face leaderboard.",
+)
+@click.argument("log_dir", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--submissions-repo-id",
+    type=str,
+    default=lambda: os.environ.get("SUBMISSIONS_REPO_ID", ""),
+    help="HF repo id for submissions. Defaults to SUBMISSIONS_REPO_ID env var.",
+)
+@click.option(
+    "--results-repo-id",
+    type=str,
+    default=lambda: os.environ.get("RESULTS_REPO_ID", ""),
+    help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
+)
+@click.option(
+    "--username",
+    type=str,
+    default=None,
+    help="HF username/org for submission. Defaults to your HF account name.",
+)
+@click.option(
+    "--agent-name",
+    type=str,
+    required=True,
+    help="Descriptive agent name for submission.",
+)
+@click.option(
+    "--agent-description",
+    type=str,
+    default=None,
+    help="Description of the agent being submitted.",
+)
+@click.option(
+    "--agent-url",
+    type=str,
+    default=None,
+    help="URL to the agent's repository or documentation.",
+)
+def publish_command(
+    log_dir: str,
+    submissions_repo_id: str,
+    results_repo_id: str,
+    username: str | None,
+    agent_name: str,
+    agent_description: str | None,
+    agent_url: str | None,
+):
+    # Allow huggingface imports to be optional
+    from huggingface_hub import HfApi
+
+    from .upload import upload_folder_to_hf, upload_summary_to_hf
+
+    # Load existing scored results from JSON
+    json_path = Path(log_dir) / EVAL_FILENAME
+    if not json_path.exists():
+        raise click.ClickException(f"No scored results found at {json_path}")
+    raw = json_path.read_text(encoding="utf-8")
+    eval_result = EvalResult.model_validate_json(raw)
+
+    # Validate eval result
+    if not eval_result.is_scored():
+        raise click.ClickException(
+            f"{EVAL_FILENAME} is not scored. Please run 'score {log_dir}' first."
+        )
+    missing_tasks = eval_result.find_missing_tasks()
+    if missing_tasks:
+        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
+
+    # Determine HF user
+    hf_api = HfApi()
+    if not username:
+        try:
+            username = hf_api.whoami()["name"]
+            click.echo(f"Defaulting username to Hugging Face account: {username}")
+        except Exception:
+            raise click.ClickException(
+                "--username must be provided or ensure HF authentication is configured"
+            )
+
+    # Fill submission metadata
+    eval_result.submission.username = username
+    eval_result.submission.agent_name = agent_name
+    eval_result.submission.agent_description = agent_description
+    eval_result.submission.agent_url = agent_url
+    eval_result.submission.submit_time = datetime.now(timezone.utc)
+
+    # Validate suite config version
+    config_name = eval_result.suite_config.version
+    if not config_name:
+        raise click.ClickException("Suite config version is required for upload.")
+
+    # Build submission name
+    ts = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
+    subm_name = f"{username}_{agent_name}_{ts}"
+
+    # Upload logs and summary
+    logs_url = upload_folder_to_hf(
+        hf_api, log_dir, submissions_repo_id, config_name, eval_result.split, subm_name
+    )
+    click.echo(f"Uploaded submission logs dir to {logs_url}")
+    eval_result.submission.logs_url = logs_url
+
+    summary_url = upload_summary_to_hf(
+        hf_api, eval_result, results_repo_id, config_name, eval_result.split, subm_name
+    )
+    click.echo(f"Uploaded results summary file to {summary_url}")
+    eval_result.submission.summary_url = summary_url
+
+    # Save updated JSON
+    eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
+    click.echo(f"Updated {EVAL_FILENAME} with publication metadata.")
+
+
+cli.add_command(publish_command)
 
 
 @cli.command(
