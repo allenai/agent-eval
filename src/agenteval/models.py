@@ -1,9 +1,8 @@
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Union
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field
 
 from .config import SuiteConfig
 from .io import atomic_write_file
@@ -31,35 +30,10 @@ class SubmissionMetadata(BaseModel):
     summary_url: str | None = None
 
 
-JSON_SERIALIZED_FIELDS = ["suite_config"]
-
-
 class EvalResult(EvalConfig):
     eval_specs: list[EvalSpec] | None = Field(default=None, exclude=True)
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
-
-    @field_serializer(*JSON_SERIALIZED_FIELDS)
-    def _serialize_fields(self, v, _info):
-        if v is None:
-            return None
-        if isinstance(v, list):
-            data = [
-                item.model_dump() if hasattr(item, "model_dump") else item for item in v
-            ]
-        else:
-            data = v.model_dump() if hasattr(v, "model_dump") else v
-        return json.dumps(data)
-
-    @field_validator(*JSON_SERIALIZED_FIELDS, mode="before")
-    @classmethod
-    def validate_json_fields(cls, v):
-        if isinstance(v, str):
-            try:
-                return json.loads(v)
-            except json.JSONDecodeError:
-                return v
-        return v
 
     def find_missing_tasks(self) -> list[str]:
         try:
