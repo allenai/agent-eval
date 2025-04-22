@@ -2,8 +2,6 @@
 Configuration management for agent evaluation.
 """
 
-from typing import Literal
-
 import yaml
 from pydantic import BaseModel, ValidationError
 
@@ -13,10 +11,7 @@ class SuiteConfig(BaseModel):
     """Name of the suite."""
 
     version: str | None = None
-    """Version of the suite, e.g. '1.0.0.dev1' or '2025-05-01'."""
-
-    version_format: Literal["semver", "date"] | None = None
-    """Format of the version string, either 'semver' or 'date'."""
+    """Version of the suite, e.g. '1.0.0.dev1'."""
 
     splits: list["Split"]
     """List of splits in the suite."""
