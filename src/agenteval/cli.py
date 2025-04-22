@@ -15,6 +15,65 @@ from .summary import compute_summary_statistics
 EVAL_FILENAME = "agenteval.json"
 
 
+def verify_git_reproducibility(ignore_git: bool) -> None:
+    if ignore_git:
+        return
+    try:
+        # Get current commit SHA and origin
+        sha_result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        origin_result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        sha = sha_result.stdout.strip() if sha_result.returncode == 0 else None
+        origin = origin_result.stdout.strip() if origin_result.returncode == 0 else None
+
+        # Check for dirty working directory
+        git_dirty = (
+            subprocess.run(
+                ["git", "diff", "--quiet", "--exit-code"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            != 0
+        )
+        if git_dirty:
+            raise click.ClickException(
+                f"Git working directory contains uncommitted changes. "
+                f"For reproducibility, Inspect will save: origin={origin}, sha={sha}. "
+                "Please commit your changes or use --ignore-git to bypass this check (not recommended)."
+            )
+
+        # Check if commit exists on remote
+        if sha:
+            remote_exists = subprocess.run(
+                ["git", "branch", "-r", "--contains", sha],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            if not remote_exists:
+                raise click.ClickException(
+                    f"Commit {sha} not found on remote '{origin}'. Others won't be able to "
+                    "access this code version. Please push your changes or use --ignore-git "
+                    "to bypass this check (not recommended)."
+                )
+    except (subprocess.SubprocessError, FileNotFoundError) as e:
+        if isinstance(e, click.ClickException):
+            raise
+        raise click.ClickException(
+            "Unable to verify git status for reproducibility. "
+            "Use --ignore-git to bypass this check if git is not available."
+        )
+
+
 @click.group()
 def cli():
     pass
@@ -222,67 +281,7 @@ def eval_command(
     tasks = suite_config.get_tasks(split)
 
     # Verify git status for reproducibility
-    if not ignore_git:
-        try:
-            # Get current commit SHA and origin
-            sha_result = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            origin_result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            sha = sha_result.stdout.strip() if sha_result.returncode == 0 else None
-            origin = (
-                origin_result.stdout.strip() if origin_result.returncode == 0 else None
-            )
-
-            # Check for dirty working directory
-            git_dirty = (
-                subprocess.run(
-                    ["git", "diff", "--quiet", "--exit-code"],
-                    capture_output=True,
-                    check=False,
-                ).returncode
-                != 0
-            )
-
-            if git_dirty:
-                raise click.ClickException(
-                    f"Git working directory contains uncommitted changes. "
-                    f"For reproducibility, Inspect will save: origin={origin}, sha={sha}. "
-                    f"Please commit your changes or use --ignore-git to bypass this check (not recommended)."
-                )
-
-            # Check if commit exists on remote
-            if sha:
-                remote_exists = subprocess.run(
-                    ["git", "branch", "-r", "--contains", sha],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                ).stdout.strip()
-
-                if not remote_exists:
-                    raise click.ClickException(
-                        f"Commit {sha} not found on remote '{origin}'. Others won't be able to "
-                        f"access this code version. Please push your changes or use --ignore-git "
-                        f"to bypass this check (not recommended)."
-                    )
-        except (subprocess.SubprocessError, FileNotFoundError) as e:
-            if isinstance(e, click.ClickException):
-                raise
-            raise click.ClickException(
-                "Unable to verify git status for reproducibility. "
-                "Use --ignore-git to bypass this check if git is not available."
-            )
+    verify_git_reproducibility(ignore_git)
 
     if not log_dir:
         log_dir = os.environ.get("INSPECT_LOG_DIR")
