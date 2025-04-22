@@ -9,6 +9,8 @@ import click
 
 from .config import load_suite_config
 from .models import EvalConfig
+from .processor import score_directory
+from .summary import compute_summary_statistics
 
 EVAL_FILENAME = "agenteval.json"
 
@@ -87,9 +89,6 @@ def score_command(
     agent_description: str | None,
     agent_url: str | None,
 ):
-    from .processor import score_directory
-    from .summary import compute_summary_statistics
-
     # Load or create EvalResult, process logs
     eval_result = score_directory(
         log_dir,
