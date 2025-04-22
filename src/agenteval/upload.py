@@ -21,10 +21,21 @@ def ensure_readme_configs(
     Ensure the README.md file in the specified Hugging Face dataset
     repository identifies the config and split paths, using provided API.
 
+    This structured data is necessary for HuggingFace to parse the repository
+    into dataset splits and auto-convert to parquet.
+
+    The README.md file is expected to contain a YAML block at the
+    beginning, which is parsed and updated with the new config/split
+    information. The YAML block should have the following structure:
+    ```yaml
+    configs:
+      - config_name: <config_name>
+        data_files:
+          - split: <split_name>
+    ```
+
     If the README.md file does not exist, it will be created.
     """
-    # use provided api for repo operations
-
     try:
         readme_path = api.hf_hub_download(
             repo_id=repo_id,
@@ -39,6 +50,7 @@ def ensure_readme_configs(
         else:
             raise
 
+    # parse the YAML block from the README
     match = re.match(r"(?s)^---\n(.*?)\n---\n(.*)", content)
     if match:
         yaml_block, rest = match.groups()
