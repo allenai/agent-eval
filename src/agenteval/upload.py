@@ -4,7 +4,7 @@ from io import BytesIO
 
 import yaml
 from huggingface_hub import HfApi
-from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
+from huggingface_hub.utils import HfHubHTTPError
 
 from .models import EvalResult
 
@@ -99,41 +99,18 @@ def upload_folder_to_hf(
     config_name: str,
     split: str,
     submission_name: str,
-    create_repo_if_missing: bool = False,
-    create_private: bool = True,
-) -> tuple[str, bool]:
+) -> str:
     """
     Upload a local folder of logs to a Hugging Face dataset
     repository and return the hf:// URL.
-    Returns a tuple of (url, created_repo_flag).
     """
-    created = False
-    try:
-        api.repo_info(repo_id=repo_id, repo_type="dataset")
-    except RepositoryNotFoundError:
-        # only handle missing repo, let other HF errors propagate
-        if create_repo_if_missing:
-            logger.info(
-                f"Repo '{repo_id}' not found. "
-                f"Creating {'private' if create_private else 'public'} dataset..."
-            )
-            api.create_repo(
-                repo_id=repo_id,
-                repo_type="dataset",
-                private=create_private,
-                exist_ok=False,
-            )
-            logger.info(f"Initialized repo '{repo_id}' as dataset.")
-            created = True
-        else:
-            raise
     api.upload_folder(
         folder_path=folder_path,
         path_in_repo=f"{config_name}/{split}/{submission_name}",
         repo_id=repo_id,
         repo_type="dataset",
     )
-    return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}", created
+    return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}"
 
 
 def upload_summary_to_hf(
@@ -143,34 +120,11 @@ def upload_summary_to_hf(
     config_name: str,
     split: str,
     submission_name: str,
-    create_repo_if_missing: bool = False,
-    create_private: bool = True,
-) -> tuple[str, bool]:
+) -> str:
     """
     Upload an EvalResult JSON summary to a Hugging Face
     dataset repository, update README, and return the hf:// URL.
-    Returns a tuple of (url, created_repo_flag).
     """
-    created = False
-    try:
-        api.repo_info(repo_id=repo_id, repo_type="dataset")
-    except RepositoryNotFoundError:
-        # only handle missing repo, let other HF errors propagate
-        if create_repo_if_missing:
-            logger.info(
-                f"Repo '{repo_id}' not found. "
-                f"Creating {'private' if create_private else 'public'} dataset..."
-            )
-            api.create_repo(
-                repo_id=repo_id,
-                repo_type="dataset",
-                private=create_private,
-                exist_ok=False,
-            )
-            logger.info(f"Initialized repo '{repo_id}' as dataset.")
-            created = True
-        else:
-            raise
     summary_bytes = BytesIO(eval_result.dump_json_bytes())
     api.upload_file(
         path_or_fileobj=summary_bytes,
@@ -185,6 +139,4 @@ def upload_summary_to_hf(
         config_name=config_name,
         split_globs={split: f"{config_name}/{split}/*.json"},
     )
-    return (
-        f"hf://datasets/{repo_id}/{config_name}/{split}/" f"{submission_name}.json"
-    ), created
+    return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}.json"

@@ -41,11 +41,6 @@ def cli():
     help="Upload results to Huggingface leaderboard after scoring.",
 )
 @click.option(
-    "--create-repos",
-    is_flag=True,
-    help="If set, create HF dataset repos when missing.",
-)
-@click.option(
     "--submissions-repo-id",
     type=str,
     default=lambda: os.environ.get("SUBMISSIONS_REPO_ID", ""),
@@ -85,7 +80,6 @@ def score_command(
     config: str | None,
     split: str | None,
     upload_hf: bool,
-    create_repos: bool,
     submissions_repo_id: str,
     results_repo_id: str,
     username: str | None,
@@ -131,7 +125,6 @@ def score_command(
     # Perform Hugging Face upload and update submission metadata
     if upload_hf:
         from huggingface_hub import HfApi
-        from huggingface_hub.utils import RepositoryNotFoundError
 
         from .upload import upload_folder_to_hf, upload_summary_to_hf
 
@@ -165,45 +158,25 @@ def score_command(
         timestamp = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
         submission_name = f"{username}_{agent_name}_{timestamp}"
 
-        # upload raw logs; treat only missing-repo specially
-        try:
-            logs_url, logs_created = upload_folder_to_hf(
-                hf_api,
-                log_dir,
-                submissions_repo_id,
-                config_name,
-                eval_result.split,
-                submission_name,
-                create_repo_if_missing=create_repos,
-            )
-        except RepositoryNotFoundError:
-            raise click.ClickException(
-                f"Submissions repo '{submissions_repo_id}' not found."
-                " Use --create-repos to create it."
-            )
-        if logs_created:
-            click.echo(f"Created submissions repo '{submissions_repo_id}'")
+        logs_url = upload_folder_to_hf(
+            hf_api,
+            log_dir,
+            submissions_repo_id,
+            config_name,
+            eval_result.split,
+            submission_name,
+        )
         click.echo(f"Uploaded submission logs dir to {logs_url}")
         eval_result.submission.logs_url = logs_url
 
-        # upload summary JSON; treat only missing-repo specially
-        try:
-            summary_url, summary_created = upload_summary_to_hf(
-                hf_api,
-                eval_result,
-                results_repo_id,
-                config_name,
-                eval_result.split,
-                submission_name,
-                create_repo_if_missing=create_repos,
-            )
-        except RepositoryNotFoundError:
-            raise click.ClickException(
-                f"Results repo '{results_repo_id}' not found."
-                " Use --create-repos to create it."
-            )
-        if summary_created:
-            click.echo(f"Created results repo '{results_repo_id}'")
+        summary_url = upload_summary_to_hf(
+            hf_api,
+            eval_result,
+            results_repo_id,
+            config_name,
+            eval_result.split,
+            submission_name,
+        )
         click.echo(f"Uploaded results summary file to {summary_url}")
         eval_result.submission.summary_url = summary_url
 
