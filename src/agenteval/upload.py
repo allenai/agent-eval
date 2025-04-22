@@ -104,6 +104,16 @@ def ensure_readme_configs(
         )
 
 
+def _validate_path_component(component: str, desc: str):
+    if not re.match(r"^[A-Za-z0-9_-]+$", component):
+        raise ValueError(f"Invalid {desc}: {component}")
+
+
+def sanitize_path_component(component: str) -> str:
+    # replace any character not alphanumeric, dash, or underscore with underscore
+    return re.sub(r"[^A-Za-z0-9_-]", "_", component)
+
+
 def upload_folder_to_hf(
     api: HfApi,
     folder_path: str,
@@ -112,10 +122,10 @@ def upload_folder_to_hf(
     split: str,
     submission_name: str,
 ) -> str:
-    """
-    Upload a local folder of logs to a Hugging Face dataset
-    repository and return the hf:// URL.
-    """
+    """Upload a folder to a HuggingFace dataset repository."""
+    _validate_path_component(config_name, "config_name")
+    _validate_path_component(split, "split")
+    _validate_path_component(submission_name, "submission_name")
     api.upload_folder(
         folder_path=folder_path,
         path_in_repo=f"{config_name}/{split}/{submission_name}",
@@ -133,10 +143,10 @@ def upload_summary_to_hf(
     split: str,
     submission_name: str,
 ) -> str:
-    """
-    Upload an EvalResult JSON summary to a Hugging Face
-    dataset repository, update README, and return the hf:// URL.
-    """
+    """Upload a summary of the evaluation result to a HuggingFace dataset repository."""
+    _validate_path_component(config_name, "config_name")
+    _validate_path_component(split, "split")
+    _validate_path_component(submission_name, "submission_name")
     summary_bytes = BytesIO(eval_result.dump_json_bytes())
     api.upload_file(
         path_or_fileobj=summary_bytes,
@@ -144,7 +154,6 @@ def upload_summary_to_hf(
         repo_id=repo_id,
         repo_type="dataset",
     )
-    # update README with new config/split via provided API
     ensure_readme_configs(
         api,
         repo_id=repo_id,

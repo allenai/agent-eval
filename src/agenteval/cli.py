@@ -11,6 +11,7 @@ from .config import load_suite_config
 from .models import EvalConfig, EvalResult
 from .processor import score_directory
 from .summary import compute_summary_statistics
+from .upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf
 
 EVAL_FILENAME = "agenteval.json"
 
@@ -190,7 +191,13 @@ def publish_command(
     # Allow huggingface imports to be optional
     from huggingface_hub import HfApi
 
-    from .upload import upload_folder_to_hf, upload_summary_to_hf
+    # Derive a filesafe agent_name
+    safe_agent_name = sanitize_path_component(agent_name)
+    if safe_agent_name != agent_name:
+        click.echo(
+            f"Note: agent_name '{agent_name}' contains unsafe characters; "
+            f"using '{safe_agent_name}' for submission filenames."
+        )
 
     # Load existing scored results from JSON
     json_path = Path(log_dir) / EVAL_FILENAME
@@ -219,6 +226,14 @@ def publish_command(
                 "--username must be provided or ensure HF authentication is configured"
             )
 
+    # Derive a filesafe username
+    safe_username = sanitize_path_component(username)
+    if safe_username != username:
+        click.echo(
+            f"Note: username '{username}' contains unsafe characters; "
+            f"using '{safe_username}' for submission filenames."
+        )
+
     # Fill submission metadata
     eval_result.submission.username = username
     eval_result.submission.agent_name = agent_name
@@ -233,7 +248,7 @@ def publish_command(
 
     # Build submission name
     ts = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
-    subm_name = f"{username}_{agent_name}_{ts}"
+    subm_name = f"{safe_username}_{safe_agent_name}_{ts}"
 
     # Upload logs and summary
     logs_url = upload_folder_to_hf(
