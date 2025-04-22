@@ -53,6 +53,9 @@ class EvalResult(EvalConfig):
     ) -> None:
         """
         Atomically write this EvalResult to JSON at the given path.
+
+        The motivation for using an atomic write is to avoid data loss of the
+        original config file, if something goes wrong during the write.
         """
         content = self.dump_json_bytes(
             indent=indent,
