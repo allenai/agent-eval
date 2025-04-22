@@ -1,4 +1,4 @@
-.PHONY: format tag publish
+.PHONY: format tag publish test
 
 format:
 	@echo "Formatting with isort and black..."
@@ -13,3 +13,7 @@ tag:
 publish:
 	@echo "Uploading package to PyPI..."
 	@bash ./publish.sh
+
+test:
+	@echo "Running tests..."
+	pytest
