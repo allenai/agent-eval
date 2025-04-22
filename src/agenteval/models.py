@@ -35,7 +35,7 @@ JSON_SERIALIZED_FIELDS = ["suite_config"]
 
 
 class EvalResult(EvalConfig):
-    eval_specs: list[EvalSpec] | None = None
+    eval_specs: list[EvalSpec] | None = Field(default=None, exclude=True)
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 
@@ -75,36 +75,29 @@ class EvalResult(EvalConfig):
         self,
         path: Union[str, Path],
         indent: int = 2,
-        exclude_none: bool = True,
-        exclude_defaults: bool = True,
+        **model_dump_kwargs,
     ) -> None:
         """
         Atomically write this EvalResult to JSON at the given path.
-
-        Uses model_dump_json with indent/exclude flags and
-        atomic file replace.
         """
-        content = self.model_dump_json(
+        content = self.dump_json_bytes(
             indent=indent,
-            exclude_none=exclude_none,
-            exclude_defaults=exclude_defaults,
-            exclude={"eval_specs"},
-        )
+            **model_dump_kwargs,
+        ).decode("utf-8")
         atomic_write_file(path, content, encoding="utf-8")
 
     def dump_json_bytes(
         self,
         indent: int = 2,
-        exclude_none: bool = True,
-        exclude_defaults: bool = True,
+        **model_dump_kwargs,
     ) -> bytes:
         """
         Return the JSON representation of this EvalResult as bytes,
-        using default indent and exclusion settings.
+        always excluding `eval_specs` and null/default values.
         """
         return self.model_dump_json(
             indent=indent,
-            exclude_none=exclude_none,
-            exclude_defaults=exclude_defaults,
-            exclude={"eval_specs"},
+            exclude_none=True,
+            exclude_defaults=True,
+            **model_dump_kwargs,
         ).encode("utf-8")
