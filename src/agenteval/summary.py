@@ -43,7 +43,13 @@ def compute_summary_statistics(
         cost: float | None = None
         cost_stderr: float | None = None
         if res:
-            m = next(m for m in res.metrics if m.name == task.primary_metric)
+            try:
+                m = next(m for m in res.metrics if m.name == task.primary_metric)
+            except StopIteration:
+                raise ValueError(
+                    f"Task {task.name} does not have a metric named {task.primary_metric}."
+                    f" Available metrics: {', '.join(m.name for m in res.metrics)}"
+                )
             score = m.value
             if task.primary_metric_stderr:
                 stderr = next(
