@@ -45,6 +45,22 @@ def verify_git_reproducibility(ignore_git: bool) -> None:
             ).returncode
             != 0
         )
+
+        # Warn about untracked (non-ignored) files
+        untracked_result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        untracked_files = untracked_result.stdout.strip().splitlines()
+        if untracked_files:
+            click.echo(
+                f"Warning: Untracked files present: {', '.join(untracked_files)}. "
+                "For reproducibility, please add, ignore, or remove these files."
+            )
+
+        # Abort if worktree is dirty
         if git_dirty:
             raise click.ClickException(
                 f"Git working directory contains uncommitted changes. "
