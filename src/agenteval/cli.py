@@ -25,13 +25,13 @@ def verify_git_reproducibility(ignore_git: bool) -> None:
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         origin_result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         sha = sha_result.stdout.strip() if sha_result.returncode == 0 else None
         origin = origin_result.stdout.strip() if origin_result.returncode == 0 else None
@@ -58,7 +58,7 @@ def verify_git_reproducibility(ignore_git: bool) -> None:
                 ["git", "branch", "-r", "--contains", sha],
                 capture_output=True,
                 text=True,
-                check=False,
+                check=True,
             ).stdout.strip()
             if not remote_exists:
                 raise click.ClickException(
@@ -70,7 +70,7 @@ def verify_git_reproducibility(ignore_git: bool) -> None:
         if isinstance(e, click.ClickException):
             raise
         raise click.ClickException(
-            "Unable to verify git status for reproducibility. "
+            f"Unable to verify git status for reproducibility: {e}. "
             "Use --ignore-git to bypass this check if git is not available."
         )
 
