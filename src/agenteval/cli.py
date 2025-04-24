@@ -242,6 +242,7 @@ def publish_command(
     if not username:
         try:
             username = hf_api.whoami()["name"]
+            assert isinstance(username, str), "Invalid username type from HF API"
             click.echo(f"Defaulting username to Hugging Face account: {username}")
         except Exception:
             raise click.ClickException(
