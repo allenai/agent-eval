@@ -76,20 +76,18 @@ def compute_summary_statistics(
             cost_stderr=cost_stderr,
         )
 
-    # per-category summary
+    # per-tag summary
     all_tags = {t for task in tasks for t in (task.tags or [])}
-    categories_summary: dict[str, SummaryStat] = {}
+    tags_summary: dict[str, SummaryStat] = {}
     for tag in all_tags:
-        category_scores = [
+        tag_scores = [
             tasks_summary[t.name].score for t in tasks if tag in (t.tags or [])
         ]
-        category_costs = [
-            tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])
-        ]
-        categories_summary[tag] = SummaryStat(
-            score=_safe_mean(category_scores),
+        tag_costs = [tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])]
+        tags_summary[tag] = SummaryStat(
+            score=_safe_mean(tag_scores),
             score_stderr=None,
-            cost=_safe_mean(category_costs),
+            cost=_safe_mean(tag_costs),
             cost_stderr=None,
         )
 
@@ -105,8 +103,8 @@ def compute_summary_statistics(
 
     # flattened stats
     stats: dict[str, SummaryStat] = {"overall": overall}
-    for tag, stat in categories_summary.items():
-        stats[f"category/{tag}"] = stat
+    for tag, stat in tags_summary.items():
+        stats[f"tag/{tag}"] = stat
     for task_name, stat in tasks_summary.items():
         stats[f"task/{task_name}"] = stat
     return stats
