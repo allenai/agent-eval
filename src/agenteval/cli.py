@@ -9,7 +9,7 @@ import click
 
 from .config import load_suite_config
 from .models import EvalConfig, EvalResult
-from .processor import score_directory
+from .score import process_eval_logs
 from .summary import compute_summary_statistics
 from .upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf
 
@@ -118,13 +118,43 @@ def score_command(
     config: str | None,
     split: str | None,
 ):
-    # Load or create EvalResult, process logs
-    eval_result = score_directory(
-        log_dir,
-        config,
-        split,
-        eval_filename=EVAL_FILENAME,
-    )
+    # Load or create EvalResult and process logs (inlined from processor)
+    json_path = Path(log_dir) / EVAL_FILENAME
+    if json_path.exists():
+        try:
+            raw = json_path.read_text(encoding="utf-8")
+            eval_result = EvalResult.model_validate_json(raw)
+        except Exception as e:
+            raise click.ClickException(
+                f"Failed to load existing '{EVAL_FILENAME}' at {json_path}: {e}"
+            )
+        if config:
+            try:
+                cli_cfg = load_suite_config(config)
+                if cli_cfg.version != eval_result.suite_config.version:
+                    click.echo(
+                        f"Warning: CLI config version '{cli_cfg.version}' "
+                        f"does not match JSON config version '{eval_result.suite_config.version}'."
+                    )
+            except Exception as e:
+                click.echo(
+                    f"Warning: could not load CLI config '{config}' for comparison: {e}"
+                )
+        if split and split != eval_result.split:
+            raise click.ClickException(
+                f"Split mismatch: JSON split '{eval_result.split}' != CLI split '{split}'"
+            )
+    else:
+        if not config or not split:
+            raise click.ClickException(
+                "--config and --split must be provided when no existing result JSON"
+            )
+        suite_cfg = load_suite_config(config)
+        eval_result = EvalResult(suite_config=suite_cfg, split=split)
+
+    task_results, eval_specs = process_eval_logs(log_dir)
+    eval_result.eval_specs = eval_specs
+    eval_result.results = task_results
 
     # Warn if multiple evaluation specs present
     if eval_result.eval_specs and len(eval_result.eval_specs) > 1:
