@@ -150,6 +150,12 @@ def score_command(
     # Persist updated EvalResult JSON
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
 
+    click.echo(f"Saved results to {log_dir}/{EVAL_FILENAME}")
+    ctx = click.get_current_context()
+    click.echo(
+        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} publish {log_dir}' to publish the results"
+    )
+
 
 cli.add_command(score_command)
 
@@ -356,7 +362,7 @@ def eval_command(
 
     ctx = click.get_current_context()
     click.echo(
-        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} score {log_dir}' to score the results and (optionally) upload to the leaderboard"
+        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} score {log_dir}' to score the results"
     )
 
 
