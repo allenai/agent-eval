@@ -57,9 +57,6 @@ class Task(BaseModel):
     primary_metric: str
     """Primary metric for the task, used for summary scores."""
 
-    primary_metric_stderr: str | None = None
-    """Standard error of the primary metric, used for summary scores."""
-
     tags: list[str] | None = None
     """List of tags, used for computing summary scores for task groups."""
 

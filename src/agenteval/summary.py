@@ -15,6 +15,18 @@ class SummaryStat(BaseModel):
     cost_stderr: float | None
 
 
+def _safe_mean(xs: Sequence[float | None]) -> float | None:
+    """Compute the mean of a list of numbers, ignoring None values."""
+    vals = [x for x in xs if x is not None]
+    return mean(vals) if vals and len(vals) == len(xs) else None
+
+
+def _safe_stderr(xs: Sequence[float | None]) -> float | None:
+    """Compute the standard error of the mean of a list of numbers, ignoring None values."""
+    vals = [x for x in xs if x is not None]
+    return stdev(vals) / math.sqrt(len(vals)) if len(vals) > 1 else None
+
+
 def compute_summary_statistics(
     suite_config: SuiteConfig,
     split: str,
@@ -24,14 +36,6 @@ def compute_summary_statistics(
     Compute summary statistics for a set of task results.
     """
     tasks = suite_config.get_tasks(split)
-
-    def safe_mean(xs: Sequence[float | None]) -> float | None:
-        vals = [x for x in xs if x is not None]
-        return mean(vals) if vals and len(vals) == len(xs) else None
-
-    def safe_stderr(xs: Sequence[float | None]) -> float | None:
-        vals = [x for x in xs if x is not None]
-        return stdev(vals) / math.sqrt(len(vals)) if len(vals) > 1 else None
 
     # build per-task stats
     tasks_summary: dict[str, SummaryStat] = {}
@@ -51,18 +55,20 @@ def compute_summary_statistics(
                     f" Available metrics: {', '.join(m.name for m in res.metrics)}"
                 )
             score = m.value
-            if task.primary_metric_stderr:
-                stderr = next(
-                    (
-                        metric.value
-                        for metric in res.metrics
-                        if metric.name == task.primary_metric_stderr
-                    ),
-                    None,
-                )
+
+            stderr = next(
+                (
+                    m.value
+                    for m in res.metrics
+                    if m.name.startswith(f"{task.primary_metric.split('/')[0]}/")
+                    and "stderr" in m.name
+                ),
+                None,
+            )
+
             task_costs = res.model_costs or []
-            cost = safe_mean(task_costs)
-            cost_stderr = safe_stderr(task_costs)
+            cost = _safe_mean(task_costs)
+            cost_stderr = _safe_stderr(task_costs)
         tasks_summary[task.name] = SummaryStat(
             score=score,
             score_stderr=stderr,
@@ -81,9 +87,9 @@ def compute_summary_statistics(
             tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])
         ]
         categories_summary[tag] = SummaryStat(
-            score=safe_mean(category_scores),
+            score=_safe_mean(category_scores),
             score_stderr=None,
-            cost=safe_mean(category_costs),
+            cost=_safe_mean(category_costs),
             cost_stderr=None,
         )
 
@@ -91,9 +97,9 @@ def compute_summary_statistics(
     all_scores = [s.score for s in tasks_summary.values()]
     all_costs = [s.cost for s in tasks_summary.values()]
     overall = SummaryStat(
-        score=safe_mean(all_scores),
+        score=_safe_mean(all_scores),
         score_stderr=None,
-        cost=safe_mean(all_costs),
+        cost=_safe_mean(all_costs),
         cost_stderr=None,
     )
 
