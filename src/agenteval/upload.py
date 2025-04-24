@@ -105,13 +105,14 @@ def ensure_readme_configs(
 
 
 def _validate_path_component(component: str, desc: str):
-    if not re.match(r"^[A-Za-z0-9_-]+$", component):
+    # allow letters, digits, underscore, dash, and literal dot
+    if not re.match(r"^[A-Za-z0-9._-]+$", component):
         raise ValueError(f"Invalid {desc}: {component}")
 
 
 def sanitize_path_component(component: str) -> str:
-    # replace any character not alphanumeric, dash, or underscore with underscore
-    return re.sub(r"[^A-Za-z0-9_-]", "_", component)
+    # replace any character not alphanumeric, dot, dash, or underscore with underscore
+    return re.sub(r"[^A-Za-z0-9._-]", "_", component)
 
 
 def upload_folder_to_hf(
