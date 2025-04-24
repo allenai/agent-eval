@@ -102,7 +102,8 @@ def cli():
 )
 @click.argument("log_dir", type=click.Path(exists=True, file_okay=False))
 @click.option(
-    "--config",
+    "--config-path",
+    "config_path",
     type=str,
     help=f"Path to a yml config file. Ignored if {EVAL_FILENAME} exists.",
     default=None,
@@ -115,7 +116,7 @@ def cli():
 )
 def score_command(
     log_dir: str,
-    config: str | None,
+    config_path: str | None,
     split: str | None,
 ):
     # Load or create EvalResult and process logs (inlined from processor)
@@ -128,9 +129,9 @@ def score_command(
             raise click.ClickException(
                 f"Failed to load existing '{EVAL_FILENAME}' at {json_path}: {e}"
             )
-        if config:
+        if config_path:
             try:
-                cli_cfg = load_suite_config(config)
+                cli_cfg = load_suite_config(config_path)
                 if cli_cfg.version != eval_result.suite_config.version:
                     click.echo(
                         f"Warning: CLI config version '{cli_cfg.version}' "
@@ -138,18 +139,18 @@ def score_command(
                     )
             except Exception as e:
                 click.echo(
-                    f"Warning: could not load CLI config '{config}' for comparison: {e}"
+                    f"Warning: could not load CLI config '{config_path}' for comparison: {e}"
                 )
         if split and split != eval_result.split:
             raise click.ClickException(
                 f"Split mismatch: JSON split '{eval_result.split}' != CLI split '{split}'"
             )
     else:
-        if not config or not split:
+        if not config_path or not split:
             raise click.ClickException(
-                "--config and --split must be provided when no existing result JSON"
+                "--config-path and --split must be provided when no existing result JSON"
             )
-        suite_cfg = load_suite_config(config)
+        suite_cfg = load_suite_config(config_path)
         eval_result = EvalResult(suite_config=suite_cfg, split=split)
 
     task_results, eval_specs = process_eval_logs(log_dir)
@@ -335,7 +336,8 @@ cli.add_command(publish_command)
     help="Log directory. Defaults to INSPECT_LOG_DIR or auto-generated under ./logs.",
 )
 @click.option(
-    "--config",
+    "--config-path",
+    "config_path",
     type=str,
     help="Path to a yml config file.",
     required=True,
@@ -353,10 +355,14 @@ cli.add_command(publish_command)
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def eval_command(
-    log_dir: str | None, config: str, split: str, ignore_git: bool, args: tuple[str]
+    log_dir: str | None,
+    config_path: str,
+    split: str,
+    ignore_git: bool,
+    args: tuple[str],
 ):
     """Run inspect eval-set with arguments and append tasks"""
-    suite_config = load_suite_config(config)
+    suite_config = load_suite_config(config_path)
     tasks = suite_config.get_tasks(split)
 
     # Verify git status for reproducibility
@@ -380,11 +386,13 @@ def eval_command(
     full_command = (
         ["inspect", "eval-set"] + list(args) + logd_args + [x.path for x in tasks]
     )
-    click.echo(f"Running {config}: {' '.join(full_command)}")
+    click.echo(f"Running {config_path}: {' '.join(full_command)}")
     proc = subprocess.run(full_command)
 
     if proc.returncode != 0:
-        raise click.ClickException(f"inspect eval-set failed while running {config}")
+        raise click.ClickException(
+            f"inspect eval-set failed while running {config_path}"
+        )
 
     # Write the config portion of the results file
     with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
