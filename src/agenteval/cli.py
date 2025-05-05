@@ -111,7 +111,7 @@ def cli():
 @click.option(
     "--split",
     type=str,
-    help="Config data split. Ignored if {EVAL_FILENAME} exists.",
+    help=f"Config data split. Ignored if {EVAL_FILENAME} exists.",
     default=None,
 )
 def score_command(
