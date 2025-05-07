@@ -83,7 +83,7 @@ class EvalResult(EvalConfig):
         """
         return self.model_dump_json(
             indent=indent,
-            exclude_none=True,
-            exclude_defaults=True,
+            exclude_none=False,
+            exclude_defaults=False,
             **model_dump_kwargs,
         ).encode("utf-8")

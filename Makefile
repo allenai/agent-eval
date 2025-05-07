@@ -12,7 +12,12 @@ tag:
 # Upload package to PyPI
 publish:
 	@echo "Uploading package to PyPI..."
-	@bash ./publish.sh
+	@bash scripts/publish.sh
+
+# Update dataset_infos.json
+update-schema:
+	@echo "Updating schema..."
+	python scripts/update_schema.py
 
 test:
 	@echo "Running tests..."

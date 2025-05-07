@@ -1,0 +1,40 @@
+name: Validate dataset_infos.json
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-schema:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Check dataset_infos.json exists
+        run: |
+          if [ ! -e dataset_infos.json ]; then
+            echo "dataset_infos.json is missing. Please run 'python scripts/update_schema.py' and commit the file to the repo." >&2
+            exit 1
+          fi
+
+      - name: Regenerate dataset_infos.json
+        run: python scripts/update_schema.py
+
+      - name: Verify schema is up to date
+        run: |
+          if ! git diff --quiet dataset_infos.json; then
+            echo "dataset_infos.json is out of date. Please run 'python scripts/update_schema.py' and commit the updated file." >&2
+            exit 1
+          fi

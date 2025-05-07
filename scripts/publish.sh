@@ -10,8 +10,17 @@ if ! git rev-parse "$version" >/dev/null 2>&1; then
   exit 1
 fi
 
+
 # 🧹 Clean build artifacts
 rm -rf dist
+
+# 🔄 Regenerate dataset_infos.json and verify it’s up to date
+echo "Regenerating dataset_infos.json..."
+python scripts/update_schema.py ./dataset_infos.json
+if ! git diff --quiet ./dataset_infos.json; then
+  echo "\ndataset_infos.json is outdated. Please commit the updated file before publishing.\n" >&2
+  exit 1
+fi
 
 # 🔒 Set up PyPI credentials
 export TWINE_NON_INTERACTIVE=1

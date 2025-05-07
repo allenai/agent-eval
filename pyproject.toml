@@ -11,9 +11,12 @@ requires-python = ">=3.10"
 dependencies = [
   "click",
   "inspect-ai",
-  "huggingface_hub",
   "litellm",
   "pydantic>=2.0.0",
+  # For leaderboard
+  "huggingface_hub",
+  "pyarrow",
+  "datasets",
 ]
 
 [project.urls]

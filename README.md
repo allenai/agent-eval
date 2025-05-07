@@ -35,6 +35,9 @@ agenteval publish [OPTIONS] LOG_DIR
 ```
 Upload the scored results to HuggingFace datasets.
 
+Prior to publishing scores, two HuggingFace datasets should be set up, one for full submissions and one for results files.
+For more reliable schema parsing, upload the [results schema](https://github.com/allenai/agent-eval/blob/main/dataset_infos.json) to the root of the results dataset.
+
 # Development
 
 See [Development.md](Development.md) for development instructions.

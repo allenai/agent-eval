@@ -6,6 +6,28 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 
+class Task(BaseModel):
+    name: str
+    """Canonical task name (used by the leaderboard)."""
+
+    path: str
+    """Path to the task definition (used by Inspect)."""
+
+    primary_metric: str
+    """Primary metric for the task, used for summary scores."""
+
+    tags: list[str] | None = None
+    """List of tags, used for computing summary scores for task groups."""
+
+
+class Split(BaseModel):
+    name: str
+    """Name of the split."""
+
+    tasks: list[Task]
+    """List of tasks associated with the split."""
+
+
 class SuiteConfig(BaseModel):
     name: str
     """Name of the suite."""
@@ -13,10 +35,10 @@ class SuiteConfig(BaseModel):
     version: str | None = None
     """Version of the suite, e.g. '1.0.0.dev1'."""
 
-    splits: list["Split"]
+    splits: list[Split]
     """List of splits in the suite."""
 
-    def get_tasks(self, split_name: str) -> list["Task"]:
+    def get_tasks(self, split_name: str) -> list[Task]:
         """
         Get the tasks for a specific split.
 
@@ -37,28 +59,6 @@ class SuiteConfig(BaseModel):
         raise ValueError(
             f"Split '{split_name}' not found. Available splits: {available_splits}"
         )
-
-
-class Split(BaseModel):
-    name: str
-    """Name of the split."""
-
-    tasks: list["Task"]
-    """List of tasks associated with the split."""
-
-
-class Task(BaseModel):
-    name: str
-    """Canonical task name (used by the leaderboard)."""
-
-    path: str
-    """Path to the task definition (used by Inspect)."""
-
-    primary_metric: str
-    """Primary metric for the task, used for summary scores."""
-
-    tags: list[str] | None = None
-    """List of tags, used for computing summary scores for task groups."""
 
 
 def load_suite_config(file_path: str) -> SuiteConfig:
