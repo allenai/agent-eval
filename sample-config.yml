@@ -1,0 +1,20 @@
+name: agent-eval-sample
+version: "0.1-dev"
+
+splits:
+  - name: validation
+    tasks:
+      - name: first_task
+        path: tasks/first_task
+        primary_metric: 'my_scorer/my_metric'
+        tags:
+          - task1
+
+
+  - name: test
+    tasks:
+      - name: second_task
+        path: tasks/second_task
+        primary_metric: 'my_scorer/mean'
+        tags:
+          - task2
