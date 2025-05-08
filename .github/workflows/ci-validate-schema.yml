@@ -1,0 +1,40 @@
+name: Validate dataset_features.yml
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-schema:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Check dataset_features.yml exists
+        run: |
+          if [ ! -e src/agenteval/dataset_features.yml ]; then
+            echo "dataset_features.yml is missing. Please run 'python scripts/update_schema.py' and commit the file to the repo." >&2
+            exit 1
+          fi
+
+      - name: Regenerate dataset_features.yml
+        run: python scripts/update_schema.py
+
+      - name: Verify schema is up to date
+        run: |
+          if ! git diff --quiet src/agenteval/dataset_features.yml; then
+            echo "dataset_features.yml is out of date. Please run 'python scripts/update_schema.py' and commit the updated file." >&2
+            exit 1
+          fi

@@ -10,8 +10,17 @@ if ! git rev-parse "$version" >/dev/null 2>&1; then
   exit 1
 fi
 
+
 # 🧹 Clean build artifacts
 rm -rf dist
+
+# 🔄 Regenerate schema file and verify it’s up to date
+echo "Regenerating schema file..."
+python scripts/update_schema.py
+if ! git diff --quiet src/agenteval/dataset_features.yml; then
+  echo "\ndataset_features.yml schema file is outdated. Please commit the updated file before publishing.\n" >&2
+  exit 1
+fi
 
 # 🔒 Set up PyPI credentials
 export TWINE_NON_INTERACTIVE=1
