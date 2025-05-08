@@ -6,4 +6,6 @@ configs:
       path: 0.1-dev/validation/*.json
     - split: test
       path: 0.1-dev/test/*.json
+  features:
+  # Insert src/agenteval/dataset_features.yml here at the proper indentation level.
 ---

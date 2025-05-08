@@ -7,6 +7,7 @@ from huggingface_hub import HfApi
 from huggingface_hub.utils import HfHubHTTPError
 
 from .models import EvalResult
+from .schema_generator import load_dataset_features
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,8 @@ def ensure_readme_configs(
 ):
     """
     Ensure the README.md file in the specified Hugging Face dataset
-    repository identifies the config and split paths, using provided API.
+    repository specifies the config with the given split paths and the
+    latest features schema supplied by the agenteval package.
 
     This structured data is necessary for HuggingFace to parse the repository
     into dataset splits and auto-convert to parquet.
@@ -32,6 +34,9 @@ def ensure_readme_configs(
       - config_name: <config_name>
         data_files:
           - split: <split_name>
+            path: <path_glob>
+        features:
+          <features>
     ```
 
     If the README.md file does not exist, it will be created.
@@ -63,9 +68,15 @@ def ensure_readme_configs(
     config_list = parsed_yaml["configs"]
 
     config_lookup = {c["config_name"]: c for c in config_list}
-    config = config_lookup.setdefault(
-        config_name, {"config_name": config_name, "data_files": []}
-    )
+    if config_name in config_lookup:
+        config = config_lookup[config_name]
+    else:
+        config = {
+            "config_name": config_name,
+            "data_files": [],
+            "features": load_dataset_features()._to_yaml_list(),
+        }
+        config_lookup[config_name] = config
     split_lookup = {s["split"]: s for s in config["data_files"]}
 
     for split, path in split_globs.items():

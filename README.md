@@ -38,9 +38,12 @@ Upload the scored results to HuggingFace datasets.
 # Administer the HuggingFace datasets
 Prior to publishing scores, two HuggingFace datasets should be set up, one for full submissions and one for results files.
 
-If you want to call `load_dataset()` on the results dataset (e.g., for populating a leaderboard), you probably want to explicitly tell HuggingFace about the schema and dataset structure (otherwise, HuggingFace may fail to propertly auto-convert to Parquet):
-- *Schema:* Upload the [results schema](https://github.com/allenai/agent-eval/blob/main/dataset_infos.json) to the root of the results dataset.
-- *Dataset structure:*  Specify the `configs` attribute in the YAML metadata block at the top of the `README.md` file at the root of the results dataset. For example, see the [sample metadata block](sample-config-dataset-structure.yml) for the [sample config](sample-config.yml). Using `agenteval publish` will automatically add the corresponding config name and split to the YAML metadata if it is missing.
+If you want to call `load_dataset()` on the results dataset (e.g., for populating a leaderboard), you probably want to explicitly tell HuggingFace about the schema and dataset structure (otherwise, HuggingFace may fail to propertly auto-convert to Parquet).
+This is done by updating the `configs` attribute in the YAML metadata block at the top of the `README.md` file at the root of the results dataset (the metadata block is identified by lines with just `---` above and below it).
+This attribute should contain a list of configs, each of which specifies the schema (under the `features` key) and dataset structure (under the `data_files` key).
+See [sample-config-hf-readme-metadata.yml](sample-config-hf-readme-metadata.yml) for a sample metadata block corresponding to [sample-comfig.yml](sample-config.yml) (note that the metadata references the [raw schema data](src/agenteval/dataset_features.yml), which must be copied).
+
+To facilitate initializing new configs, `agenteval publish` will automatically add this metadata if it is missing.
 
 # Development
 

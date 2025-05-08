@@ -14,7 +14,7 @@ publish:
 	@echo "Uploading package to PyPI..."
 	@bash scripts/publish.sh
 
-# Update dataset_infos.json
+# Update HF dataset features
 update-schema:
 	@echo "Updating schema..."
 	python scripts/update_schema.py

@@ -1,0 +1,71 @@
+- name: suite_config
+  struct:
+  - name: name
+    dtype: string
+  - name: version
+    dtype: string
+  - name: splits
+    list:
+    - name: name
+      dtype: string
+    - name: tasks
+      list:
+      - name: name
+        dtype: string
+      - name: path
+        dtype: string
+      - name: primary_metric
+        dtype: string
+      - name: tags
+        sequence: string
+- name: split
+  dtype: string
+- name: results
+  list:
+  - name: task_name
+    dtype: string
+  - name: metrics
+    list:
+    - name: name
+      dtype: string
+    - name: value
+      dtype: float64
+  - name: model_usages
+    list:
+      list:
+      - name: model
+        dtype: string
+      - name: usage
+        struct:
+        - name: input_tokens
+          dtype: int64
+        - name: output_tokens
+          dtype: int64
+        - name: total_tokens
+          dtype: int64
+        - name: input_tokens_cache_write
+          dtype: int64
+        - name: input_tokens_cache_read
+          dtype: int64
+        - name: reasoning_tokens
+          dtype: int64
+  - name: model_costs
+    sequence: float64
+- name: submission
+  struct:
+  - name: submit_time
+    dtype: timestamp[us, tz=UTC]
+  - name: username
+    dtype: string
+  - name: agent_name
+    dtype: string
+  - name: agent_description
+    dtype: string
+  - name: agent_url
+    dtype: string
+  - name: logs_url
+    dtype: string
+  - name: logs_url_public
+    dtype: string
+  - name: summary_url
+    dtype: string

@@ -1,13 +1,14 @@
 """
-Utility module for maintainers to generate dataset_infos.json from Pydantic models.
+Utility module for maintainers to generate HuggingFace Dataset schema from Pydantic models.
 """
 
 import datetime
-import json
 import types
+from importlib import resources
 from typing import Union, get_args, get_origin
 
 import pyarrow as pa
+import yaml
 from datasets import Features
 from pydantic import BaseModel
 
@@ -61,19 +62,34 @@ def _schema_from_pydantic(model: type[BaseModel]) -> list[pa.Field]:
 
 def features_from_pydantic(model: type[BaseModel]) -> Features:
     """
-    Build a Hugging Face Features object from a Pydantic BaseModel using PyArrow schema.
+    Build a HuggingFace Features object from a Pydantic BaseModel using PyArrow schema.
     """
     pa_fields = _schema_from_pydantic(model)
     pa_schema = pa.schema(pa_fields)
     return Features.from_arrow_schema(pa_schema)
 
 
-def generate_dataset_infos(output_path: str = "dataset_infos.json"):
+def write_dataset_features(output_path: str) -> None:
     """
-    Generate a dataset_infos.json file from the EvalResult schema.
+    Write the HuggingFace Features data inferred from the EvalResult schema.
     """
     features = features_from_pydantic(EvalResult)
-    infos = {"default": {"features": features.to_dict()}}
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(infos, f, indent=2)
-    print(f"Generated dataset_infos.json at {output_path}")
+        yaml_values = features._to_yaml_list()
+        yaml.safe_dump(yaml_values, f, indent=2, sort_keys=False)
+
+
+def load_dataset_features(input_path: str | None = None) -> Features:
+    """
+    Load the HuggingFace Features data from a YAML file.
+    """
+    if input_path is None:
+        # load the shipped dataset_features.yml from the package
+        with resources.open_text(
+            "agenteval", "dataset_features.yml", encoding="utf-8"
+        ) as f:
+            yaml_values = yaml.safe_load(f)
+    else:
+        with open(input_path, "r", encoding="utf-8") as f:
+            yaml_values = yaml.safe_load(f)
+    return Features._from_yaml_list(yaml_values)
