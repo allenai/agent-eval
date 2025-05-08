@@ -1,0 +1,9 @@
+---
+configs:
+- config_name: 0.1-dev
+  data_files:
+    - split: validation
+      path: 0.1-dev/validation/*.json
+    - split: test
+      path: 0.1-dev/test/*.json
+---
