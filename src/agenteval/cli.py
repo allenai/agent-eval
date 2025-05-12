@@ -386,8 +386,11 @@ def eval_command(
     full_command = (
         ["inspect", "eval-set"] + list(args) + logd_args + [x.path for x in tasks]
     )
+    # Inject env variable for tasks that use it for parameterization
+    env = os.environ.copy()
+    env["SPLIT"] = split
     click.echo(f"Running {config_path}: {' '.join(full_command)}")
-    proc = subprocess.run(full_command)
+    proc = subprocess.run(full_command, env=env)
 
     if proc.returncode != 0:
         raise click.ClickException(
