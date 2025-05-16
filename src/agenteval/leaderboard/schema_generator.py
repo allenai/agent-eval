@@ -86,7 +86,7 @@ def load_dataset_features(input_path: str | None = None) -> Features:
     if input_path is None:
         # load the shipped dataset_features.yml from the package
         with resources.open_text(
-            "agenteval", "dataset_features.yml", encoding="utf-8"
+            __package__, "dataset_features.yml", encoding="utf-8"
         ) as f:
             yaml_values = yaml.safe_load(f)
     else:

@@ -1,1 +1,1 @@
-include src/agenteval/dataset_features.yml
+include src/agenteval/leaderboard/dataset_features.yml
