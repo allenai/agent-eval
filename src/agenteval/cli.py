@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 import click
+import datasets
 
 from .config import load_suite_config
 from .leaderboard.upload import (
@@ -331,7 +332,98 @@ def publish_command(
     click.echo(f"Updated {EVAL_FILENAME} with publication metadata.")
 
 
-cli.add_command(publish_command)
+@click.group(name="lb", help="Leaderboard related commands")
+def lb():
+    pass
+
+
+def validate_config(ctx, param, value):
+    if value is not None:
+        return value
+    repo_id = ctx.params.get("repo_id")
+    configs = datasets.get_dataset_config_names(repo_id)
+    click.echo(f"Available configs: {configs}")
+    click.echo("Please specify a config via --config")
+    ctx.exit()
+
+
+def validate_split(ctx, param, value):
+    if value is not None:
+        return value
+    repo_id = ctx.params.get("repo_id")
+    config = ctx.params.get("config")
+    splits = datasets.get_dataset_split_names(repo_id, config_name=config)
+    click.echo(f"Available splits: {splits}")
+    click.echo("Please specify a split via --split")
+    ctx.exit()
+
+
+@lb.command(name="view", help="View leaderboard results.")
+@click.option(
+    "--repo-id",
+    envvar="RESULTS_REPO_ID",
+    required=True,
+    help="HuggingFace dataset ID",
+)
+@click.option(
+    "--config",
+    default=None,
+    callback=validate_config,
+    help="Name of the dataset configuration to load",
+)
+@click.option(
+    "--split",
+    default=None,
+    callback=validate_split,
+    help="Dataset split to load",
+)
+@click.option(
+    "--tag",
+    default=None,
+    help="If provided, show detail for this tag instead of overview",
+)
+@click.option(
+    "--dump-plots/--no-plots",
+    default=False,
+    help="Enable saving plots",
+)
+@click.option(
+    "--plot-dir",
+    default="plots",
+    type=click.Path(),
+    show_default=True,
+    help="Base directory for saving plots",
+)
+def view_command(repo_id, config, split, tag, dump_plots, plot_dir):
+    """View a specific config and split; show overview or tag detail."""
+    from .leaderboard.view import LeaderboardViewer
+
+    viewer = LeaderboardViewer(repo_id, config, split)
+
+    df, plots = viewer.view(tag, with_plots=True)
+    click.echo(df.to_string(index=False))
+
+    if dump_plots:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_repo = repo_id.replace("/", "_")
+        base = plot_dir
+        sub = f"{safe_repo}_{config}_{split}"
+        subdir = tag or "overview"
+        outdir = os.path.join(base, sub, f"{subdir}_{ts}")
+        os.makedirs(outdir, exist_ok=True)
+
+        csv_path = os.path.join(outdir, f"{subdir}.csv")
+        df.to_csv(csv_path, index=False)
+        click.echo(f"Saved data: {csv_path}")
+
+        for name, fig in plots.items():
+            path = os.path.join(outdir, f"{name}.png")
+            fig.savefig(path, bbox_inches="tight")
+            click.echo(f"Saved plot: {path}")
+
+
+lb.add_command(publish_command)
+cli.add_command(lb)
 
 
 @cli.command(

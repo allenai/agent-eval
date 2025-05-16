@@ -9,6 +9,8 @@ A utility for evaluating agents on a suite of [Inspect](https://github.com/UKGov
 
 To install from pypi, use `pip install agent-eval`.
 
+For leaderboard extras, use `pip install agent-eval[leaderboard]`.
+
 # Usage
 
 ## Run evaluation suite
@@ -29,13 +31,19 @@ agenteval score [OPTIONS] LOG_DIR
 ```
 Compute scores for the results in `agenteval.json` and update the file with the computed scores.
 
-## Publish scores
+## Publish scores to leaderboard
 ```shell
-agenteval publish [OPTIONS] LOG_DIR
+agenteval lb publish [OPTIONS] LOG_DIR
 ```
 Upload the scored results to HuggingFace datasets.
 
-# Administer the HuggingFace datasets
+## View leaderboard scores
+```shell
+agenteval lb view [OPTIONS]
+```
+View results from the leaderboard.
+
+# Administer the leaderboard
 Prior to publishing scores, two HuggingFace datasets should be set up, one for full submissions and one for results files.
 
 If you want to call `load_dataset()` on the results dataset (e.g., for populating a leaderboard), you probably want to explicitly tell HuggingFace about the schema and dataset structure (otherwise, HuggingFace may fail to propertly auto-convert to Parquet).
@@ -43,7 +51,7 @@ This is done by updating the `configs` attribute in the YAML metadata block at t
 This attribute should contain a list of configs, each of which specifies the schema (under the `features` key) and dataset structure (under the `data_files` key).
 See [sample-config-hf-readme-metadata.yml](sample-config-hf-readme-metadata.yml) for a sample metadata block corresponding to [sample-comfig.yml](sample-config.yml) (note that the metadata references the [raw schema data](src/agenteval/leaderboard/dataset_features.yml), which must be copied).
 
-To facilitate initializing new configs, `agenteval publish` will automatically add this metadata if it is missing.
+To facilitate initializing new configs, `agenteval lb publish` will automatically add this metadata if it is missing.
 
 # Development
 

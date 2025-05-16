@@ -33,6 +33,12 @@ dev = [
   "types-PyYAML",
   "types-setuptools"
 ]
+# Leaderboard view dependencies
+leaderboard = [
+  "seaborn",
+  "matplotlib",
+  "pandas"
+]
 
 [project.scripts]
 agenteval = "agenteval.cli:cli"
