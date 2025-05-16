@@ -4,7 +4,7 @@ Script to regenerate dataset_features.yml from the Pydantic schema.
 """
 from pathlib import Path
 
-from agenteval.schema_generator import write_dataset_features
+from agenteval.leaderboard.schema_generator import write_dataset_features
 
 
 def update_schema():
