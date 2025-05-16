@@ -6,7 +6,7 @@ import yaml
 from huggingface_hub import HfApi
 from huggingface_hub.utils import HfHubHTTPError
 
-from .models import EvalResult
+from ..models import EvalResult
 from .schema_generator import load_dataset_features
 
 logger = logging.getLogger(__name__)

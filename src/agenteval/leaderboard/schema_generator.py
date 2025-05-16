@@ -12,7 +12,7 @@ import yaml
 from datasets import Features
 from pydantic import BaseModel
 
-from .models import EvalResult
+from ..models import EvalResult
 
 
 def _pa_type_for_annotation(anno) -> pa.DataType:

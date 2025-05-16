@@ -9,10 +9,14 @@ import sys
 import click
 
 from .config import load_suite_config
+from .leaderboard.upload import (
+    sanitize_path_component,
+    upload_folder_to_hf,
+    upload_summary_to_hf,
+)
 from .models import EvalConfig, EvalResult
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
-from .upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf
 
 EVAL_FILENAME = "agenteval.json"
 
