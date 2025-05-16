@@ -9,14 +9,16 @@ from agenteval.leaderboard.schema_generator import write_dataset_features
 
 def update_schema():
     repo_root = Path(__file__).parent.parent
-    output_path = repo_root / "src" / "agenteval" / "dataset_features.yml"
+    # write schema under leaderboard subpackage
+    schema_dir = repo_root / "src" / "agenteval" / "leaderboard"
+    output_path = schema_dir / "dataset_features.yml"
     write_dataset_features(str(output_path))
 
 
 def main():
     """Regenerate dataset_features.yml from Pydantic schema"""
     update_schema()
-    print("✅ dataset_features.yml updated at src/agenteval/dataset_features.yml")
+    print("✅ dataset_features.yml updated under src/agenteval/leaderboard")
 
 
 if __name__ == "__main__":

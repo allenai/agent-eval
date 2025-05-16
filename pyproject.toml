@@ -48,4 +48,4 @@ python_files = ["test_*.py"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-"agenteval" = ["dataset_features.yml"]
+"agenteval.leaderboard" = ["dataset_features.yml"]
