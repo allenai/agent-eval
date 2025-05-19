@@ -184,7 +184,7 @@ def score_command(
     click.echo(f"Saved results to {log_dir}/{EVAL_FILENAME}")
     ctx = click.get_current_context()
     click.echo(
-        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} publish {log_dir}' to publish the results"
+        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} publish --agent-name <your-agent-name> --submissions-repo-id <your-submissions-repo-id> --results-repo-id <your-results-repo-id> {log_dir}' to publish the results"
     )
 
 
