@@ -353,12 +353,22 @@ cli.add_command(publish_command)
     is_flag=True,
     help="Ignore git reproducibility checks (not recommended).",
 )
+@click.option(
+    "--display",
+    type=str,
+    # https://github.com/UKGovernmentBEIS/inspect_ai/issues/1891 and
+    # https://github.com/allenai/nora-issues-research/issues/77#issuecomment-2877262319
+    # TODO: remove this once fixed
+    help="Display format. Defaults to plain.",
+    default="plain",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def eval_command(
     log_dir: str | None,
     config_path: str,
     split: str,
     ignore_git: bool,
+    display: str,
     args: tuple[str],
 ):
     """Run inspect eval-set with arguments and append tasks"""
@@ -379,9 +389,7 @@ def eval_command(
             )
             click.echo(f"No log dir was manually set; using {log_dir}")
     logd_args = ["--log-dir", log_dir]
-    # https://github.com/UKGovernmentBEIS/inspect_ai/issues/1891 and
-    # https://github.com/allenai/nora-issues-research/issues/77#issuecomment-2877262319
-    display_args = ["--display", "plain"]
+    display_args = ["--display", display]
 
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
