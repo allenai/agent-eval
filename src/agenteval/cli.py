@@ -379,6 +379,7 @@ def eval_command(
             )
             click.echo(f"No log dir was manually set; using {log_dir}")
     logd_args = ["--log-dir", log_dir]
+    # https://github.com/UKGovernmentBEIS/inspect_ai/issues/1891 and
     # https://github.com/allenai/nora-issues-research/issues/77#issuecomment-2877262319
     display_args = ["--display", "plain"]
 
