@@ -379,12 +379,18 @@ def eval_command(
             )
             click.echo(f"No log dir was manually set; using {log_dir}")
     logd_args = ["--log-dir", log_dir]
+    # https://github.com/allenai/nora-issues-research/issues/77#issuecomment-2877262319
+    display_args = ["--display", "plain"]
 
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
     full_command = (
-        ["inspect", "eval-set"] + list(args) + logd_args + [x.path for x in tasks]
+        ["inspect", "eval-set"]
+        + list(args)
+        + logd_args
+        + display_args
+        + [x.path for x in tasks]
     )
     click.echo(f"Running {config_path}: {' '.join(full_command)}")
     proc = subprocess.run(full_command)
