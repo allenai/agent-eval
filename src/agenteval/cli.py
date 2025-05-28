@@ -3,11 +3,12 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
+from importlib.metadata import requires
 from pathlib import Path
 
 import click
 
-from .config import load_suite_config
+from .config import load_suite_config, SuiteConfig
 from .models import EvalConfig, EvalResult
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
@@ -188,7 +189,41 @@ def score_command(
     )
 
 
+@click.command(
+    name="setup",
+    help="Setup the environment for running evaluation tasks.",
+)
+@click.option(
+    "--config-path",
+    "config_path",
+    type=str,
+    help=f"Path to a yml config file. Ignored if {EVAL_FILENAME} exists.",
+    required=True,
+)
+@click.option(
+    "--split",
+    type=str,
+    help=f"Config data split. Ignored if {EVAL_FILENAME} exists.",
+    required=True,
+)
+def setup_command(config_path: str, split: str):
+    in_docker = os.path.exists('/.dockerenv')
+    in_venv = "VIRTUAL_ENV" in os.environ
+    if not in_docker and not in_venv:
+        raise click.ClickException(
+            "'setup' should be run inside a Docker container or a virtual environment."
+        )
+    config = SuiteConfig.load(config_path)
+    task_set = next((s for s in config.task_sets if s.name == split), None)
+    if not task_set:
+        raise click.ClickException(f"Split '{split}' not found in config {config_path}")
+    if task_set.dependencies:
+        cmd = ["uv","pip","install"] + [f".[{dep}]" for dep in task_set.dependencies]
+        subprocess.check_call(cmd)
+
+
 cli.add_command(score_command)
+cli.add_command(setup_command)
 
 
 @click.command(

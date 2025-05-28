@@ -20,9 +20,11 @@ class Task(BaseModel):
     """List of tags, used for computing summary scores for task groups."""
 
 
-class Split(BaseModel):
+class TaskSet(BaseModel):
     name: str
     """Name of the split."""
+
+    dependencies: list[str] | None = None
 
     tasks: list[Task]
     """List of tasks associated with the split."""
@@ -35,7 +37,7 @@ class SuiteConfig(BaseModel):
     version: str | None = None
     """Version of the suite, e.g. '1.0.0.dev1'."""
 
-    splits: list[Split]
+    task_sets: list[TaskSet]
     """List of splits in the suite."""
 
     def get_tasks(self, split_name: str) -> list[Task]:
@@ -51,14 +53,27 @@ class SuiteConfig(BaseModel):
         Raises:
             ValueError: If the split is not found
         """
-        for split in self.splits:
+        for split in self.task_sets:
             if split.name == split_name:
                 return split.tasks
 
-        available_splits = ", ".join(split.name for split in self.splits)
+        available_splits = ", ".join(split.name for split in self.task_sets)
         raise ValueError(
             f"Split '{split_name}' not found. Available splits: {available_splits}"
         )
+
+    @staticmethod
+    def load(file_path: str) -> "SuiteConfig":
+        """
+        Load the suite configuration from the specified YAML file.
+
+        Args:
+            file_path: Path to the YAML file containing the suite/tasks configuration
+
+        Returns:
+            A validated SuiteConfig object
+        """
+        return load_suite_config(file_path)
 
 
 def load_suite_config(file_path: str) -> SuiteConfig:
