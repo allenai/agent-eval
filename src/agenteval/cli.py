@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import sys
+sys.path = list(dict.fromkeys(sys.path))  # Preserves order, removes dupes
 import json
 import os
+import sys
 import subprocess
 from datetime import datetime, timezone
 from importlib.metadata import requires
@@ -8,18 +11,26 @@ from pathlib import Path
 
 import click
 
-from .config import load_suite_config, SuiteConfig
-from .models import EvalConfig, EvalResult
-from .score import process_eval_logs
-from .summary import compute_summary_statistics
-from .upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf
+from agenteval.config import load_suite_config, SuiteConfig
+from agenteval.models import EvalConfig, EvalResult
+from agenteval.score import process_eval_logs
+from agenteval.summary import compute_summary_statistics
+from agenteval.upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf
 
 EVAL_FILENAME = "agenteval.json"
+SUITE_CONFIG_PATH_KEY = "suite_config_path"
+SUITE_KEY = "suite"
 
 
-def verify_git_reproducibility(ignore_git: bool) -> None:
-    if ignore_git:
-        return
+def assert_in_venv():
+    in_docker = os.path.exists('/.dockerenv')
+    in_venv = "VIRTUAL_ENV" in os.environ
+    if not in_docker and not in_venv:
+        raise click.ClickException(
+            "Must run inside a Docker container or a virtual environment."
+        )
+
+def verify_git_reproducibility() -> None:
     try:
         # Get current commit SHA and origin
         sha_result = subprocess.run(
@@ -97,7 +108,7 @@ def cli():
     pass
 
 
-@click.command(
+@cli.command(
     name="score",
     help="Score a directory of evaluation logs.",
 )
@@ -189,44 +200,8 @@ def score_command(
     )
 
 
-@click.command(
-    name="setup",
-    help="Setup the environment for running evaluation tasks.",
-)
-@click.option(
-    "--config-path",
-    "config_path",
-    type=str,
-    help=f"Path to a yml config file. Ignored if {EVAL_FILENAME} exists.",
-    required=True,
-)
-@click.option(
-    "--split",
-    type=str,
-    help=f"Config data split. Ignored if {EVAL_FILENAME} exists.",
-    required=True,
-)
-def setup_command(config_path: str, split: str):
-    in_docker = os.path.exists('/.dockerenv')
-    in_venv = "VIRTUAL_ENV" in os.environ
-    if not in_docker and not in_venv:
-        raise click.ClickException(
-            "'setup' should be run inside a Docker container or a virtual environment."
-        )
-    config = SuiteConfig.load(config_path)
-    task_set = next((s for s in config.task_sets if s.name == split), None)
-    if not task_set:
-        raise click.ClickException(f"Split '{split}' not found in config {config_path}")
-    if task_set.dependencies:
-        cmd = ["uv","pip","install"] + [f".[{dep}]" for dep in task_set.dependencies]
-        subprocess.check_call(cmd)
 
-
-cli.add_command(score_command)
-cli.add_command(setup_command)
-
-
-@click.command(
+@cli.command(
     name="publish",
     help="Publish scored results in log_dir to Hugging Face leaderboard.",
 )
@@ -356,37 +331,35 @@ def publish_command(
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
     click.echo(f"Updated {EVAL_FILENAME} with publication metadata.")
 
+@cli.group(
+    name="suite",
+    help="Set up environment and run an evaluation suite",
+)
+@click.option(
+    "--config",
+    "config",
+    type=str,
+    help=f"Path to a yml config file defining the suite",
+    required=True,
+)
+@click.pass_context
+def suite_cmd(ctx, config):
+    suite = SuiteConfig.load(config)
+    ctx.ensure_object(dict)
+    ctx.obj[SUITE_KEY] = suite
+    ctx.obj[SUITE_CONFIG_PATH_KEY] = config
 
-cli.add_command(publish_command)
 
 
-@cli.command(
-    name="eval",
+@suite_cmd.command(
+    name="run",
     help="Run inspect eval-set on specified tasks with the given arguments",
     context_settings={"ignore_unknown_options": True},
 )
 @click.option(
-    "--log-dir",
-    type=str,
-    help="Log directory. Defaults to INSPECT_LOG_DIR or auto-generated under ./logs.",
-)
-@click.option(
-    "--config-path",
-    "config_path",
-    type=str,
-    help="Path to a yml config file.",
-    required=True,
-)
-@click.option(
-    "--split",
-    type=str,
-    help="Config data split.",
-    required=True,
-)
-@click.option(
-    "--ignore-git",
+    "--git-check",
     is_flag=True,
-    help="Ignore git reproducibility checks (not recommended).",
+    help="Fail if git is not in a reproducible state",
 )
 @click.option(
     "--display",
@@ -397,66 +370,95 @@ cli.add_command(publish_command)
     help="Display format. Defaults to plain.",
     default="plain",
 )
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
 def eval_command(
-    log_dir: str | None,
-    config_path: str,
-    split: str,
-    ignore_git: bool,
+    ctx,
+    git_check: bool,
     display: str,
-    args: tuple[str],
 ):
     """Run inspect eval-set with arguments and append tasks"""
-    suite_config = load_suite_config(config_path)
-    tasks = suite_config.get_tasks(split)
+    suite: SuiteConfig = ctx.obj[SUITE_KEY]
+    tasks = suite.tasks
 
     # Verify git status for reproducibility
-    verify_git_reproducibility(ignore_git)
+    if git_check:
+        verify_git_reproducibility()
 
-    if not log_dir:
-        log_dir = os.environ.get("INSPECT_LOG_DIR")
-        if not log_dir:
-            timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-            log_dir = os.path.join(
-                ".",
-                "logs",
-                f"{suite_config.name}_{suite_config.version}_{split}_{timestamp}",
-            )
-            click.echo(f"No log dir was manually set; using {log_dir}")
+    log_dir = os.path.join(".", "logs", suite.output)
     logd_args = ["--log-dir", log_dir]
+    solver_args = ["--solver", suite.solver.path]
+    model_args = ["--model", suite.model] if suite.model else []
     display_args = ["--display", display]
+    task_args = [t.path for t in tasks]
 
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
     full_command = (
         ["inspect", "eval-set"]
-        + list(args)
+        + solver_args
+        + model_args
         + logd_args
         + display_args
-        + [x.path for x in tasks]
+        + task_args
     )
-    click.echo(f"Running {config_path}: {' '.join(full_command)}")
-    proc = subprocess.run(full_command)
+    config_path = ctx.obj[SUITE_CONFIG_PATH_KEY]
+    click.echo(f"Running suite {suite.name} from {config_path}")
+    click.echo(f"Command: {' '.join(full_command)}")
+    
+    proc = subprocess.run(full_command, stderr = subprocess.PIPE, text=True)
 
     if proc.returncode != 0:
+        click.echo(f"Command failed with return code {proc.returncode}")
+        click.echo(proc.stderr)
+        sys.exit(proc.returncode)
+
         raise click.ClickException(
             f"inspect eval-set failed while running {config_path}"
         )
 
     # Write the config portion of the results file
-    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
-        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
-        f.write(unscored_eval_config.model_dump_json(indent=2))
+    # with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
+    #     unscored_eval_config = EvalConfig(suite_config=suite, split=split)
+    #     f.write(unscored_eval_config.model_dump_json(indent=2))
 
-    ctx = click.get_current_context()
     click.echo(
         f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} score {log_dir}' to score the results"
     )
 
+@suite_cmd.command(
+    name="setup",
+    help="Set up the environment for a specific suite",
+)
+@click.pass_context
+def setup_command(ctx):
+    assert_in_venv()
+    suite = ctx.obj[SUITE_KEY]
+    extras = [d for t in suite.tasks for d in t.extras or []]
+    extras += suite.solver.extras or []
+    if extras:
+        cmd = ["uv","pip","install"] + [f".[{dep}]" for dep in extras]
+        click.echo(f"Running: {' '.join(cmd)}")
+        subprocess.check_call(cmd)
 
-cli.add_command(eval_command)
+@cli.command(
+    name="reset",
+    help="Reset the environment to the core set of dependencies",
+)
+def reset_command():
+    assert_in_venv()
+    # Reset to core dependencies
+    cmd = ["uv", "sync"]
+    subprocess.check_call(cmd)
+
+
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+    print(f"Working directory: {os.getcwd()}")
+    print(f"Python path: {sys.path}")
+    print(f"PYTHONPATH env: {os.environ.get('PYTHONPATH', 'Not set')}")
+
     cli()

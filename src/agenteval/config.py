@@ -13,6 +13,9 @@ class Task(BaseModel):
     path: str
     """Path to the task definition (used by Inspect)."""
 
+    extras: list[str] | None = None
+    """Extra dependencies required to run the task. Should """
+
     primary_metric: str
     """Primary metric for the task, used for summary scores."""
 
@@ -24,43 +27,32 @@ class TaskSet(BaseModel):
     name: str
     """Name of the split."""
 
-    dependencies: list[str] | None = None
+    extras: list[str] | None = None
 
     tasks: list[Task]
     """List of tasks associated with the split."""
 
 
+class Solver(BaseModel):
+    path: str
+    args: list[str] | None = None
+    extras: list[str] | None = None
+
 class SuiteConfig(BaseModel):
     name: str
     """Name of the suite."""
 
-    version: str | None = None
-    """Version of the suite, e.g. '1.0.0.dev1'."""
+    model: str | None
+    """Name of model exposed by Inspect AI."""
 
-    task_sets: list[TaskSet]
-    """List of splits in the suite."""
+    tasks: list[Task]
+    """Tasks to run"""
 
-    def get_tasks(self, split_name: str) -> list[Task]:
-        """
-        Get the tasks for a specific split.
+    solver: Solver
+    """Solver to run the tasks."""
 
-        Args:
-            split_name: Name of the split to retrieve tasks from
-
-        Returns:
-            List of Task objects for the specified split
-
-        Raises:
-            ValueError: If the split is not found
-        """
-        for split in self.task_sets:
-            if split.name == split_name:
-                return split.tasks
-
-        available_splits = ", ".join(split.name for split in self.task_sets)
-        raise ValueError(
-            f"Split '{split_name}' not found. Available splits: {available_splits}"
-        )
+    output: str
+    """Log directory for output"""
 
     @staticmethod
     def load(file_path: str) -> "SuiteConfig":
