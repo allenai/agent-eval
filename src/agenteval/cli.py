@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-sys.path = list(dict.fromkeys(sys.path))  # Preserves order, removes dupes
 import json
 import os
 import sys
