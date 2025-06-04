@@ -391,6 +391,11 @@ def eval_command(
     logd_args = ["--log-dir", log_dir]
     display_args = ["--display", display]
 
+    # Write the config portion of the results file
+    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
+        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
+        f.write(unscored_eval_config.model_dump_json(indent=2))
+
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
@@ -408,11 +413,6 @@ def eval_command(
         raise click.ClickException(
             f"inspect eval-set failed while running {config_path}"
         )
-
-    # Write the config portion of the results file
-    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
-        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
-        f.write(unscored_eval_config.model_dump_json(indent=2))
 
     ctx = click.get_current_context()
     click.echo(
