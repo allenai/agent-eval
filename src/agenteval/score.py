@@ -53,7 +53,7 @@ class TaskResult(BaseModel):
     model_usages: list[list[ModelUsageWithName]] | None = None
     """List of model usage lists per sample."""
 
-    model_costs: list[float] | None = None
+    model_costs: list[float | None] | None = None
     """List of model costs per sample."""
 
 

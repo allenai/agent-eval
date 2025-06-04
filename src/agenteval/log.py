@@ -50,7 +50,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
             )
             total_cost += prompt_cost + completion_cost
         except Exception as e:
-            total_cost = float("nan")
+            total_cost = None
             logger.warning(
                 f"Problem calculating cost for model {model_usage.model}: {e}"
             )
