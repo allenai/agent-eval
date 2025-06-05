@@ -1,5 +1,6 @@
 """Scoring utilities for the NoraBench suite."""
 
+import logging
 from typing import Any
 
 from inspect_ai.log import (
@@ -12,6 +13,8 @@ from inspect_ai.log import (
 from pydantic import BaseModel, Field
 
 from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
+
+logger = logging.getLogger(__name__)
 
 
 class Metric(BaseModel):
@@ -133,20 +136,24 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec]]:
 
     results = []
     for task_name, log in logs.items():
-        metrics = get_metrics(log)
-        if len(metrics) == 0:
-            raise ValueError(f"No metrics found for task {task_name}.")
-        model_usages = get_model_usages(log)
-        model_costs = [compute_model_cost(usages) for usages in model_usages]
-        has_model_usages = any(len(usages) > 0 for usages in model_usages)
-        results.append(
-            TaskResult(
-                task_name=task_name,
-                metrics=metrics,
-                # Set to None to avoid incorrect pyarrow model usage type inference
-                model_usages=model_usages if has_model_usages else None,
-                model_costs=model_costs if has_model_usages else None,
+        try:
+            metrics = get_metrics(log)
+            if len(metrics) == 0:
+                raise ValueError(f"No metrics found for task {task_name}.")
+            model_usages = get_model_usages(log)
+            model_costs = [compute_model_cost(usages) for usages in model_usages]
+            has_model_usages = any(len(usages) > 0 for usages in model_usages)
+            results.append(
+                TaskResult(
+                    task_name=task_name,
+                    metrics=metrics,
+                    # Set to None to avoid incorrect pyarrow model usage type inference
+                    model_usages=model_usages if has_model_usages else None,
+                    model_costs=model_costs if has_model_usages else None,
+                )
             )
-        )
+        except ValueError as error:
+            logger.warning(f"No metrics for {task_name}: {error}")
+
 
     return results, eval_specs
