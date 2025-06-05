@@ -392,6 +392,7 @@ def eval_command(
     display_args = ["--display", display]
 
     # Write the config portion of the results file
+    os.makedirs(log_dir, exist_ok=True)
     with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
         unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
         f.write(unscored_eval_config.model_dump_json(indent=2))
