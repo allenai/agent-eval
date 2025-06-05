@@ -4,6 +4,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 import click
 
@@ -153,7 +154,7 @@ def score_command(
         suite_cfg = load_suite_config(config_path)
         eval_result = EvalResult(suite_config=suite_cfg, split=split)
 
-    task_results, eval_specs = process_eval_logs(log_dir)
+    task_results, eval_specs, had_errors = process_eval_logs(log_dir)
     eval_result.eval_specs = eval_specs
     eval_result.results = task_results
 
@@ -177,6 +178,10 @@ def score_command(
     )
     click.echo("Summary statistics:")
     click.echo(json.dumps({k: v.model_dump() for k, v in stats.items()}, indent=2))
+
+    if had_errors:
+        click.echo("Error: Errors occurred while computing some metrics. No scores will be written to `agenteval.json`")
+        sys.exit(1)
 
     # Persist updated EvalResult JSON
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)

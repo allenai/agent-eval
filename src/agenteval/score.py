@@ -98,7 +98,7 @@ def get_normalized_task_name(log: EvalLog) -> str:
     return log.eval.task.split("/")[-1]
 
 
-def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec]]:
+def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], bool]:
     """
     Process evaluation logs from a directory and return task results and eval specs.
 
@@ -110,6 +110,7 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec]]:
     """
     # Read evaluation logs
     logs = {}
+    had_errors = False
     for loginfo in list_eval_logs(log_dir):
         log = read_eval_log(loginfo.name, header_only=True)
         task_name = get_normalized_task_name(log)
@@ -153,7 +154,7 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec]]:
                 )
             )
         except ValueError as error:
+            had_errors = True
             logger.exception(f"No metrics for {task_name}:")
-
-
-    return results, eval_specs
+            
+    return results, eval_specs, had_errors
