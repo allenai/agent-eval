@@ -4,6 +4,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
 import click
 
@@ -153,7 +154,7 @@ def score_command(
         suite_cfg = load_suite_config(config_path)
         eval_result = EvalResult(suite_config=suite_cfg, split=split)
 
-    task_results, eval_specs = process_eval_logs(log_dir)
+    task_results, eval_specs, had_errors = process_eval_logs(log_dir)
     eval_result.eval_specs = eval_specs
     eval_result.results = task_results
 
@@ -177,6 +178,10 @@ def score_command(
     )
     click.echo("Summary statistics:")
     click.echo(json.dumps({k: v.model_dump() for k, v in stats.items()}, indent=2))
+
+    if had_errors:
+        click.echo("Error: Errors occurred while computing some metrics. No scores will be written to `agenteval.json`")
+        sys.exit(1)
 
     # Persist updated EvalResult JSON
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
@@ -391,6 +396,12 @@ def eval_command(
     logd_args = ["--log-dir", log_dir]
     display_args = ["--display", display]
 
+    # Write the config portion of the results file
+    os.makedirs(log_dir, exist_ok=True)
+    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
+        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
+        f.write(unscored_eval_config.model_dump_json(indent=2))
+
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
@@ -408,11 +419,6 @@ def eval_command(
         raise click.ClickException(
             f"inspect eval-set failed while running {config_path}"
         )
-
-    # Write the config portion of the results file
-    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
-        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
-        f.write(unscored_eval_config.model_dump_json(indent=2))
 
     ctx = click.get_current_context()
     click.echo(
