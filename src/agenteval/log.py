@@ -47,6 +47,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 prompt_tokens=model_usage.usage.input_tokens,
                 completion_tokens=model_usage.usage.output_tokens,
                 cache_read_input_tokens=model_usage.usage.input_tokens_cache_read,
+                cache_creation_input_tokens=model_usage.usage.input_tokens_cache_write,
             )
             total_cost += prompt_cost + completion_cost
         except Exception as e:
