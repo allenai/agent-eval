@@ -33,6 +33,12 @@ dev = [
   "types-PyYAML",
   "types-setuptools"
 ]
+# Leaderboard view dependencies
+leaderboard = [
+  "seaborn",
+  "matplotlib",
+  "pandas"
+]
 
 [project.scripts]
 agenteval = "agenteval.cli:cli"
@@ -48,4 +54,4 @@ python_files = ["test_*.py"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-"agenteval" = ["dataset_features.yml"]
+"agenteval.leaderboard" = ["dataset_features.yml"]
