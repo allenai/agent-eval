@@ -106,8 +106,28 @@ def verify_git_reproducibility() -> None:
 def cli():
     pass
 
+@cli.group(
+    name="suite",
+    help="Set up environment and run an evaluation suite",
+)
+@click.option(
+    "--config",
+    "config",
+    type=str,
+    help=f"Path to a yml config file defining the suite",
+    required=True,
+)
+@click.pass_context
+def suite_cmd(ctx, config):
+    suite = SuiteConfig.load(config)
+    ctx.ensure_object(dict)
+    ctx.obj[SUITE_KEY] = suite
+    ctx.obj[SUITE_CONFIG_PATH_KEY] = config
 
-@cli.command(
+
+
+
+@suite_cmd.command(
     name="score",
     help="Score a directory of evaluation logs.",
 )
@@ -197,7 +217,6 @@ def score_command(
     click.echo(
         f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} publish --agent-name <your-agent-name> --submissions-repo-id <your-submissions-repo-id> --results-repo-id <your-results-repo-id> {log_dir}' to publish the results"
     )
-
 
 
 @cli.command(
@@ -329,24 +348,6 @@ def publish_command(
     # Save updated JSON
     eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
     click.echo(f"Updated {EVAL_FILENAME} with publication metadata.")
-
-@cli.group(
-    name="suite",
-    help="Set up environment and run an evaluation suite",
-)
-@click.option(
-    "--config",
-    "config",
-    type=str,
-    help=f"Path to a yml config file defining the suite",
-    required=True,
-)
-@click.pass_context
-def suite_cmd(ctx, config):
-    suite = SuiteConfig.load(config)
-    ctx.ensure_object(dict)
-    ctx.obj[SUITE_KEY] = suite
-    ctx.obj[SUITE_CONFIG_PATH_KEY] = config
 
 
 
