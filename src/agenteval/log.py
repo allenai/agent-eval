@@ -45,8 +45,8 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
         input_tokens = model_usage.usage.input_tokens
         output_tokens = model_usage.usage.output_tokens
         
-        cache_read_input_tokens = model_usage.usage.input_tokens_cache_read
-        cache_write_input_tokens = model_usage.usage.input_tokens_cache_write
+        cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
+        cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
         
 
         try:
