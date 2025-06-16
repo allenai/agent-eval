@@ -16,12 +16,11 @@ class SummaryStat(BaseModel):
 
 
 def _safe_mean(xs: Sequence[float | None]) -> float | None:
-    """Compute the mean of a list of numbers, returning None if any Nones."""
-    vals = [x for x in xs if x is not None]
-    if vals and len(vals) == len(xs):
-        return mean(vals)
-    else:
+    """Compute the mean of a list of numbers, treating None as 0."""
+    if not xs:
         return None
+    vals = [x if x is not None else 0.0 for x in xs]
+    return mean(vals)
 
 
 def _safe_stderr(xs: Sequence[float | None]) -> float | None:
