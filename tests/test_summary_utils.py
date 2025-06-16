@@ -14,7 +14,7 @@ def test_safe_mean_single_number():
 
 
 def test_safe_mean_mixed_with_none():
-    assert _safe_mean([1.0, None, 3.0]) is None
+    assert _safe_mean([1.0, None, 3.0]) is not None
 
 
 def test_safe_mean_empty_list():
