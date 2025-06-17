@@ -15,7 +15,7 @@ class SummaryStat(BaseModel):
     cost_stderr: float | None
 
 
-def _safe_mean(xs: Sequence[float | None], is_score=False) -> float | None:
+def _safe_mean(xs: Sequence[float | None], is_score: bool = False) -> float | None:
     """Compute the mean of a list of numbers, treating None as 0 for only scores, returning None if cost."""
     if not xs:
         return None
