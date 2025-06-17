@@ -93,7 +93,7 @@ def compute_summary_statistics(
         ]
         tag_costs = [tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])]
         tags_summary[tag] = SummaryStat(
-            score=_safe_mean(tag_scores,is_score=True),
+            score=_safe_mean(tag_scores, is_score=True),
             score_stderr=None,
             cost=_safe_mean(tag_costs),
             cost_stderr=None,
