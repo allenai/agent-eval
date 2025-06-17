@@ -13,7 +13,10 @@ def test_safe_mean_single_number():
     assert _safe_mean([5.0]) == pytest.approx(5.0)
 
 
-def test_safe_mean_mixed_with_none():
+def test_safe_mean_mixed_with_none_score():
+    assert _safe_mean([1.0, None, 2.0], is_score=True) == 1.0
+
+def test_safe_mean_mixed_with_none_cost():
     assert _safe_mean([1.0, None, 3.0]) is None
 
 

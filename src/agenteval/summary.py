@@ -15,13 +15,15 @@ class SummaryStat(BaseModel):
     cost_stderr: float | None
 
 
-def _safe_mean(xs: Sequence[float | None]) -> float | None:
-    """Compute the mean of a list of numbers, returning None if any Nones."""
-    vals = [x for x in xs if x is not None]
-    if vals and len(vals) == len(xs):
-        return mean(vals)
-    else:
+def _safe_mean(xs: Sequence[float | None], is_score: bool = False) -> float | None:
+    """Compute the mean of a list of numbers, treating None as 0 for only scores, returning None if cost."""
+    if not xs:
         return None
+    if is_score:
+        vals = [x if x is not None else 0.0 for x in xs]
+        return mean(vals)
+    vals = [x for x in xs if x is not None]
+    return mean(vals) if vals and len(vals) == len(xs) else None
 
 
 def _safe_stderr(xs: Sequence[float | None]) -> float | None:
@@ -91,7 +93,7 @@ def compute_summary_statistics(
         ]
         tag_costs = [tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])]
         tags_summary[tag] = SummaryStat(
-            score=_safe_mean(tag_scores),
+            score=_safe_mean(tag_scores, is_score=True),
             score_stderr=None,
             cost=_safe_mean(tag_costs),
             cost_stderr=None,
@@ -101,7 +103,7 @@ def compute_summary_statistics(
     all_scores = [s.score for s in tasks_summary.values()]
     all_costs = [s.cost for s in tasks_summary.values()]
     overall = SummaryStat(
-        score=_safe_mean(all_scores),
+        score=_safe_mean(all_scores, is_score=True),
         score_stderr=None,
         cost=_safe_mean(all_costs),
         cost_stderr=None,
