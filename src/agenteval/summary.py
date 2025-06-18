@@ -15,15 +15,40 @@ class SummaryStat(BaseModel):
     cost_stderr: float | None
 
 
-def _safe_mean(xs: Sequence[float | None], is_score: bool = False) -> float | None:
-    """Compute the mean of a list of numbers, treating None as 0 for only scores, returning None if cost."""
+def _mean(
+    vals: Sequence[float], weights: Sequence[float] | None = None
+) -> float | None:
+    """Compute mean, optionally weighted."""
+    if weights is None:
+        return mean(vals)
+
+    if len(vals) != len(weights):
+        raise ValueError(
+            f"Length mismatch: values ({len(vals)}) and weights "
+            f"({len(weights)}) must have the same length"
+        )
+
+    total_weight = sum(weights)
+    if total_weight == 0:
+        raise ValueError("Total weight is zero, cannot compute weighted mean")
+
+    weighted_sum = sum(v * w for v, w in zip(vals, weights))
+    return weighted_sum / total_weight
+
+
+def _safe_mean(
+    xs: Sequence[float | None],
+    is_score: bool = False,
+    weights: Sequence[float] | None = None,
+) -> float | None:
+    """Compute mean, treating None as 0 for scores, otherwise returning None if any Nones."""
     if not xs:
         return None
     if is_score:
         vals = [x if x is not None else 0.0 for x in xs]
-        return mean(vals)
+        return _mean(vals, weights)
     vals = [x for x in xs if x is not None]
-    return mean(vals) if vals and len(vals) == len(xs) else None
+    return _mean(vals, weights) if vals and len(vals) == len(xs) else None
 
 
 def _safe_stderr(xs: Sequence[float | None]) -> float | None:
@@ -84,18 +109,31 @@ def compute_summary_statistics(
             cost_stderr=cost_stderr,
         )
 
-    # per-tag summary
-    all_tags = {t for task in tasks for t in (task.tags or [])}
+    # per-tag summary with weighted averaging
+    split_obj = suite_config.get_split(split)
+    tag_to_tasks: dict[str, list] = {}
+    for task in tasks:
+        for tag in task.tags or []:
+            tag_to_tasks.setdefault(tag, []).append(task)
+
     tags_summary: dict[str, SummaryStat] = {}
-    for tag in all_tags:
-        tag_scores = [
-            tasks_summary[t.name].score for t in tasks if tag in (t.tags or [])
-        ]
-        tag_costs = [tasks_summary[t.name].cost for t in tasks if tag in (t.tags or [])]
-        tags_summary[tag] = SummaryStat(
-            score=_safe_mean(tag_scores, is_score=True),
+    for tag_name, tagged_tasks in tag_to_tasks.items():
+        tag_scores = []
+        tag_costs = []
+        weights = []
+
+        for task in tagged_tasks:
+            task_weight = split_obj.get_macro_average_weight(tag_name, task.name)
+            task_summary = tasks_summary[task.name]
+
+            tag_scores.append(task_summary.score)
+            tag_costs.append(task_summary.cost)
+            weights.append(task_weight)
+
+        tags_summary[tag_name] = SummaryStat(
+            score=_safe_mean(tag_scores, is_score=True, weights=weights),
             score_stderr=None,
-            cost=_safe_mean(tag_costs),
+            cost=_safe_mean(tag_costs, weights=weights),
             cost_stderr=None,
         )
 
