@@ -1,8 +1,8 @@
-from collections import defaultdict
 import logging
 import re
-from typing import Dict
+from collections import defaultdict
 from io import BytesIO
+from typing import Dict
 
 import yaml
 from huggingface_hub import HfApi
@@ -179,6 +179,7 @@ def upload_summary_to_hf(
     )
     return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}.json"
 
+
 def compress_model_usages(eval_result: EvalResult):
     """
     Reduce the size of model usages by compressing to aggregate token
@@ -186,7 +187,7 @@ def compress_model_usages(eval_result: EvalResult):
     """
     if not eval_result.results:
         return eval_result
-    
+
     compressed_results = []
     for task_result in eval_result.results:
         # Create a new TaskResult with compressed model_usages
@@ -194,48 +195,34 @@ def compress_model_usages(eval_result: EvalResult):
             task_name=task_result.task_name,
             metrics=task_result.metrics,
             model_costs=task_result.model_costs,
-            model_usages=None if task_result.model_usages is None else []
+            model_usages=None if task_result.model_usages is None else [],
         )
-        
+
         if task_result.model_usages:
             for problem_usages in task_result.model_usages:
                 compressed_problem_usages = compress_usages_by_problem(problem_usages)
                 compressed_task_result.model_usages.append(compressed_problem_usages)
-        
+
         compressed_results.append(compressed_task_result)
-    
+
     # Create new EvalResult with compressed results
     compressed_eval_result = EvalResult(
-        **eval_result.model_dump(exclude={'results'}),
-        results=compressed_results
+        **eval_result.model_dump(exclude={"results"}), results=compressed_results
     )
-    
+
     return compressed_eval_result
 
 def compress_usages_by_problem(usages_by_problem: list[ModelUsageWithName]):
     """
     Compress a list of ModelUsageWithName objects by aggregating usage for the same model.
     """
-    model_usage_map: Dict[str, ModelUsage] = defaultdict(lambda: ModelUsage())
-    
-    def add_optional(existing: int | None, new: int | None) -> int | None:
-        if existing is None and new is None:
-            return None
-        return (existing or 0) + (new or 0)
+    model_usage_map: dict[str, ModelUsage] = defaultdict(lambda: ModelUsage())
 
     for usage_with_name in usages_by_problem:
         model_name = usage_with_name.model
-        existing = model_usage_map[model_name]
-        usage = usage_with_name.usage
-        
-        existing.input_tokens += usage.input_tokens
-        existing.output_tokens += usage.output_tokens
-        existing.total_tokens += usage.total_tokens
-        existing.input_tokens_cache_write = add_optional(existing.input_tokens_cache_write, usage.input_tokens_cache_write)
-        existing.input_tokens_cache_read = add_optional(existing.input_tokens_cache_read, usage.input_tokens_cache_read)
-        existing.reasoning_tokens = add_optional(existing.reasoning_tokens, usage.reasoning_tokens)
-            
+        model_usage_map[model_name] += usage_with_name.usage
+
     return [
         ModelUsageWithName(model=model_name, usage=usage)
         for model_name, usage in model_usage_map.items()
-    ] 
+    ]
