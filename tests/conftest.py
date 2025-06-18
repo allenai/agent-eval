@@ -1,5 +1,4 @@
 import pytest
-
 from inspect_ai.model import ModelUsage
 
 from agenteval.log import ModelUsageWithName
@@ -14,16 +13,17 @@ def sample_model_costs():
             "output_tokens": 0.00006,
             "input_tokens_cache_write": 0.000075,
             "input_tokens_cache_read": 0.000015,
-            "reasoning_tokens": 0.00012
+            "reasoning_tokens": 0.00012,
         },
         "claude-sonnet-4-20250514": {
             "input_tokens": 0.000015,
             "output_tokens": 0.000075,
             "input_tokens_cache_write": 0.0000375,
             "input_tokens_cache_read": 0.0000075,
-            "reasoning_tokens": 0.00015
-        }
+            "reasoning_tokens": 0.00015,
+        },
     }
+
 
 @pytest.fixture
 def sample_model_usages() -> list[list[ModelUsageWithName]]:
@@ -37,19 +37,19 @@ def sample_model_usages() -> list[list[ModelUsageWithName]]:
                 total_tokens=18994,
                 input_tokens_cache_write=4388,
                 input_tokens_cache_read=14495,
-                reasoning_tokens=None
-            )
+                reasoning_tokens=None,
+            ),
         ),
         ModelUsageWithName(
-            model="claude-sonnet-4-20250514",  
+            model="claude-sonnet-4-20250514",
             usage=ModelUsage(
                 input_tokens=7,
                 output_tokens=95,
                 total_tokens=24357,
                 input_tokens_cache_write=5372,
                 input_tokens_cache_read=18883,
-                reasoning_tokens=None
-            )
+                reasoning_tokens=None,
+            ),
         ),
         ModelUsageWithName(
             model="o3-2025-04-16",
@@ -57,10 +57,10 @@ def sample_model_usages() -> list[list[ModelUsageWithName]]:
                 input_tokens=613,
                 output_tokens=307,
                 total_tokens=920,
-                input_tokens_cache_write=None, 
+                input_tokens_cache_write=None,
                 input_tokens_cache_read=0,
-                reasoning_tokens=256
-            )
+                reasoning_tokens=256,
+            ),
         ),
         ModelUsageWithName(
             model="o3-2025-04-16",
@@ -68,13 +68,13 @@ def sample_model_usages() -> list[list[ModelUsageWithName]]:
                 input_tokens=970,
                 output_tokens=408,
                 total_tokens=1378,
-                input_tokens_cache_write=None, 
+                input_tokens_cache_write=None,
                 input_tokens_cache_read=890,
-                reasoning_tokens=0
-            )
-        )
+                reasoning_tokens=0,
+            ),
+        ),
     ]
-    
+
     problem2_usages = [
         ModelUsageWithName(
             model="o3-2025-04-16",
@@ -83,9 +83,9 @@ def sample_model_usages() -> list[list[ModelUsageWithName]]:
                 output_tokens=427,
                 total_tokens=969,
                 input_tokens_cache_write=None,
-                input_tokens_cache_read=0,  
-                reasoning_tokens=384
-            )
+                input_tokens_cache_read=0,
+                reasoning_tokens=384,
+            ),
         ),
         ModelUsageWithName(
             model="o3-2025-04-16",
@@ -95,22 +95,20 @@ def sample_model_usages() -> list[list[ModelUsageWithName]]:
                 total_tokens=1069,
                 input_tokens_cache_write=None,
                 input_tokens_cache_read=890,
-                reasoning_tokens=0
-            )
+                reasoning_tokens=0,
+            ),
         ),
         ModelUsageWithName(
-            model="claude-sonnet-4-20250514",  
+            model="claude-sonnet-4-20250514",
             usage=ModelUsage(
                 input_tokens=7,
                 output_tokens=90,
                 total_tokens=15362,
                 input_tokens_cache_write=5484,
                 input_tokens_cache_read=9781,
-                reasoning_tokens=None
-            )
-        )
+                reasoning_tokens=None,
+            ),
+        ),
     ]
-    
-    
+
     return [problem1_usages, problem2_usages]
-    

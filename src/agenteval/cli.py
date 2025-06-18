@@ -2,9 +2,9 @@
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import sys
 
 import click
 
@@ -12,7 +12,12 @@ from .config import load_suite_config
 from .models import EvalConfig, EvalResult
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
-from .upload import sanitize_path_component, upload_folder_to_hf, upload_summary_to_hf, compress_model_usages
+from .upload import (
+    compress_model_usages,
+    sanitize_path_component,
+    upload_folder_to_hf,
+    upload_summary_to_hf,
+)
 
 EVAL_FILENAME = "agenteval.json"
 
@@ -180,7 +185,9 @@ def score_command(
     click.echo(json.dumps({k: v.model_dump() for k, v in stats.items()}, indent=2))
 
     if had_errors:
-        click.echo("Error: Errors occurred while computing some metrics. No scores will be written to `agenteval.json`")
+        click.echo(
+            "Error: Errors occurred while computing some metrics. No scores will be written to `agenteval.json`"
+        )
         sys.exit(1)
 
     # Persist updated EvalResult JSON
@@ -319,7 +326,12 @@ def publish_command(
     compressed_usages_result = compress_model_usages(eval_result)
 
     summary_url = upload_summary_to_hf(
-        hf_api, compressed_usages_result, results_repo_id, config_name, eval_result.split, subm_name
+        hf_api,
+        compressed_usages_result,
+        results_repo_id,
+        config_name,
+        eval_result.split,
+        subm_name,
     )
     click.echo(f"Uploaded results summary file to {summary_url}")
     eval_result.submission.summary_url = summary_url

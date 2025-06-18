@@ -212,6 +212,7 @@ def compress_model_usages(eval_result: EvalResult):
 
     return compressed_eval_result
 
+
 def compress_usages_by_problem(usages_by_problem: list[ModelUsageWithName]):
     """
     Compress a list of ModelUsageWithName objects by aggregating usage for the same model.

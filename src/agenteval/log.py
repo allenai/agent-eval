@@ -5,7 +5,7 @@ from logging import getLogger
 from inspect_ai.log import EvalSample, ModelEvent, StepEvent
 from inspect_ai.model import ModelUsage
 from litellm import cost_per_token
-from litellm.types.utils import Usage, PromptTokensDetailsWrapper, PromptTokensDetails
+from litellm.types.utils import PromptTokensDetails, PromptTokensDetailsWrapper, Usage
 from pydantic import BaseModel
 
 logger = getLogger(__name__)
@@ -44,29 +44,41 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     for model_usage in model_usages:
         input_tokens = model_usage.usage.input_tokens
         output_tokens = model_usage.usage.output_tokens
-        
+
         cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
         cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
-        
 
         try:
             # input tokens count includes any cached tokens
-            if input_tokens == model_usage.usage.total_tokens - model_usage.usage.output_tokens:
+            if (
+                input_tokens
+                == model_usage.usage.total_tokens - model_usage.usage.output_tokens
+            ):
                 text_tokens = input_tokens - cache_read_input_tokens
                 prompt_tokens = input_tokens
 
             # (anthropic) input tokens count excludes cache read and cache write tokens
-            elif input_tokens == model_usage.usage.total_tokens - output_tokens - cache_read_input_tokens - cache_write_input_tokens:
+            elif (
+                input_tokens
+                == model_usage.usage.total_tokens
+                - output_tokens
+                - cache_read_input_tokens
+                - cache_write_input_tokens
+            ):
                 text_tokens = input_tokens
-                prompt_tokens = input_tokens + cache_read_input_tokens + cache_write_input_tokens
+                prompt_tokens = (
+                    input_tokens + cache_read_input_tokens + cache_write_input_tokens
+                )
 
             else:
                 raise ValueError(
-                        f"Model usage token counts don't follow expected pattern."
-                    )
-            
-            prompt_tokens_wrapper = PromptTokensDetailsWrapper(cached_tokens=cache_read_input_tokens, text_tokens=text_tokens)
-        
+                    f"Model usage token counts don't follow expected pattern."
+                )
+
+            prompt_tokens_wrapper = PromptTokensDetailsWrapper(
+                cached_tokens=cache_read_input_tokens, text_tokens=text_tokens
+            )
+
             litellm_usage = Usage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=output_tokens,
@@ -74,9 +86,9 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 reasoning_tokens=model_usage.usage.reasoning_tokens,
                 prompt_tokens_details=prompt_tokens_wrapper,
                 cache_read_input_tokens=cache_read_input_tokens,
-                cache_creation_input_tokens=cache_write_input_tokens
+                cache_creation_input_tokens=cache_write_input_tokens,
             )
-            
+
             prompt_cost, completion_cost = cost_per_token(
                 model=model_usage.model,
                 usage_object=litellm_usage,
