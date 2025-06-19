@@ -8,8 +8,7 @@ splits:
         path: tasks/first_task
         primary_metric: 'my_scorer/my_metric'
         tags:
-          - task1
-
+          - category1
 
   - name: test
     tasks:
@@ -17,4 +16,9 @@ splits:
         path: tasks/second_task
         primary_metric: 'my_scorer/mean'
         tags:
-          - task2
+          - category2
+
+    macro_average_weight_adjustments:
+      - tag: category2
+        task: second_task
+        weight: 0.5  # any other tasks not specified will default to 1.0
