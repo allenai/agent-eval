@@ -2,17 +2,16 @@ import logging
 import re
 from collections import defaultdict
 from io import BytesIO
-from typing import Dict
 
 import yaml
 from huggingface_hub import HfApi
-from huggingface_hub.utils import HfHubHTTPError
+from huggingface_hub.errors import HfHubHTTPError
 from inspect_ai.model import ModelUsage
 
-from .log import ModelUsageWithName
-from .models import EvalResult
+from ..log import ModelUsageWithName
+from ..models import EvalResult
+from ..score import TaskResult
 from .schema_generator import load_dataset_features
-from .score import TaskResult
 
 logger = logging.getLogger(__name__)
 

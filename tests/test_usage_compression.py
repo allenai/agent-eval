@@ -3,8 +3,8 @@ from typing import Dict
 import pytest
 from inspect_ai.model import ModelUsage
 
+from agenteval.leaderboard.upload import compress_usages_by_problem
 from agenteval.log import ModelUsageWithName
-from agenteval.upload import compress_usages_by_problem
 
 
 def calculate_model_usages_cost(

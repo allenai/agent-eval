@@ -11,6 +11,7 @@ import datasets
 
 from .config import load_suite_config
 from .leaderboard.upload import (
+    compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
     upload_summary_to_hf,
@@ -18,12 +19,6 @@ from .leaderboard.upload import (
 from .models import EvalConfig, EvalResult
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
-from .upload import (
-    compress_model_usages,
-    sanitize_path_component,
-    upload_folder_to_hf,
-    upload_summary_to_hf,
-)
 
 EVAL_FILENAME = "agenteval.json"
 
