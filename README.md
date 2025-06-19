@@ -25,6 +25,14 @@ For aggregation in a leaderboard, each task specifies a `primary_metric` as `{sc
 The scoring utils will look for a corresponding stderr metric, 
 by looking for another metric with the same `scorer_name` and with a `metric_name` containing the string "stderr".
 
+### Weighted Macro Averaging with Tags
+
+Tasks can be grouped using `tags` for computing summary statistics. The tags support weighted macro averaging, allowing you to assign different weights to tasks within a tag group.
+
+Tags are specified as simple strings on tasks. To adjust weights for specific tag-task combinations, use the `macro_average_weight_adjustments` field at the split level. Tasks not specified in the adjustments default to a weight of 1.0.
+
+See [sample-config.yml](sample-config.yml) for an example of the tag and weight adjustment format.
+
 ## Score results 
 ```shell
 agenteval score [OPTIONS] LOG_DIR

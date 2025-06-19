@@ -1,13 +1,18 @@
 import logging
 import re
+from collections import defaultdict
 from io import BytesIO
+from typing import Dict
 
 import yaml
 from huggingface_hub import HfApi
 from huggingface_hub.utils import HfHubHTTPError
+from inspect_ai.model import ModelUsage
 
-from ..models import EvalResult
+from .log import ModelUsageWithName
+from .models import EvalResult
 from .schema_generator import load_dataset_features
+from .score import TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +178,52 @@ def upload_summary_to_hf(
         split_globs={split: f"{config_name}/{split}/*.json"},
     )
     return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}.json"
+
+
+def compress_model_usages(eval_result: EvalResult):
+    """
+    Reduce the size of model usages by compressing to aggregate token
+    counts for each token type, model, and task problem
+    """
+    if not eval_result.results:
+        return eval_result
+
+    compressed_results = []
+    for task_result in eval_result.results:
+        # Create a new TaskResult with compressed model_usages
+        compressed_task_result = TaskResult(
+            task_name=task_result.task_name,
+            metrics=task_result.metrics,
+            model_costs=task_result.model_costs,
+            model_usages=None if task_result.model_usages is None else [],
+        )
+
+        if task_result.model_usages:
+            for problem_usages in task_result.model_usages:
+                compressed_problem_usages = compress_usages_by_problem(problem_usages)
+                compressed_task_result.model_usages.append(compressed_problem_usages)
+
+        compressed_results.append(compressed_task_result)
+
+    # Create new EvalResult with compressed results
+    compressed_eval_result = EvalResult(
+        **eval_result.model_dump(exclude={"results"}), results=compressed_results
+    )
+
+    return compressed_eval_result
+
+
+def compress_usages_by_problem(usages_by_problem: list[ModelUsageWithName]):
+    """
+    Compress a list of ModelUsageWithName objects by aggregating usage for the same model.
+    """
+    model_usage_map: dict[str, ModelUsage] = defaultdict(lambda: ModelUsage())
+
+    for usage_with_name in usages_by_problem:
+        model_name = usage_with_name.model
+        model_usage_map[model_name] += usage_with_name.usage
+
+    return [
+        ModelUsageWithName(model=model_name, usage=usage)
+        for model_name, usage in model_usage_map.items()
+    ]

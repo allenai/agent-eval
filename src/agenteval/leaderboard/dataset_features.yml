@@ -18,6 +18,14 @@
         dtype: string
       - name: tags
         sequence: string
+    - name: macro_average_weight_adjustments
+      list:
+      - name: tag
+        dtype: string
+      - name: task
+        dtype: string
+      - name: weight
+        dtype: float64
 - name: split
   dtype: string
 - name: results

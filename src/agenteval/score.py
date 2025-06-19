@@ -156,5 +156,5 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
         except ValueError as error:
             had_errors = True
             logger.exception(f"No metrics for {task_name}:")
-            
+
     return results, eval_specs, had_errors
