@@ -215,7 +215,7 @@ def _pretty_column_name(col: str) -> str:
     if len(parts) == 3:
         _, name, metric = parts
         if metric == "score":
-            return name
+            return f"{name} score"
         if metric == "cost":
             return f"{name} cost"
         if metric == "score_ci":
