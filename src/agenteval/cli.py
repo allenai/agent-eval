@@ -21,6 +21,8 @@ from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
 EVAL_FILENAME = "agenteval.json"
+OPENNESS_OPTIONS = ["ui-only", "api-available", "open-source", "open-source-open-weights"]
+CONTROL_OPTIONS = ["standardized", "custom"]
 
 
 def verify_git_reproducibility(ignore_git: bool) -> None:
@@ -222,6 +224,18 @@ cli.add_command(score_command)
     help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
+    "--openness",
+    type=click.Choice(OPENNESS_OPTIONS, case_sensitive=False),
+    required=True,
+    help="Level of openness for the agent.",
+)
+@click.option(
+    "--degree-of-control",
+    type=click.Choice(CONTROL_OPTIONS, case_sensitive=False),
+    default="standardized",
+    help="Degree of control for the agent. Defaults to 'standardized'.",
+)
+@click.option(
     "--username",
     type=str,
     default=None,
@@ -249,6 +263,8 @@ def publish_command(
     log_dir: str,
     submissions_repo_id: str,
     results_repo_id: str,
+    openness: str,
+    degree_of_control: str,
     username: str | None,
     agent_name: str,
     agent_description: str | None,
@@ -307,6 +323,8 @@ def publish_command(
     eval_result.submission.agent_description = agent_description
     eval_result.submission.agent_url = agent_url
     eval_result.submission.submit_time = datetime.now(timezone.utc)
+    eval_result.submission.openness = openness
+    eval_result.submission.degree_of_control = degree_of_control
 
     # Validate suite config version
     config_name = eval_result.suite_config.version
