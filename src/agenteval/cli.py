@@ -10,19 +10,20 @@ import click
 import datasets
 
 from .config import load_suite_config
-from .leaderboard.upload import (
-    compress_model_usages,
-    sanitize_path_component,
-    upload_folder_to_hf,
-    upload_summary_to_hf,
-)
+from .leaderboard.upload import (compress_model_usages,
+                                 sanitize_path_component, upload_folder_to_hf,
+                                 upload_summary_to_hf)
 from .models import EvalConfig, EvalResult
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
 EVAL_FILENAME = "agenteval.json"
-OPENNESS_OPTIONS = ["ui-only", "api-available", "open-source", "open-source-open-weights"]
-CONTROL_OPTIONS = ["standardized", "custom"]
+OPENNESS_OPTIONS = [
+    "ui-only",
+    "api-available",
+    "open-source",
+]
+TOOL_OPTIONS = ["standard", "standard-search", "closed-search", "custom"]
 
 
 def verify_git_reproducibility(ignore_git: bool) -> None:
@@ -230,10 +231,10 @@ cli.add_command(score_command)
     help="Level of openness for the agent.",
 )
 @click.option(
-    "--degree-of-control",
-    type=click.Choice(CONTROL_OPTIONS, case_sensitive=False),
-    default="standardized",
-    help="Degree of control for the agent. Defaults to 'standardized'.",
+    "--tool-usage",
+    type=click.Choice(TOOL_OPTIONS, case_sensitive=False),
+    default="standard",
+    help="Tool choices available to the agent. Defaults to 'standard'.",
 )
 @click.option(
     "--username",
@@ -264,7 +265,7 @@ def publish_command(
     submissions_repo_id: str,
     results_repo_id: str,
     openness: str,
-    degree_of_control: str,
+    tool_usage: str,
     username: str | None,
     agent_name: str,
     agent_description: str | None,
@@ -324,7 +325,7 @@ def publish_command(
     eval_result.submission.agent_url = agent_url
     eval_result.submission.submit_time = datetime.now(timezone.utc)
     eval_result.submission.openness = openness
-    eval_result.submission.degree_of_control = degree_of_control
+    eval_result.submission.tool_usage = tool_usage
 
     # Validate suite config version
     config_name = eval_result.suite_config.version
