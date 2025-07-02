@@ -68,6 +68,8 @@ class LeaderboardViewer:
             "User/organization",
             "Submission date",
             "Logs",
+            "Openness",
+            "Standard tool usage"
         ]
 
         # choose primary metric and its sub‐group
@@ -180,6 +182,8 @@ def _get_dataframe(
                 "agent_description": sub.agent_description or "",
                 "username": sub.username or "",
                 "submit_time": date,
+                "openness": sub.openness,
+                "degree_of_control": sub.degree_of_control,
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
             }
@@ -204,6 +208,8 @@ def _pretty_column_name(col: str) -> str:
         "agent_name": "Agent",
         "agent_description": "Agent description",
         "username": "User/organization",
+        "openness": "Openness",
+        "degree_of_control": "Standard tool usage",
         "logs_url": "Logs",
         "overall/score": "Overall",
         "overall/cost": "Overall cost",
