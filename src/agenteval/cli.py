@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 import datasets
 
+from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
 from .leaderboard.upload import (
     compress_model_usages,
@@ -21,6 +22,17 @@ from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
 EVAL_FILENAME = "agenteval.json"
+OPENNESS_MAPPING = {
+    "c": "Closed",
+    "api": "API Available",
+    "os": "Open Source",
+    "ow": "Open Source + Open Weights"
+}
+TOOL_MAPPING = {
+    "s": "Standard",
+    "css": "Custom with Standard Search",
+    "c": "Fully Custom"
+}
 
 
 def verify_git_reproducibility(ignore_git: bool) -> None:
@@ -222,6 +234,18 @@ cli.add_command(score_command)
     help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
+    "-o", "--openness",
+    type=AliasedChoice(OPENNESS_MAPPING),
+    required=True,
+    help=generate_choice_help(OPENNESS_MAPPING, "Level of openness for the agent."),
+)
+@click.option(
+    "-t", "--tool-usage",
+    type=AliasedChoice(TOOL_MAPPING),
+    required=True,
+    help=generate_choice_help(TOOL_MAPPING, "Tool choices available to the agent."),
+)
+@click.option(
     "--username",
     type=str,
     default=None,
@@ -249,6 +273,8 @@ def publish_command(
     log_dir: str,
     submissions_repo_id: str,
     results_repo_id: str,
+    openness: str,
+    tool_usage: str,
     username: str | None,
     agent_name: str,
     agent_description: str | None,
@@ -307,6 +333,8 @@ def publish_command(
     eval_result.submission.agent_description = agent_description
     eval_result.submission.agent_url = agent_url
     eval_result.submission.submit_time = datetime.now(timezone.utc)
+    eval_result.submission.openness = openness
+    eval_result.submission.tool_usage = tool_usage
 
     # Validate suite config version
     config_name = eval_result.suite_config.version

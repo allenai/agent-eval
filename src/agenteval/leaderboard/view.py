@@ -63,11 +63,14 @@ class LeaderboardViewer:
         """
         data, tag_map = self._load()
         cols = [
+            "id",
             "Agent",
             "Agent description",
             "User/organization",
             "Submission date",
             "Logs",
+            "Openness",
+            "Agent Tooling",
         ]
 
         # choose primary metric and its sub‐group
@@ -176,10 +179,13 @@ def _get_dataframe(
 
         rows.append(
             {
+                "id": sub.submit_time,
                 "agent_name": sub.agent_name,
                 "agent_description": sub.agent_description or "",
                 "username": sub.username or "",
                 "submit_time": date,
+                "openness": sub.openness,
+                "tool_usage": sub.tool_usage,
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
             }
@@ -204,6 +210,8 @@ def _pretty_column_name(col: str) -> str:
         "agent_name": "Agent",
         "agent_description": "Agent description",
         "username": "User/organization",
+        "openness": "Openness",
+        "tool_usage": "Agent tooling",
         "logs_url": "Logs",
         "overall/score": "Overall",
         "overall/cost": "Overall cost",

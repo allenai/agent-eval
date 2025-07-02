@@ -77,3 +77,7 @@
     dtype: string
   - name: summary_url
     dtype: string
+  - name: openness
+    dtype: string
+  - name: tool_usage
+    dtype: string

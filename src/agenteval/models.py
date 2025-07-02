@@ -28,6 +28,8 @@ class SubmissionMetadata(BaseModel):
     logs_url: str | None = None
     logs_url_public: str | None = None
     summary_url: str | None = None
+    openness: str | None = None
+    tool_usage: str | None = None
 
 
 class EvalResult(EvalConfig):
