@@ -5,8 +5,7 @@ from logging import getLogger
 from inspect_ai.log import EvalSample, ModelEvent, StepEvent
 from inspect_ai.model import ModelUsage
 from litellm import cost_per_token
-from litellm.types.utils import (PromptTokensDetails,
-                                 PromptTokensDetailsWrapper, Usage)
+from litellm.types.utils import PromptTokensDetails, PromptTokensDetailsWrapper, Usage
 from pydantic import BaseModel
 
 logger = getLogger(__name__)
