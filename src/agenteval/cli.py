@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 import datasets
 
+from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
 from .leaderboard.upload import (
     compress_model_usages,
@@ -21,12 +22,17 @@ from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
 EVAL_FILENAME = "agenteval.json"
-OPENNESS_OPTIONS = [
-    "ui-only",
-    "api-available",
-    "open-source",
-]
-TOOL_OPTIONS = ["standard", "standard-search", "closed-search", "custom"]
+OPENNESS_MAPPING = {
+    "c": "Closed",
+    "api": "API Available",
+    "os": "Open Source",
+    "ow": "Open Source + Open Weights"
+}
+TOOL_MAPPING = {
+    "s": "Standard",
+    "css": "Custom with Standard Search",
+    "c": "Fully Custom"
+}
 
 
 def verify_git_reproducibility(ignore_git: bool) -> None:
@@ -229,15 +235,15 @@ cli.add_command(score_command)
 )
 @click.option(
     "--openness",
-    type=click.Choice(OPENNESS_OPTIONS, case_sensitive=False),
+    type=AliasedChoice(OPENNESS_MAPPING),
     required=True,
-    help="Level of openness for the agent.",
+    help=generate_choice_help(OPENNESS_MAPPING, "Level of openness for the agent."),
 )
 @click.option(
     "--tool-usage",
-    type=click.Choice(TOOL_OPTIONS, case_sensitive=False),
-    default="standard",
-    help="Tool choices available to the agent. Defaults to 'standard'.",
+    type=AliasedChoice(TOOL_MAPPING),
+    required=True,
+    help=generate_choice_help(TOOL_MAPPING, "Tool choices available to the agent."),
 )
 @click.option(
     "--username",
