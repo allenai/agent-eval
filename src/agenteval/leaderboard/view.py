@@ -63,6 +63,7 @@ class LeaderboardViewer:
         """
         data, tag_map = self._load()
         cols = [
+            "id",
             "Agent",
             "Agent description",
             "User/organization",
@@ -178,6 +179,7 @@ def _get_dataframe(
 
         rows.append(
             {
+                "id": sub.submit_time,
                 "agent_name": sub.agent_name,
                 "agent_description": sub.agent_description or "",
                 "username": sub.username or "",
