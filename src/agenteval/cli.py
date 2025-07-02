@@ -234,13 +234,13 @@ cli.add_command(score_command)
     help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
-    "--openness",
+    "-o", "--openness",
     type=AliasedChoice(OPENNESS_MAPPING),
     required=True,
     help=generate_choice_help(OPENNESS_MAPPING, "Level of openness for the agent."),
 )
 @click.option(
-    "--tool-usage",
+    "-t", "--tool-usage",
     type=AliasedChoice(TOOL_MAPPING),
     required=True,
     help=generate_choice_help(TOOL_MAPPING, "Tool choices available to the agent."),
