@@ -70,7 +70,7 @@ class LeaderboardViewer:
             "Submission date",
             "Logs",
             "Openness",
-            "Standard tool usage",
+            "Agent Tooling",
         ]
 
         # choose primary metric and its sub‐group
@@ -211,7 +211,7 @@ def _pretty_column_name(col: str) -> str:
         "agent_description": "Agent description",
         "username": "User/organization",
         "openness": "Openness",
-        "tool_usage": "Standard tool usage",
+        "tool_usage": "Agent tooling",
         "logs_url": "Logs",
         "overall/score": "Overall",
         "overall/cost": "Overall cost",
