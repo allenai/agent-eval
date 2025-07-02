@@ -3,13 +3,8 @@
 import logging
 from typing import Any
 
-from inspect_ai.log import (
-    EvalLog,
-    EvalRevision,
-    list_eval_logs,
-    read_eval_log,
-    read_eval_log_samples,
-)
+from inspect_ai.log import (EvalLog, EvalRevision, list_eval_logs,
+                            read_eval_log, read_eval_log_samples)
 from pydantic import BaseModel, Field
 
 from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
