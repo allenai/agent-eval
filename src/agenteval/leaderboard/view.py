@@ -70,7 +70,7 @@ class LeaderboardViewer:
             "Submission date",
             "Logs",
             "Openness",
-            "Agent Tooling",
+            "Agent tooling",
         ]
 
         # choose primary metric and its sub‐group
