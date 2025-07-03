@@ -71,6 +71,7 @@ class LeaderboardViewer:
             "Logs",
             "Openness",
             "Agent tooling",
+            "LLM base",
         ]
 
         # choose primary metric and its sub‐group
@@ -130,6 +131,18 @@ def _get_dataframe(
     rows = []
     for itm in ds:
         ev = EvalResult.model_validate(itm)
+
+        # extract base LLM information
+        base_models = set()
+        if ev.results:
+            for task_result in ev.results:
+                if task_result.model_usages:
+                    for usage_list in task_result.model_usages:
+                        for model_usage in usage_list:
+                            base_models.add(model_usage.model)
+        
+        model_names = sorted(list(base_models))
+        
         sub = ev.submission
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
@@ -186,6 +199,7 @@ def _get_dataframe(
                 "submit_time": date,
                 "openness": sub.openness,
                 "tool_usage": sub.tool_usage,
+                "base_models": model_names,
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
             }
@@ -212,6 +226,7 @@ def _pretty_column_name(col: str) -> str:
         "username": "User/organization",
         "openness": "Openness",
         "tool_usage": "Agent tooling",
+        "base_models": "LLM base",
         "logs_url": "Logs",
         "overall/score": "Overall",
         "overall/cost": "Overall cost",
