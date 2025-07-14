@@ -1,4 +1,4 @@
-"""Tests for log.py module."""
+"""Tests for collect_model_usage function."""
 
 from inspect_ai.log import ModelEvent, ScoreEvent, SpanBeginEvent, SpanEndEvent
 from inspect_ai.model import GenerateConfig, ModelOutput, ModelUsage
