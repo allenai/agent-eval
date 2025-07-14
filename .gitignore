@@ -182,3 +182,6 @@ logs/
 .DS_Store
 .mise.toml
 .vscode/
+
+# AI stuff
+CLAUDE.md

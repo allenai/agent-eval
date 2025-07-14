@@ -2,7 +2,14 @@
 
 from logging import getLogger
 
-from inspect_ai.log import EvalSample, ModelEvent, StepEvent
+from inspect_ai.log import (
+    EvalSample,
+    ModelEvent,
+    ScoreEvent,
+    SpanBeginEvent,
+    SpanEndEvent,
+    StepEvent,
+)
 from inspect_ai.model import ModelUsage
 from litellm import cost_per_token
 from litellm.types.utils import PromptTokensDetails, PromptTokensDetailsWrapper, Usage
@@ -21,16 +28,46 @@ class ModelUsageWithName(BaseModel):
 def collect_model_usage(sample: EvalSample) -> list[ModelUsageWithName]:
     """
     Collect model usage for a single sample, excluding scorer model calls.
+
+    Model usage is an event and events are grouped by span ID.
+    We want to exclude ModelEvents that are in the same span as ScoreEvent.
+
     Returns a list of ModelUsageWithName objects.
     """
-    usages = []
+    # First pass: identify all spans that contain ScoreEvents
+    active_spans = []  # Stack of currently active span IDs
+    scorer_spans = set()  # Set of span IDs that contain score events
+
     for event in sample.events:
-        if isinstance(event, StepEvent) and event.type == "scorer":
-            break
-        if isinstance(event, ModelEvent) and event.output and event.output.usage:
-            usages.append(
-                ModelUsageWithName(model=event.output.model, usage=event.output.usage)
-            )
+        if isinstance(event, SpanBeginEvent):
+            active_spans.append(event.id)
+        elif isinstance(event, SpanEndEvent):
+            if active_spans and active_spans[-1] == event.id:
+                active_spans.pop()
+        elif isinstance(event, ScoreEvent) or (
+            isinstance(event, StepEvent) and event.type == "scorer"
+        ):
+            # Mark all currently active spans as scorer spans
+            scorer_spans.update(active_spans)
+
+    # Second pass: collect model usage, excluding those in scorer spans
+    usages = []
+    active_spans = []
+
+    for event in sample.events:
+        if isinstance(event, SpanBeginEvent):
+            active_spans.append(event.id)
+        elif isinstance(event, SpanEndEvent):
+            if active_spans and active_spans[-1] == event.id:
+                active_spans.pop()
+        elif isinstance(event, ModelEvent) and event.output and event.output.usage:
+            # Only include if none of the active spans are scorer spans
+            if not any(span_id in scorer_spans for span_id in active_spans):
+                usages.append(
+                    ModelUsageWithName(
+                        model=event.output.model, usage=event.output.usage
+                    )
+                )
 
     return usages
 
