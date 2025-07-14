@@ -84,7 +84,7 @@ def get_model_usages(log: EvalLog) -> list[list[ModelUsageWithName]]:
     model_usages = []
     # Don't assume eval log has more than the header
     for sample in read_eval_log_samples(log.location, all_samples_required=True):
-        model_usages.append(collect_model_usage(sample))
+        model_usages.append(collect_model_usage(sample.events))
     return model_usages
 
 

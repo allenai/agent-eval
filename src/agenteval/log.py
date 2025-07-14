@@ -3,7 +3,7 @@
 from logging import getLogger
 
 from inspect_ai.log import (
-    EvalSample,
+    Event,
     ModelEvent,
     ScoreEvent,
     SpanBeginEvent,
@@ -25,7 +25,7 @@ class ModelUsageWithName(BaseModel):
     usage: ModelUsage
 
 
-def collect_model_usage(sample: EvalSample) -> list[ModelUsageWithName]:
+def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
     """
     Collect model usage for a single sample, excluding scorer model calls.
 
@@ -38,7 +38,7 @@ def collect_model_usage(sample: EvalSample) -> list[ModelUsageWithName]:
     active_spans = []  # Stack of currently active span IDs
     scorer_spans = set()  # Set of span IDs that contain score events
 
-    for event in sample.events:
+    for event in events:
         if isinstance(event, SpanBeginEvent):
             active_spans.append(event.id)
         elif isinstance(event, SpanEndEvent):
@@ -54,7 +54,7 @@ def collect_model_usage(sample: EvalSample) -> list[ModelUsageWithName]:
     usages = []
     active_spans = []
 
-    for event in sample.events:
+    for event in events:
         if isinstance(event, SpanBeginEvent):
             active_spans.append(event.id)
         elif isinstance(event, SpanEndEvent):
