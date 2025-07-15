@@ -93,6 +93,17 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
             ):
                 text_tokens = input_tokens - cache_read_input_tokens
                 prompt_tokens = input_tokens
+            
+            # (gemini) output tokens count excludes reasoning tokens
+            elif (
+                input_tokens
+                == model_usage.usage.total_tokens
+                - output_tokens
+                - model_usage.usage.reasoning_tokens
+            ):
+                text_tokens = input_tokens
+                prompt_tokens = input_tokens
+                completion_tokens = output_tokens + model_usage.usage.reasoning_tokens
 
             # (anthropic) input tokens count excludes cache read and cache write tokens
             elif (
