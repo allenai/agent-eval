@@ -30,11 +30,11 @@ def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
     Collect model usage for a single sample, excluding scorer model calls.
 
     Model usage is an event and events are grouped by span ID.
-    We want to exclude ModelEvents that are in the same span as ScoreEvent.
+    We want to exclude ModelEvents that are in the same immediate span as ScoreEvent.
 
     Returns a list of ModelUsageWithName objects.
     """
-    # First pass: identify all spans that contain ScoreEvents
+    # First pass: identify immediate spans that contain ScoreEvents
     active_spans = []  # Stack of currently active span IDs
     scorer_spans = set()  # Set of span IDs that contain score events
 
@@ -48,7 +48,7 @@ def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
             isinstance(event, StepEvent) and event.type == "scorer"
         ):
             # Mark all currently active spans as scorer spans
-            scorer_spans.update(active_spans)
+            scorer_spans.add(active_spans[-1])
 
     # Second pass: collect model usage, excluding those in scorer spans
     usages = []
@@ -62,7 +62,7 @@ def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
                 active_spans.pop()
         elif isinstance(event, ModelEvent) and event.output and event.output.usage:
             # Only include if none of the active spans are scorer spans
-            if not any(span_id in scorer_spans for span_id in active_spans):
+            if active_spans[-1] not in scorer_spans:
                 usages.append(
                     ModelUsageWithName(
                         model=event.output.model, usage=event.output.usage

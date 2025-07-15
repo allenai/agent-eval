@@ -7,14 +7,14 @@ from inspect_ai.scorer import Score
 from agenteval.log import collect_model_usage
 
 
-def _make_model_event() -> ModelEvent:
+def _make_model_event(model_name: str) -> ModelEvent:
     return ModelEvent(
-        model="test_model",
+        model=model_name,
         input=[],
         tools=[],
         tool_choice="none",
         config=GenerateConfig(),
-        output=ModelOutput(model="test_model", usage=ModelUsage(input_tokens=10)),
+        output=ModelOutput(model=model_name, usage=ModelUsage(input_tokens=10)),
     )
 
 
@@ -22,21 +22,20 @@ def test_collect_model_usage_no_scorer_spans():
     """Test collecting model usage when there are no scorer spans."""
     events = [
         SpanBeginEvent(id="span1", parent_id=None, name="test_span"),
-        _make_model_event(),
+        _make_model_event("included"),
         SpanEndEvent(id="span1"),
     ]
 
     result = collect_model_usage(events)
     assert len(result) == 1
-    assert result[0].model == "test_model"
-    assert result[0].usage.input_tokens == 10
+    assert result[0].model == "included"
 
 
 def test_collect_model_usage_with_scorer_span():
     """Test that model events within scorer spans are excluded."""
     events = [
         SpanBeginEvent(id="span1", parent_id=None, name="test_span"),
-        _make_model_event(),
+        _make_model_event("excluded"),
         ScoreEvent(score=Score(value="test_score")),
         SpanEndEvent(id="span1"),
     ]
@@ -49,16 +48,17 @@ def test_collect_model_usage_nested_spans():
     """Test model usage collection with nested spans."""
     events = [
         SpanBeginEvent(id="span1", parent_id=None, name="test_span"),
-        _make_model_event(),
+        _make_model_event("included"),
         SpanBeginEvent(id="span2", parent_id="span1", name="test_span2"),
         ScoreEvent(score=Score(value="test_score")),
-        _make_model_event(),
+        _make_model_event("excluded"),
         SpanEndEvent(id="span2"),
         SpanEndEvent(id="span1"),
     ]
 
     result = collect_model_usage(events)
-    assert len(result) == 0
+    assert len(result) == 1
+    assert result[0].model == "included"
 
 
 def test_collect_model_usage_mixed_spans():
@@ -66,19 +66,18 @@ def test_collect_model_usage_mixed_spans():
     events = [
         # Non-scorer span
         SpanBeginEvent(id="span1", parent_id=None, name="test_span1"),
-        _make_model_event(),
+        _make_model_event("included"),
         SpanEndEvent(id="span1"),
         # Scorer span
         SpanBeginEvent(id="span2", parent_id=None, name="test_span2"),
-        _make_model_event(),
+        _make_model_event("excluded"),
         ScoreEvent(score=Score(value="test_score")),
         SpanEndEvent(id="span2"),
     ]
 
     result = collect_model_usage(events)
     assert len(result) == 1
-    assert result[0].model == "test_model"
-    assert result[0].usage.input_tokens == 10
+    assert result[0].model == "included"
 
 
 def test_collect_model_usage_model_after_score_event():
@@ -86,7 +85,7 @@ def test_collect_model_usage_model_after_score_event():
     events = [
         SpanBeginEvent(id="span1", parent_id=None, name="test_span1"),
         ScoreEvent(score=Score(value="test_score")),
-        _make_model_event(),
+        _make_model_event("excluded"),
         SpanEndEvent(id="span1"),
     ]
 
