@@ -132,16 +132,7 @@ def test_collect_model_usage_e2e():
             model = get_model(
                 "mockllm/model", custom_outputs=infinite_random_generator(10)
             )
-            output = await model.generate(input="test")
-            content = output.choices[0].message.content
-            value = float(content)
-
-            system_prompt = f"Return {value}."
-            # system_message auto-formats with `system_prompt.format(state.metadata)`; we must escape
-            system_prompt = system_prompt.replace("{", "{{").replace("}", "}}")
-            state.messages.append(ChatMessageSystem(content=system_prompt))
-
-            state.output = await model.generate(state.messages)
+            state.output = await model.generate(input="test")
             return state
 
         return solve
