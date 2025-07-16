@@ -17,7 +17,11 @@ from pydantic import BaseModel
 
 logger = getLogger(__name__)
 
-
+MODEL_TRANSLATIONS = {
+  "google:gemini2flash-default": "gemini/gemini-2.0-flash",
+  "models/gemini-2.5-flash-preview-05-20": "gemini/gemini-2.5-flash",
+  "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro"  
+}
 class ModelUsageWithName(BaseModel):
     """ModelUsage with model name information."""
 
@@ -72,6 +76,17 @@ def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
     return usages
 
 
+def adapt_model_name(model: str) -> str:
+    """
+    Translate provider/model name from inspect logs
+    to provider/model name in litellm cost lookup
+    """
+    if model in MODEL_TRANSLATIONS.keys():
+        return MODEL_TRANSLATIONS[model]
+    else:
+        return model
+
+
 def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
@@ -81,15 +96,16 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     for model_usage in model_usages:
         input_tokens = model_usage.usage.input_tokens
         output_tokens = model_usage.usage.output_tokens
+        total_tokens = model_usage.usage.total_tokens
 
         cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
         cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
+        reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
         try:
-            # input tokens count includes any cached tokens
             if (
                 input_tokens
-                == model_usage.usage.total_tokens - model_usage.usage.output_tokens
+                == total_tokens - output_tokens
             ):
                 text_tokens = input_tokens - cache_read_input_tokens
                 prompt_tokens = input_tokens
@@ -99,11 +115,11 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 input_tokens
                 == model_usage.usage.total_tokens
                 - output_tokens
-                - model_usage.usage.reasoning_tokens
+                - reasoning_tokens
             ):
                 text_tokens = input_tokens
                 prompt_tokens = input_tokens
-                completion_tokens = output_tokens + model_usage.usage.reasoning_tokens
+                completion_tokens = output_tokens + reasoning_tokens
 
             # (anthropic) input tokens count excludes cache read and cache write tokens
             elif (
@@ -138,7 +154,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
             )
 
             prompt_cost, completion_cost = cost_per_token(
-                model=model_usage.model,
+                model=adapt_model_name(model_usage.model),
                 usage_object=litellm_usage,
             )
 
