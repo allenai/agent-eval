@@ -18,10 +18,12 @@ from pydantic import BaseModel
 logger = getLogger(__name__)
 
 MODEL_TRANSLATIONS = {
-  "google:gemini2flash-default": "gemini/gemini-2.0-flash",
-  "models/gemini-2.5-flash-preview-05-20": "gemini/gemini-2.5-flash",
-  "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro"  
+    "google:gemini2flash-default": "gemini/gemini-2.0-flash",
+    "models/gemini-2.5-flash-preview-05-20": "gemini/gemini-2.5-flash",
+    "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro",
 }
+
+
 class ModelUsageWithName(BaseModel):
     """ModelUsage with model name information."""
 
@@ -103,19 +105,14 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
         reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
         try:
-            if (
-                input_tokens
-                == total_tokens - output_tokens
-            ):
+            if input_tokens == total_tokens - output_tokens:
                 text_tokens = input_tokens - cache_read_input_tokens
                 prompt_tokens = input_tokens
-            
+
             # (gemini) output tokens count excludes reasoning tokens
             elif (
                 input_tokens
-                == model_usage.usage.total_tokens
-                - output_tokens
-                - reasoning_tokens
+                == model_usage.usage.total_tokens - output_tokens - reasoning_tokens
             ):
                 text_tokens = input_tokens
                 prompt_tokens = input_tokens
