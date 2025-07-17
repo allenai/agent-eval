@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from .config import SuiteConfig
 from .io import atomic_write_file
-from .score import EvalSpec, TaskResult
+from .score import TaskResult
 
 
 class EvalConfig(BaseModel):
@@ -33,7 +33,6 @@ class SubmissionMetadata(BaseModel):
 
 
 class EvalResult(EvalConfig):
-    eval_specs: list[EvalSpec] | None = None
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 

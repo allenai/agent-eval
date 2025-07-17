@@ -194,27 +194,29 @@ def _get_dataframe(
         # extract git revision source code URL with SHA
         # only show source URL if all eval specs have the same revision
         source_url = None
-        if ev.eval_specs and all(spec.revision == ev.eval_specs[0].revision for spec in ev.eval_specs):
-            revision = ev.eval_specs[0].revision
-            
-            # Only handle git revisions with complete info
-            if (revision and revision.type == 'git' and 
-                revision.origin and revision.commit):
-                origin = revision.origin
-                commit = revision.commit
+        if ev.results:
+            task_revisions = [tr.eval_spec.revision for tr in ev.results if tr.eval_spec.revision]
+            if task_revisions and all(rev == task_revisions[0] for rev in task_revisions):
+                revision = task_revisions[0]
                 
-                # Convert SSH URLs to HTTPS URLs
-                if origin.startswith('git@'):
-                    # Convert git@github.com:user/repo.git to https://github.com/user/repo
-                    origin = origin.replace('git@', 'https://').replace(':', '/', 1)
-                
-                # Remove .git suffix if present
-                if origin.endswith('.git'):
-                    origin = origin[:-4]
-                
-                # Only create URL if it looks like a valid HTTP(S) URL
-                if origin.startswith(('http://', 'https://')):
-                    source_url = f"{origin}/tree/{commit}"
+                # Only handle git revisions with complete info
+                if (revision and revision.type == 'git' and 
+                    revision.origin and revision.commit):
+                    origin = revision.origin
+                    commit = revision.commit
+                    
+                    # Convert SSH URLs to HTTPS URLs
+                    if origin.startswith('git@'):
+                        # Convert git@github.com:user/repo.git to https://github.com/user/repo
+                        origin = origin.replace('git@', 'https://').replace(':', '/', 1)
+                    
+                    # Remove .git suffix if present
+                    if origin.endswith('.git'):
+                        origin = origin[:-4]
+                    
+                    # Only create URL if it looks like a valid HTTP(S) URL
+                    if origin.startswith(('http://', 'https://')):
+                        source_url = f"{origin}/tree/{commit}"
 
         rows.append(
             {

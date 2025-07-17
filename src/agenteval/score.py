@@ -75,6 +75,9 @@ class TaskResult(BaseModel):
     task_name: str
     """Name of the task."""
 
+    eval_spec: EvalSpec
+    """Evaluation specification used for this task."""
+
     metrics: list[Metric]
     """List of metrics."""
 
@@ -123,15 +126,15 @@ def get_normalized_task_name(log: EvalLog) -> str:
     return log.eval.task.split("/")[-1]
 
 
-def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], bool]:
+def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], bool]:
     """
-    Process evaluation logs from a directory and return task results and eval specs.
+    Process evaluation logs from a directory and return task results.
 
     Args:
         log_dir: Directory containing evaluation logs
 
     Returns:
-        A tuple containing a list of task results and a list of eval specs
+        A tuple containing a list of task results and whether there were errors
     """
     # Read evaluation logs
     logs = {}
@@ -146,21 +149,8 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
     if not logs:
         raise ValueError("No valid evaluation logs found.")
 
-    # Collect eval specs
-    eval_specs = []
-    seen_specs = set()
-    for log in logs.values():
-        next_eval_spec = EvalSpec.from_eval_log(log)
-        # Use the hash of the serialized spec to check for duplicates
-        spec_hash = hash(next_eval_spec.model_dump_json())
-        if spec_hash not in seen_specs:
-            seen_specs.add(spec_hash)
-            eval_specs.append(next_eval_spec)
-
-    if not eval_specs:
-        raise ValueError("Eval specification is required.")
-
     results = []
+    has_eval_specs = False
     for task_name, log in logs.items():
         try:
             metrics = get_metrics(log)
@@ -169,9 +159,13 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
             model_usages = get_model_usages(log)
             model_costs = [compute_model_cost(usages) for usages in model_usages]
             has_model_usages = any(len(usages) > 0 for usages in model_usages)
+            eval_spec = EvalSpec.from_eval_log(log)
+            has_eval_specs = True
+            
             results.append(
                 TaskResult(
                     task_name=task_name,
+                    eval_spec=eval_spec,
                     metrics=metrics,
                     # Set to None to avoid incorrect pyarrow model usage type inference
                     model_usages=model_usages if has_model_usages else None,
@@ -182,4 +176,7 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
             had_errors = True
             logger.exception(f"No metrics for {task_name}:")
 
-    return results, eval_specs, had_errors
+    if not has_eval_specs:
+        raise ValueError("Eval specification is required.")
+
+    return results, had_errors
