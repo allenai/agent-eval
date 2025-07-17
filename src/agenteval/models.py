@@ -33,7 +33,7 @@ class SubmissionMetadata(BaseModel):
 
 
 class EvalResult(EvalConfig):
-    eval_specs: list[EvalSpec] | None = Field(default=None, exclude=True)
+    eval_specs: list[EvalSpec] | None = None
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 

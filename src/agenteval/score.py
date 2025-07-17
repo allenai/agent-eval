@@ -10,11 +10,15 @@ from inspect_ai.log import (
     read_eval_log,
     read_eval_log_samples,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, field_serializer
 
 from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
 
 logger = logging.getLogger(__name__)
+
+# Fields with dict[str, Any] type that need JSON serialization for Arrow compatibility
+# Arrow/Parquet cannot handle dict[str, Any] so we serialize to JSON strings
+_EVALSPEC_JSON_FIELDS = ['solver_args', 'model_args']
 
 
 class Metric(BaseModel):
@@ -42,6 +46,27 @@ class EvalSpec(BaseModel):
             model_args=log.eval.model_args,
             revision=log.eval.revision,
         )
+    
+    @field_validator(*_EVALSPEC_JSON_FIELDS, mode='before')
+    @classmethod
+    def deserialize_json_fields(cls, v):
+        """Deserialize JSON strings back to Python objects. Raises on JSON errors."""
+        import json
+        if not isinstance(v, str):
+            return v  # Already deserialized or None
+        return json.loads(v)
+    
+    @field_serializer(*_EVALSPEC_JSON_FIELDS)
+    def serialize_json_fields(self, v):
+        """Serialize Python objects to JSON strings. Logs errors and returns fallback."""
+        import json
+        if v is None:
+            return None
+        try:
+            return json.dumps(v, default=str)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Failed to serialize field to JSON: {e}, returning error indicator")
+            return json.dumps({"__serialization_error__": str(e)})
 
 
 class TaskResult(BaseModel):

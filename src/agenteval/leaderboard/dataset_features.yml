@@ -28,6 +28,24 @@
         dtype: float64
 - name: split
   dtype: string
+- name: eval_specs
+  list:
+  - name: solver
+    dtype: string
+  - name: solver_args
+    dtype: string
+  - name: model
+    dtype: string
+  - name: model_args
+    dtype: string
+  - name: revision
+    struct:
+    - name: type
+      dtype: string
+    - name: origin
+      dtype: string
+    - name: commit
+      dtype: string
 - name: results
   list:
   - name: task_name
