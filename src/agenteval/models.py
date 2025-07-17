@@ -79,8 +79,7 @@ class EvalResult(EvalConfig):
         **model_dump_kwargs,
     ) -> bytes:
         """
-        Return the JSON representation of this EvalResult as bytes,
-        always excluding `eval_specs` and null/default values.
+        Return the JSON representation of this EvalResult as bytes.
         """
         return self.model_dump_json(
             indent=indent,
