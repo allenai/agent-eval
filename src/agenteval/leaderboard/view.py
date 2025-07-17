@@ -195,7 +195,7 @@ def _get_dataframe(
         # only show source URL if all eval specs have the same revision
         source_url = None
         if ev.results:
-            task_revisions = [tr.eval_spec.revision for tr in ev.results if tr.eval_spec.revision]
+            task_revisions = [tr.eval_spec.revision for tr in ev.results if tr.eval_spec and tr.eval_spec.revision]
             if task_revisions and all(rev == task_revisions[0] for rev in task_revisions):
                 revision = task_revisions[0]
                 

@@ -79,7 +79,7 @@ class TaskResult(BaseModel):
     task_name: str
     """Name of the task."""
 
-    eval_spec: EvalSpec
+    eval_spec: EvalSpec | None = None
     """Evaluation specification used for this task."""
 
     metrics: list[Metric]
