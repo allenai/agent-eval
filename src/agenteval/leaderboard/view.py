@@ -69,6 +69,7 @@ class LeaderboardViewer:
             "User/organization",
             "Submission date",
             "Logs",
+            "Source",
             "Openness",
             "Agent tooling",
             "LLM base",
@@ -190,6 +191,33 @@ def _get_dataframe(
                     }
                 )
 
+        # extract git revision source code URL with SHA
+        # only show source URL if all eval specs have the same revision
+        source_url = None
+        if ev.results:
+            task_revisions = [tr.eval_spec.revision for tr in ev.results if tr.eval_spec and tr.eval_spec.revision]
+            if task_revisions and all(rev == task_revisions[0] for rev in task_revisions):
+                revision = task_revisions[0]
+                
+                # Only handle git revisions with complete info
+                if (revision and revision.type == 'git' and 
+                    revision.origin and revision.commit):
+                    origin = revision.origin
+                    commit = revision.commit
+                    
+                    # Convert SSH URLs to HTTPS URLs
+                    if origin.startswith('git@'):
+                        # Convert git@github.com:user/repo.git to https://github.com/user/repo
+                        origin = origin.replace('git@', 'https://').replace(':', '/', 1)
+                    
+                    # Remove .git suffix if present
+                    if origin.endswith('.git'):
+                        origin = origin[:-4]
+                    
+                    # Only create URL if it looks like a valid HTTP(S) URL
+                    if origin.startswith(('http://', 'https://')):
+                        source_url = f"{origin}/tree/{commit}"
+
         rows.append(
             {
                 "id": sub.submit_time,
@@ -202,6 +230,7 @@ def _get_dataframe(
                 "base_models": model_names,
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
+                "source_url": source_url,
             }
         )
 
@@ -228,6 +257,7 @@ def _pretty_column_name(col: str) -> str:
         "tool_usage": "Agent tooling",
         "base_models": "LLM base",
         "logs_url": "Logs",
+        "source_url": "Source",
         "overall/score": "Overall",
         "overall/cost": "Overall cost",
     }

@@ -172,16 +172,21 @@ def score_command(
         suite_cfg = load_suite_config(config_path)
         eval_result = EvalResult(suite_config=suite_cfg, split=split)
 
-    task_results, eval_specs, had_errors = process_eval_logs(log_dir)
-    eval_result.eval_specs = eval_specs
+    task_results, had_errors = process_eval_logs(log_dir)
     eval_result.results = task_results
 
     # Warn if multiple evaluation specs present
-    if eval_result.eval_specs and len(eval_result.eval_specs) > 1:
-        click.echo(
-            f"Warning: Found {len(eval_result.eval_specs)} different eval specs. "
-            "Logs may come from mixed runs."
-        )
+    if eval_result.results:
+        unique_specs = set()
+        for task_result in eval_result.results:
+            spec_hash = hash(task_result.eval_spec.model_dump_json())
+            unique_specs.add(spec_hash)
+        
+        if len(unique_specs) > 1:
+            click.echo(
+                f"Warning: Found {len(unique_specs)} different eval specs. "
+                "Logs may come from mixed runs."
+            )
 
     # Warn about any missing tasks
     missing_tasks = eval_result.find_missing_tasks()
