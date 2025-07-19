@@ -1,6 +1,7 @@
 """Utilities for computing model usages and costs from Inspect eval logs."""
 
 from logging import getLogger
+from typing import Optional
 
 from inspect_ai.log import (
     Event,
@@ -23,12 +24,17 @@ MODEL_TRANSLATIONS = {
     "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro",
 }
 
+PROVIDER_TRANSLATIONS = {
+    "together": "together_ai",
+}
+
 
 class ModelUsageWithName(BaseModel):
     """ModelUsage with model name information."""
 
     model: str
     usage: ModelUsage
+    provider: Optional[str] = None
 
 
 def collect_model_usage(events: list[Event]) -> list[ModelUsageWithName]:
@@ -87,6 +93,10 @@ def adapt_model_name(model: str) -> str:
         return MODEL_TRANSLATIONS[model]
     else:
         return model
+
+
+def adapt_provider_name(provider: str) -> str:
+    return PROVIDER_TRANSLATIONS.get(provider, provider)
 
 
 def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
@@ -150,11 +160,16 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 cache_creation_input_tokens=cache_write_input_tokens,
             )
 
-            prompt_cost, completion_cost = cost_per_token(
-                model=adapt_model_name(model_usage.model),
-                usage_object=litellm_usage,
-            )
+            litellm_provider = adapt_provider_name(model_usage.provider)
+            litellm_model = litellm_provider + "/" + adapt_model_name(model_usage.model)
+            litellm_provider = None
 
+            # litellm_model = adapt_model_name(model_usage.model)
+            prompt_cost, completion_cost = cost_per_token(
+                model=litellm_model,
+                usage_object=litellm_usage,
+                custom_llm_provider=litellm_provider,
+            )
             total_cost += prompt_cost + completion_cost
         except Exception as e:
             total_cost = None

@@ -81,10 +81,31 @@ def get_metrics(log: EvalLog) -> list[Metric]:
 
 def get_model_usages(log: EvalLog) -> list[list[ModelUsageWithName]]:
     """Extract model usages of all samples in an evaluation log."""
+    # Inspect removes provider from model name in model events, so we need to add it back.
+    # For example:
+    # "together/deepseek-ai/DeepSeek-V3" -> "deepseek-ai/DeepSeek-V3"
+    # "openai/gpt-4.1" -> "gpt-4.1-2025-04-14"
+    # Luckily, we can get the provider from the eval spec.
+    eval_spec = EvalSpec.from_eval_log(log)
+    split = eval_spec.model.split("/")
+    provider = None
+    company_model = None
+    if len(split) > 1:
+        provider = split[0]
+        company_model = "/".join(split[1:])
+
     model_usages = []
     # Don't assume eval log has more than the header
     for sample in read_eval_log_samples(log.location, all_samples_required=True):
-        model_usages.append(collect_model_usage(sample.events))
+        sample_usages = collect_model_usage(sample.events)
+
+        # Add provider if model name matches eval spec model
+        if provider and company_model:
+            for usage in sample_usages:
+                if usage.model.lower().startswith(company_model.lower()):
+                    usage.provider = provider
+
+        model_usages.append(sample_usages)
     return model_usages
 
 
