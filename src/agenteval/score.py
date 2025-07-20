@@ -65,7 +65,7 @@ class EvalSpec(BaseModel):
         if v is None:
             return None
         try:
-            return json.dumps(v, default=str)
+            return json.dumps(v, default=str, sort_keys=True)
         except (TypeError, ValueError) as e:
             logger.warning(
                 f"Failed to serialize field to JSON: {e}, returning error indicator"
