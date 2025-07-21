@@ -168,7 +168,6 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
             else:
                 litellm_model = adapt_model_name(model_usage.model)
 
-            # litellm_model = adapt_model_name(model_usage.model)
             prompt_cost, completion_cost = cost_per_token(
                 model=litellm_model,
                 usage_object=litellm_usage,
