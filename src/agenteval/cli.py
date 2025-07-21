@@ -26,12 +26,12 @@ OPENNESS_MAPPING = {
     "c": "Closed",
     "api": "API Available",
     "os": "Open Source",
-    "ow": "Open Source + Open Weights"
+    "ow": "Open Source + Open Weights",
 }
 TOOL_MAPPING = {
     "s": "Standard",
     "css": "Custom with Standard Search",
-    "c": "Fully Custom"
+    "c": "Fully Custom",
 }
 
 
@@ -177,15 +177,51 @@ def score_command(
 
     # Warn if multiple evaluation specs present
     if eval_result.results:
-        unique_specs = set()
-        for task_result in eval_result.results:
-            spec_hash = hash(task_result.eval_spec.model_dump_json())
-            unique_specs.add(spec_hash)
+        # Check for different solver/model configurations (different agents)
+        unique_agent_specs = set()
+        # Check for different code versions (revision/packages)
+        unique_code_specs = set()
         
-        if len(unique_specs) > 1:
+        for task_result in eval_result.results:
+            if task_result.eval_spec:
+                agent_hash = hash(
+                    task_result.eval_spec.model_dump_json(
+                        include={"solver", "solver_args", "model", "model_args"}
+                    )
+                )
+                unique_agent_specs.add(agent_hash)
+                
+                code_hash = hash(
+                    task_result.eval_spec.model_dump_json(
+                        include={"revision", "packages"}
+                    )
+                )
+                unique_code_specs.add(code_hash)
+
+        if len(unique_agent_specs) > 1:
             click.echo(
-                f"Warning: Found {len(unique_specs)} different eval specs. "
-                "Logs may come from mixed runs."
+                f"Warning: Found {len(unique_agent_specs)} different agent configurations. "
+                "Use a single solver + model config per log directory to measure a single "
+                "agent's performance across tasks."
+            )
+            
+        if len(unique_code_specs) > 1:
+            click.echo(
+                f"Warning: Found {len(unique_code_specs)} different code versions "
+                "(revision/packages). This may indicate mixed evaluation runs from "
+                "different code states."
+            )
+
+        # Warn if user-specified task arguments are present
+        tasks_with_args = []
+        for task_result in eval_result.results:
+            if task_result.eval_spec and task_result.eval_spec.task_args_passed:
+                tasks_with_args.append(task_result.task_name)
+
+        if tasks_with_args:
+            click.echo(
+                f"Warning: User-specified task arguments found for tasks: {', '.join(tasks_with_args)}. "
+                "For fair comparison, do not override the task arg defaults."
             )
 
     # Warn about any missing tasks
@@ -239,13 +275,15 @@ cli.add_command(score_command)
     help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
-    "-o", "--openness",
+    "-o",
+    "--openness",
     type=AliasedChoice(OPENNESS_MAPPING),
     required=True,
     help=generate_choice_help(OPENNESS_MAPPING, "Level of openness for the agent."),
 )
 @click.option(
-    "-t", "--tool-usage",
+    "-t",
+    "--tool-usage",
     type=AliasedChoice(TOOL_MAPPING),
     required=True,
     help=generate_choice_help(TOOL_MAPPING, "Tool choices available to the agent."),

@@ -40,11 +40,11 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
     if origin is list:
         inner = get_args(anno)[0]
         return pa.list_(_pa_type_for_annotation(inner))
-    # Handle dict[str, Any] specifically - these are serialized as JSON strings
+    # Handle dict[str, Any] and dict[str, str] specifically - these are serialized as JSON strings
     if origin is dict:
         args = get_args(anno)
-        if len(args) == 2 and args[0] is str and args[1] is Any:
-            return pa.string()  # dict[str, Any] becomes JSON string
+        if len(args) == 2 and args[0] is str and (args[1] is Any or args[1] is str):
+            return pa.string()  # dict[str, Any] and dict[str, str] become JSON strings
         # Other dict types could be handled as proper Arrow maps/structs
         # For now, fall through to unsupported
     # Handle Literal types - infer type from literal values

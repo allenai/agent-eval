@@ -42,6 +42,8 @@
       dtype: string
     - name: model_args
       dtype: string
+    - name: task_args
+      dtype: string
     - name: revision
       struct:
       - name: type
@@ -50,6 +52,8 @@
         dtype: string
       - name: commit
         dtype: string
+    - name: packages
+      dtype: string
   - name: metrics
     list:
     - name: name

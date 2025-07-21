@@ -16,9 +16,9 @@ from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
 
 logger = logging.getLogger(__name__)
 
-# Fields with dict[str, Any] type that need JSON serialization for Arrow compatibility
-# Arrow/Parquet cannot handle dict[str, Any] so we serialize to JSON strings
-_EVALSPEC_JSON_FIELDS = ["solver_args", "model_args"]
+# Fields with dict type that need JSON serialization for Arrow/Parquet and HuggingFace datasets compatibility
+# These systems cannot handle dict types so we serialize to JSON strings
+_EVALSPEC_JSON_FIELDS = ["solver_args", "model_args", "task_args", "packages"]
 
 
 class Metric(BaseModel):
@@ -34,8 +34,11 @@ class EvalSpec(BaseModel):
     solver: str | None = None
     solver_args: dict[str, Any] | None = None
     model: str
-    model_args: dict[str, Any] = Field(default_factory=dict)
+    model_args: dict[str, Any] | None = None
+    task_args: dict[str, Any] | None = None
+    task_args_passed: dict[str, Any] | None = Field(default=None, exclude=True)
     revision: EvalRevision | None = None
+    packages: dict[str, str] | None = None
 
     @classmethod
     def from_eval_log(cls, log: EvalLog) -> "EvalSpec":
@@ -44,7 +47,10 @@ class EvalSpec(BaseModel):
             solver_args=log.eval.solver_args,
             model=log.eval.model,
             model_args=log.eval.model_args,
+            task_args=log.eval.task_args,
+            task_args_passed=log.eval.task_args_passed,
             revision=log.eval.revision,
+            packages=log.eval.packages,
         )
 
     @field_validator(*_EVALSPEC_JSON_FIELDS, mode="before")
@@ -77,19 +83,19 @@ class TaskResult(BaseModel):
     """Results for a single task."""
 
     task_name: str
-    """Name of the task."""
+    """Name of the task. Derived from Inspect `EvalLog.eval.task`."""
 
     eval_spec: EvalSpec | None = None
-    """Evaluation specification used for this task."""
+    """Evaluation specification used for this task. Derived from Inspect `EvalLog.eval`."""
 
     metrics: list[Metric]
-    """List of metrics."""
+    """List of metrics. Derived from Inspect `EvalLog.results.scores`."""
 
     model_usages: list[list[ModelUsageWithName]] | None = None
-    """List of model usage lists per sample."""
+    """List of model usage lists per sample. Derived from Inspect `EvalLog.samples`."""
 
     model_costs: list[float | None] | None = None
-    """List of model costs per sample."""
+    """List of model costs per sample. Computed from `model_usages`."""
 
 
 def get_metrics(log: EvalLog) -> list[Metric]:
