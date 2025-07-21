@@ -80,14 +80,24 @@ class LeaderboardViewer:
             primary = "Overall"
             group = list(tag_map.keys())
         else:
-            primary = tag
+            primary = f"{tag} score"
             group = tag_map.get(tag, [])
+        
+        # Check if the primary column exists before sorting
+        if primary not in data.columns:
+            raise KeyError(f"Column '{primary}' not found. Available columns: {list(data.columns)}")
+        
         data = data.sort_values(primary, ascending=False)
 
         # build full metric list: primary + its cost + each member and its cost
-        metrics = [primary, f"{primary} cost"] + [
-            m for t in group for m in (t, f"{t} cost")
-        ]
+        if tag is None:
+            metrics = [primary, f"{primary} cost"] + [
+                m for t in group for m in (f"{t} score", f"{t} cost")
+            ]
+        else:
+            metrics = [primary, f"{tag} cost"] + [
+                m for t in group for m in (f"{t} score", f"{t} cost")
+            ]
 
         # filter to relevant columns
         ci_cols = [f"{m} 95% CI" for m in metrics if f"{m} 95% CI" in data.columns]
@@ -100,11 +110,12 @@ class LeaderboardViewer:
         if with_plots:
             avail = [c for c in metrics if c in df.columns]
             plots["bar"] = _plot_hbar(df, agent_col="Agent", metrics=avail)
-            for m in [primary] + group:
-                x, y = f"{m} cost", m
-                if x in df.columns and y in df.columns:
-                    plots[f"scatter_{m}"] = _plot_scatter(
-                        df, x=x, y=y, agent_col="Agent"
+            plot_metrics = [primary] + [f"{t} score" for t in group]
+            for m in plot_metrics:
+                cost_col = f"{m.replace(' score', '')} cost"
+                if cost_col in df.columns and m in df.columns:
+                    plots[f"scatter_{m.replace(' score', '')}"] = _plot_scatter(
+                        df, x=cost_col, y=m, agent_col="Agent"
                     )
 
         return df, plots
@@ -315,7 +326,7 @@ def _plot_hbar(
 
         sns.barplot(data=data, y=agent_col, x=metric, ax=ax, color=color)
         ci = data.get(f"{metric} 95% CI")
-        if ci is not None:
+        if ci is not None and not ci.isna().all():
             y_positions = range(len(data))
             ax.errorbar(
                 x=data[metric],
