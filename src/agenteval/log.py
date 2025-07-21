@@ -160,9 +160,13 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 cache_creation_input_tokens=cache_write_input_tokens,
             )
 
-            litellm_provider = adapt_provider_name(model_usage.provider)
-            litellm_model = litellm_provider + "/" + adapt_model_name(model_usage.model)
-            litellm_provider = None
+            if model_usage.provider:
+                litellm_provider = adapt_provider_name(model_usage.provider)
+                litellm_model = (
+                    litellm_provider + "/" + adapt_model_name(model_usage.model)
+                )
+            else:
+                litellm_model = adapt_model_name(model_usage.model)
 
             # litellm_model = adapt_model_name(model_usage.model)
             prompt_cost, completion_cost = cost_per_token(
