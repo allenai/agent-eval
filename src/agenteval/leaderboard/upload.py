@@ -163,7 +163,7 @@ def upload_summary_to_hf(
     _validate_path_component(config_name, "config_name")
     _validate_path_component(split, "split")
     _validate_path_component(submission_name, "submission_name")
-    summary_bytes = BytesIO(eval_result.dump_json_bytes())
+    summary_bytes = BytesIO(eval_result.dump_json_bytes(indent=None))
     api.upload_file(
         path_or_fileobj=summary_bytes,
         path_in_repo=f"{config_name}/{split}/{submission_name}.json",
