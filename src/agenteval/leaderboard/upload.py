@@ -191,9 +191,9 @@ def compress_model_usages(eval_result: EvalResult):
 
     compressed_results = []
     for task_result in eval_result.results:
-        # replace list[None] with None
+        # replace list[None] with None if any costs are None
         model_costs = task_result.model_costs
-        if model_costs is not None and all(cost is None for cost in model_costs):
+        if model_costs is not None and any(cost is None for cost in model_costs):
             model_costs = None
 
         # Create a new TaskResult with compressed model_usages
