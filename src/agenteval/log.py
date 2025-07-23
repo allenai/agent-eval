@@ -155,24 +155,24 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                         f"Model usage token counts don't follow expected pattern."
                     )
 
-            prompt_tokens_wrapper = PromptTokensDetailsWrapper(
-                cached_tokens=cache_read_input_tokens, text_tokens=text_tokens
-            )
+                prompt_tokens_wrapper = PromptTokensDetailsWrapper(
+                    cached_tokens=cache_read_input_tokens, text_tokens=text_tokens
+                )
 
-            litellm_usage = Usage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=model_usage.usage.total_tokens,
-                reasoning_tokens=model_usage.usage.reasoning_tokens,
-                prompt_tokens_details=prompt_tokens_wrapper,
-                cache_read_input_tokens=cache_read_input_tokens,
-                cache_creation_input_tokens=cache_write_input_tokens,
-            )
+                litellm_usage = Usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=model_usage.usage.total_tokens,
+                    reasoning_tokens=model_usage.usage.reasoning_tokens,
+                    prompt_tokens_details=prompt_tokens_wrapper,
+                    cache_read_input_tokens=cache_read_input_tokens,
+                    cache_creation_input_tokens=cache_write_input_tokens,
+                )
 
-            prompt_cost, completion_cost = cost_per_token(
-                model=adapt_model_name(model_usage.model),
-                usage_object=litellm_usage,
-            )
+                prompt_cost, completion_cost = cost_per_token(
+                    model=adapt_model_name(model_usage.model),
+                    usage_object=litellm_usage,
+                )
 
             total_cost += prompt_cost + completion_cost
         except Exception as e:
