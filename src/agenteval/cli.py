@@ -5,6 +5,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
+from io import BytesIO as BytesIO
 
 import click
 import datasets
@@ -26,12 +28,12 @@ OPENNESS_MAPPING = {
     "c": "Closed",
     "api": "API Available",
     "os": "Open Source",
-    "ow": "Open Source + Open Weights"
+    "ow": "Open Source + Open Weights",
 }
 TOOL_MAPPING = {
     "s": "Standard",
     "css": "Custom with Standard Search",
-    "c": "Fully Custom"
+    "c": "Fully Custom",
 }
 
 
@@ -234,13 +236,15 @@ cli.add_command(score_command)
     help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
-    "-o", "--openness",
+    "-o",
+    "--openness",
     type=AliasedChoice(OPENNESS_MAPPING),
     required=True,
     help=generate_choice_help(OPENNESS_MAPPING, "Level of openness for the agent."),
 )
 @click.option(
-    "-t", "--tool-usage",
+    "-t",
+    "--tool-usage",
     type=AliasedChoice(TOOL_MAPPING),
     required=True,
     help=generate_choice_help(TOOL_MAPPING, "Tool choices available to the agent."),
@@ -561,6 +565,116 @@ def eval_command(
 
 
 cli.add_command(eval_command)
+
+
+@click.command(
+    name="rescore",
+    help="Download existing results, recompute agenteval.json, and republish under a new path. The original logfiles will be copied to the new path.",
+)
+@click.option(
+    "--results-repo-id",
+    type=str,
+    required=True,
+    default="allenai/asta-bench-internal-results",
+    help="HF repo id to download existing results from.",
+)
+@click.option(
+    "--submissions-repo-id",
+    type=str,
+    required=True,
+    default="allenai/asta-bench-internal-submissions",
+    help="HF repo id to upload rescored results to.",
+)
+@click.option(
+    "--results-path",
+    type=str,
+    required=True,
+    help="HF file with results to rescore, e.g. 1.0.0-dev1/validation/miked-ai_ReAct_reasoning_claude-sonnet-4-20250514_2025-07-10T21-46-47.json",
+)
+@click.option(
+    "--resubmission-prefix",
+    type=str,
+    required=True,
+    help="Path prefix where the resubmitted logfiles and results will be uploaded, e.g. 1.0.0-rescored/validation",
+ )
+@click.option(
+    "--work-dir",
+    type=str,
+    default=None,
+    help="Working directory for downloading and processing results. If missing, use a temporary directory.",
+)
+def rescore_command(
+    results_repo_id: str,
+    submissions_repo_id: str,
+    results_path: str,
+    resubmission_prefix: str,
+    work_dir: str | None = None,
+):
+    """Download existing results from a HF dataset, recompute summaries, and upload to a new dataset."""
+    temp_dir = None
+    if work_dir is None:
+        temp_dir = tempfile.TemporaryDirectory()
+        work_dir = temp_dir.__enter__()
+
+    local_results_dir = os.path.join(work_dir, "results")
+    local_submissions_dir = os.path.join(work_dir, "submissions")
+    from huggingface_hub import HfApi
+
+    hf_api = HfApi()
+
+    click.echo(f"Downloading results from {results_repo_id}/{results_path}")
+    hf_api.hf_hub_download(
+        repo_id=results_repo_id,
+        repo_type="dataset",
+        filename=results_path,
+        local_dir=local_results_dir,
+    )
+    local_results_path = os.path.join(local_results_dir, results_path)
+    with open(local_results_path) as f:
+        eval_result = EvalResult.model_validate(json.load(f))
+
+
+    submissions_path = results_path.replace(".json", "")
+    local_agenteval_path = os.path.join(local_submissions_dir, submissions_path, "agenteval.json")
+    click.echo(f"Downloaded raw logs from {submissions_repo_id}/{submissions_path}")
+    hf_api.snapshot_download(
+        repo_id=submissions_repo_id,
+        repo_type="dataset",
+        allow_patterns=f"{submissions_path}/*",
+        local_dir=local_submissions_dir,
+    )
+    click.echo(f"Recomputing results. Overwriting existing results in {local_agenteval_path}.")
+    task_results, eval_specs, had_errors = process_eval_logs(
+        os.path.join(local_submissions_dir, submissions_path)
+    )
+    eval_result.eval_specs = eval_specs
+    eval_result.results = task_results
+    eval_result.save_json(local_results_path)
+
+    submission_name = submissions_path.split("/")[-1]
+    resubmission_path = f"{resubmission_prefix}/{submission_name}"
+    click.echo(f"Uploading submission to {submissions_repo_id}/{resubmission_path}")
+    hf_api.upload_folder(
+        repo_id=submissions_repo_id,
+        repo_type="dataset",
+        folder_path=os.path.join(local_submissions_dir, submissions_path),
+        path_in_repo=resubmission_path,
+    )
+
+    compressed_usages_result = compress_model_usages(eval_result)
+    click.echo(f"Uploading results to {results_repo_id}/{resubmission_path}.json")
+    hf_api.upload_file(
+        repo_id=results_repo_id,
+        repo_type="dataset",
+        path_or_fileobj=BytesIO(compressed_usages_result.dump_json_bytes()),
+        path_in_repo=f"{resubmission_path}.json",
+    )
+
+    if temp_dir:
+        temp_dir.__exit__(None, None, None)
+
+
+cli.add_command(rescore_command)
 
 
 if __name__ == "__main__":
