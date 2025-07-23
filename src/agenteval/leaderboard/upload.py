@@ -163,7 +163,9 @@ def upload_summary_to_hf(
     _validate_path_component(config_name, "config_name")
     _validate_path_component(split, "split")
     _validate_path_component(submission_name, "submission_name")
-    summary_bytes = BytesIO(eval_result.dump_json_bytes())
+
+    compressed_result = compress_model_usages(eval_result)
+    summary_bytes = BytesIO(compressed_result.dump_json_bytes(indent=None))
     api.upload_file(
         path_or_fileobj=summary_bytes,
         path_in_repo=f"{config_name}/{split}/{submission_name}.json",
@@ -189,9 +191,9 @@ def compress_model_usages(eval_result: EvalResult):
 
     compressed_results = []
     for task_result in eval_result.results:
-        # replace list[None] with None
+        # replace list[None] with None if any costs are None
         model_costs = task_result.model_costs
-        if model_costs is not None and all(cost is None for cost in model_costs):
+        if model_costs is not None and any(cost is None for cost in model_costs):
             model_costs = None
 
         # Create a new TaskResult with compressed model_usages
