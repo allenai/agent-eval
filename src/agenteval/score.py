@@ -10,11 +10,15 @@ from inspect_ai.log import (
     read_eval_log,
     read_eval_log_samples,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
 
 logger = logging.getLogger(__name__)
+
+# Fields with dict type that need JSON serialization for Arrow/Parquet and HuggingFace datasets compatibility
+# These systems cannot handle dict types so we serialize to JSON strings
+_EVALSPEC_JSON_FIELDS = ["solver_args", "model_args", "task_args", "packages"]
 
 
 class Metric(BaseModel):
@@ -30,8 +34,11 @@ class EvalSpec(BaseModel):
     solver: str | None = None
     solver_args: dict[str, Any] | None = None
     model: str
-    model_args: dict[str, Any] = Field(default_factory=dict)
+    model_args: dict[str, Any] | None = None
+    task_args: dict[str, Any] | None = None
+    task_args_passed: dict[str, Any] | None = Field(default=None, exclude=True)
     revision: EvalRevision | None = None
+    packages: dict[str, str] | None = None
 
     @classmethod
     def from_eval_log(cls, log: EvalLog) -> "EvalSpec":
@@ -40,24 +47,55 @@ class EvalSpec(BaseModel):
             solver_args=log.eval.solver_args,
             model=log.eval.model,
             model_args=log.eval.model_args,
+            task_args=log.eval.task_args,
+            task_args_passed=log.eval.task_args_passed,
             revision=log.eval.revision,
+            packages=log.eval.packages,
         )
+
+    @field_validator(*_EVALSPEC_JSON_FIELDS, mode="before")
+    @classmethod
+    def deserialize_json_fields(cls, v):
+        """Deserialize JSON strings back to Python objects. Raises on JSON errors."""
+        import json
+
+        if not isinstance(v, str):
+            return v  # Already deserialized or None
+        return json.loads(v)
+
+    @field_serializer(*_EVALSPEC_JSON_FIELDS)
+    def serialize_json_fields(self, v):
+        """Serialize Python objects to JSON strings. Logs errors and returns fallback."""
+        import json
+
+        if v is None:
+            return None
+        try:
+            return json.dumps(v, default=str, sort_keys=True)
+        except (TypeError, ValueError) as e:
+            logger.warning(
+                f"Failed to serialize field to JSON: {e}, returning error indicator"
+            )
+            return json.dumps({"__serialization_error__": str(e)})
 
 
 class TaskResult(BaseModel):
     """Results for a single task."""
 
     task_name: str
-    """Name of the task."""
+    """Name of the task. Derived from Inspect `EvalLog.eval.task`."""
+
+    eval_spec: EvalSpec | None = None
+    """Evaluation specification used for this task. Derived from Inspect `EvalLog.eval`."""
 
     metrics: list[Metric]
-    """List of metrics."""
+    """List of metrics. Derived from Inspect `EvalLog.results.scores`."""
 
     model_usages: list[list[ModelUsageWithName]] | None = None
-    """List of model usage lists per sample."""
+    """List of model usage lists per sample. Derived from Inspect `EvalLog.samples`."""
 
     model_costs: list[float | None] | None = None
-    """List of model costs per sample."""
+    """List of model costs per sample. Computed from `model_usages`."""
 
 
 def get_metrics(log: EvalLog) -> list[Metric]:
@@ -98,15 +136,15 @@ def get_normalized_task_name(log: EvalLog) -> str:
     return log.eval.task.split("/")[-1]
 
 
-def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], bool]:
+def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], bool]:
     """
-    Process evaluation logs from a directory and return task results and eval specs.
+    Process evaluation logs from a directory and return task results.
 
     Args:
         log_dir: Directory containing evaluation logs
 
     Returns:
-        A tuple containing a list of task results and a list of eval specs
+        A tuple containing a list of task results and whether there were errors
     """
     # Read evaluation logs
     logs = {}
@@ -121,22 +159,9 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
     if not logs:
         raise ValueError("No valid evaluation logs found.")
 
-    # Collect eval specs
-    eval_specs = []
-    seen_specs = set()
-    for log in logs.values():
-        next_eval_spec = EvalSpec.from_eval_log(log)
-        # Use the hash of the serialized spec to check for duplicates
-        spec_hash = hash(next_eval_spec.model_dump_json())
-        if spec_hash not in seen_specs:
-            seen_specs.add(spec_hash)
-            eval_specs.append(next_eval_spec)
-
-    if not eval_specs:
-        raise ValueError("Eval specification is required.")
-
     results = []
     for task_name, log in logs.items():
+        eval_spec = EvalSpec.from_eval_log(log)
         try:
             metrics = get_metrics(log)
             if len(metrics) == 0:
@@ -147,6 +172,7 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
             results.append(
                 TaskResult(
                     task_name=task_name,
+                    eval_spec=eval_spec,
                     metrics=metrics,
                     # Set to None to avoid incorrect pyarrow model usage type inference
                     model_usages=model_usages if has_model_usages else None,
@@ -157,4 +183,4 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], list[EvalSpec], b
             had_errors = True
             logger.exception(f"No metrics for {task_name}:")
 
-    return results, eval_specs, had_errors
+    return results, had_errors

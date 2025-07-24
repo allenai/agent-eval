@@ -5,7 +5,7 @@ Utility module for maintainers to generate HuggingFace Dataset schema from Pydan
 import datetime
 import types
 from importlib import resources
-from typing import Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 import pyarrow as pa
 import yaml
@@ -40,6 +40,36 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
     if origin is list:
         inner = get_args(anno)[0]
         return pa.list_(_pa_type_for_annotation(inner))
+    # Handle dict[str, Any] and dict[str, str] specifically - these are serialized as JSON strings
+    if origin is dict:
+        args = get_args(anno)
+        if len(args) == 2 and args[0] is str and (args[1] is Any or args[1] is str):
+            return pa.string()  # dict[str, Any] and dict[str, str] become JSON strings
+        # Other dict types could be handled as proper Arrow maps/structs
+        # For now, fall through to unsupported
+    # Handle Literal types - infer type from literal values
+    if origin is Literal:
+        literal_values = get_args(anno)
+        if not literal_values:
+            return pa.string()  # fallback
+        
+        # Check that all literal values are the same type
+        first_type = type(literal_values[0])
+        for value in literal_values:
+            if type(value) != first_type:
+                raise ValueError(f"Literal {anno} contains mixed types: {[type(v) for v in literal_values]}")
+        
+        # Map Python type to Arrow type
+        if first_type is str:
+            return pa.string()
+        elif first_type is int:
+            return pa.int64()
+        elif first_type is bool:
+            return pa.bool_()
+        elif first_type is float:
+            return pa.float64()
+        else:
+            raise ValueError(f"Unsupported literal type {first_type} in {anno}")
     # Nested BaseModel
     if isinstance(anno, type) and issubclass(anno, BaseModel):
         inner_schema = _schema_from_pydantic(anno)
