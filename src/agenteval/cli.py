@@ -395,11 +395,9 @@ def publish_command(
     click.echo(f"Uploaded submission logs dir to {logs_url}")
     eval_result.submission.logs_url = logs_url
 
-    compressed_usages_result = compress_model_usages(eval_result)
-
     summary_url = upload_summary_to_hf(
         hf_api,
-        compressed_usages_result,
+        eval_result,
         results_repo_id,
         config_name,
         eval_result.split,

@@ -75,7 +75,7 @@ class EvalResult(EvalConfig):
 
     def dump_json_bytes(
         self,
-        indent: int = 2,
+        indent: int | None = 2,
         **model_dump_kwargs,
     ) -> bytes:
         """
