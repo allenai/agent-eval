@@ -32,6 +32,12 @@ class SubmissionMetadata(BaseModel):
     tool_usage: str | None = None
 
 
+class SuiteConfigResultsComparisonInfo(BaseModel):
+    tasks_in_only_suite_config: Set[str]
+    tasks_in_only_results: Set[str]
+    available_metrics_for_tasks_missing_primary_metric_in_results: Dict[str, Set[str]]
+
+
 class EvalResult(EvalConfig):
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
@@ -87,3 +93,43 @@ class EvalResult(EvalConfig):
             exclude_defaults=False,
             **model_dump_kwargs,
         ).encode("utf-8")
+
+    def check_results_against_provided_suite_config(self, provided_suite_config: SuiteConfig) -> SuiteConfigResultsComparisonInfo:
+        # prep for suite config info
+        tasks_from_suite_config = provided_suite_config.get_tasks(self.split)
+        primary_metric_from_suite_config_by_task_name: Dict[str, str] = {}
+        for task in tasks_from_suite_config:
+            task_name = task.name
+            assert task_name not in primary_metric_from_suite_config_by_task_name
+            primary_metric_from_suite_config_by_task_name[task_name] = task.primary_metric
+
+        # prep for result info
+        task_metric_names_from_results_by_task_name: Dict[str, Set[str]] = {}
+        for result in self.results:
+            task_name = result.task_name
+            if task_name not in task_metric_names_from_results_by_task_name:
+                task_metric_names_from_results_by_task_name[task_name] = set([])
+            for metric in result.metrics:
+                task_metric_names_from_results_by_task_name[task_name].add(metric.name)
+
+        # check tasks
+        task_names_from_suite_config = set(tasks_from_suite_config_by_task_name.keys())
+        task_names_from_results = set(task_metric_names_from_results_by_task_name.keys())
+        tasks_in_suite_config_but_not_in_results = task_names_from_suite_config.difference(task_names_from_results)
+        tasks_in_results_but_not_in_suite_config = task_names_from_results.difference(task_names_from_suite_config)
+
+        # check metrics
+        available_metrics_for_tasks_missing_primary_metric_by_task_name = {}
+        for task_name, primary_metric in primary_metric_from_suite_config_by_task_name.items():
+            result_metric_names = task_metric_names_from_results_by_task_name.get(task_name)
+            if primary_metric not in result_metric_names:
+                available_metrics_for_tasks_missing_primary_metric_by_task_name[task_name] = result_metric_names
+
+        return SuiteConfigResultsComparisonInfo(
+            tasks_in_only_suite_config=tasks_in_suite_config_but_not_in_results,
+            tasks_in_only_results=tasks_in_results_but_not_in_suite_config,
+            available_metrics_for_tasks_missing_primary_metric_in_results=available_metrics_for_tasks_missing_primary_metric_by_task_name,
+        )
+
+    def check_results_against_my_suite_config(self) -> SuiteConfigResultsComparisonInfo:
+        return check_results_against_provided_suite_config(self.suite_config)
