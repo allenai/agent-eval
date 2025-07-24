@@ -12,8 +12,7 @@ from inspect_ai.log import (
 )
 from inspect_ai.model import ModelUsage
 from litellm import cost_per_token
-from litellm.types.utils import PromptTokensDetails, PromptTokensDetailsWrapper, Usage
-from litellm.utils import CostPerToken
+from litellm.types.utils import PromptTokensDetailsWrapper, Usage
 
 from pydantic import BaseModel
 
