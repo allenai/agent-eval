@@ -82,11 +82,13 @@ class LeaderboardViewer:
         else:
             primary = f"{tag} score"
             group = tag_map.get(tag, [])
-        
+
         # Check if the primary column exists before sorting
         if primary not in data.columns:
-            raise KeyError(f"Column '{primary}' not found. Available columns: {list(data.columns)}")
-        
+            raise KeyError(
+                f"Column '{primary}' not found. Available columns: {list(data.columns)}"
+            )
+
         data = data.sort_values(primary, ascending=False)
 
         # build full metric list: primary + its cost + each member and its cost

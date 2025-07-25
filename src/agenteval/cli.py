@@ -181,7 +181,7 @@ def score_command(
         unique_agent_specs = set()
         # Check for different code versions (revision/packages)
         unique_code_specs = set()
-        
+
         for task_result in eval_result.results:
             if task_result.eval_spec:
                 agent_hash = hash(
@@ -190,7 +190,7 @@ def score_command(
                     )
                 )
                 unique_agent_specs.add(agent_hash)
-                
+
                 code_hash = hash(
                     task_result.eval_spec.model_dump_json(
                         include={"revision", "packages"}
@@ -204,7 +204,7 @@ def score_command(
                 "Use a single solver + model config per log directory to measure a single "
                 "agent's performance across tasks."
             )
-            
+
         if len(unique_code_specs) > 1:
             click.echo(
                 f"Warning: Found {len(unique_code_specs)} different code versions "

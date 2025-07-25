@@ -13,7 +13,6 @@ from inspect_ai.log import (
 from inspect_ai.model import ModelUsage
 from litellm import cost_per_token
 from litellm.types.utils import PromptTokensDetailsWrapper, Usage
-
 from pydantic import BaseModel
 
 from .local_cost import CUSTOM_PRICING
@@ -118,7 +117,9 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 total_tokens = model_usage.usage.total_tokens
 
                 cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
-                cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
+                cache_write_input_tokens = (
+                    model_usage.usage.input_tokens_cache_write or 0
+                )
                 reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
                 if input_tokens == total_tokens - output_tokens:
@@ -145,7 +146,9 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 ):
                     text_tokens = input_tokens
                     prompt_tokens = (
-                        input_tokens + cache_read_input_tokens + cache_write_input_tokens
+                        input_tokens
+                        + cache_read_input_tokens
+                        + cache_write_input_tokens
                     )
                     completion_tokens = output_tokens
 
