@@ -20,7 +20,8 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
     upload_summary_to_hf,
 )
-from .models import EvalConfig, EvalResult, TaskResults
+from .models import EvalConfig, TaskResults
+from .leaderboard.models import LeaderboardSubmission
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 from .io import atomic_write_file
@@ -30,6 +31,7 @@ EVAL_CONFIG_FILENAME = "eval_config.json"
 SCORES_FILENAME = "scores.json"
 SUMMARY_FILENAME = "summary_stats.json"
 SUBMISSION_METADATA_FILENAME = "submission.json"
+SUMMARIES_PREFIX = "summaries"
 OPENNESS_MAPPING = {
     "c": "Closed",
     "api": "API Available",
@@ -208,7 +210,7 @@ def score_command(
             path_or_fileobj=BytesIO(
                 task_results.model_dump_json(indent=2).encode("utf-8")
             ),
-            path_in_repo=f"summaries/{submission_path}/{SCORES_FILENAME}",
+            path_in_repo=f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}",
         )
 
 
@@ -378,7 +380,7 @@ def publish_lb_command(repo_id: str, submission_url: str):
         repo_id=repo_id,
         allow_patterns=[
             f"{submission_path}/{EVAL_CONFIG_FILENAME}",
-            f"summaries/{submission_path}/{SCORES_FILENAME}",
+            f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}",
             f"{submission_path}/{SUBMISSION_METADATA_FILENAME}",
         ],
     )
@@ -390,9 +392,9 @@ def publish_lb_command(repo_id: str, submission_url: str):
     required_files = [eval_config_path, scores_path, submission_path]
     if all((os.path.exists(f) for f in required_files)):
         eval_config = EvalConfig.model_validate_json(open(eval_config_path).read())
-        eval_result = EvalResult(
+        eval_result = LeaderboardSubmission(
             suite_config=eval_config.suite_config,
-            suite=eval_config.split,
+            split=eval_config.split,
             results=TaskResults.model_validate_json(open(scores_path).read()).results,
             submission=SubmissionMetadata.model_validate_json(
                 open(submission_path).read()
