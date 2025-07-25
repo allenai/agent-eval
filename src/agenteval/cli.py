@@ -20,17 +20,16 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
     upload_summary_to_hf,
 )
-from .models import EvalConfig, EvalResult, EvalResults
+from .models import EvalConfig, EvalResult, TaskResults
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 from .io import atomic_write_file
 
 HF_URL_PATTERN = r"^hf://([^/]+/[^/]+)/(.*)$"
-EVAL_FILENAME = "agenteval.json"
 EVAL_CONFIG_FILENAME = "eval_config.json"
 SCORES_FILENAME = "scores.json"
-SUMMARY_FILENAME = "summary.json"
-SUBMISSION_METADATA_FILENAME = "submission_metadata.json"
+SUMMARY_FILENAME = "summary_stats.json"
+SUBMISSION_METADATA_FILENAME = "submission.json"
 OPENNESS_MAPPING = {
     "c": "Closed",
     "api": "API Available",
@@ -146,7 +145,7 @@ def score_command(
         eval_config = EvalConfig.model_validate(json.load(f))
 
     task_results = process_eval_logs(log_dir)
-    eval_result = EvalResults(results=task_results.results)
+    eval_result = TaskResults(results=task_results.results)
 
     if task_results.errors:
         click.echo("Omitting scores: {}".format("\n".join(task_results.errors)))
@@ -196,17 +195,6 @@ def score_command(
         summary_path = os.lpath.join(log_dir, SUMMARY_FILENAME)
         atomic_write_file(summary_path, json.dumps(stats, indent=2))
         click.echo(f"Wrote summary scores to {summary_path}")
-
-        # Persist legacy agenteval.json file
-        eval_result = EvalResult(
-            suite_config=eval_config.suite_config,
-            split=eval_config.split,
-            results=eval_result.results,
-        )
-        atomic_write_file(
-            os.path.join(log_dir, EVAL_FILENAME), eval_result.model_dump_json(indent=2)
-        )
-        click.echo(f"Wrote scores to {scores_path}")
     else:
         from huggingface_hub import HfApi
 
@@ -387,16 +375,14 @@ def publish_lb_command(repo_id: str, submission_url: str):
         repo_id=repo_id,
         allow_patterns=[
             f"{submission_path}/{EVAL_CONFIG_FILENAME}",
-            f"{submission_path}/{SCORES_FILENAME}",
+            f"summaries/{submission_path}/{SCORES_FILENAME}",
             f"{submission_path}/{SUBMISSION_METADATA_FILENAME}",
-            f"{submission_path}/{EVAL_FILENAME}",
         ],
     )
     eval_config_path = scores_path = os.path.join(
         submission_summary_dir, EVAL_CONFIG_FILENAME
     )
     scores_path = os.path.join(submission_summary_dir, SCORES_FILENAME)
-    agentevalpath = os.path.join(submission_summary_dir, EVAL_FILENAME)
     submission_path = os.path.join(submission_summary_dir, SUBMISSION_METADATA_FILENAME)
     required_files = [eval_config_path, scores_path, submission_path]
     if all((os.path.exists(f) for f in required_files)):
@@ -404,13 +390,11 @@ def publish_lb_command(repo_id: str, submission_url: str):
         eval_result = EvalResult(
             suite_config=eval_config.suite_config,
             suite=eval_config.split,
-            results=EvalResults.model_validate_json(open(scores_path).read()).results,
+            results=TaskResults.model_validate_json(open(scores_path).read()).results,
             submission=SubmissionMetadata.model_validate_json(
                 open(submission_path).read()
             ),
         )
-    elif os.path.exists(agentevalpath):
-        eval_result = EvalResults.model_validate_json(open(agentevalpath).read())
     else:
         click.echo(
             "Missing required files [{}] in {}".format(
@@ -601,10 +585,6 @@ def eval_command(
     # Write the config portion of the results file
     os.makedirs(log_dir, exist_ok=True)
     eval_config = EvalConfig(suite_config=suite_config, split=split)
-
-    # For backward compatibility
-    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
-        f.write(eval_config.model_dump_json(indent=2))
 
     eval_config_path = os.path.join(log_dir, EVAL_CONFIG_FILENAME)
     if not os.path.exists(eval_config_path):
