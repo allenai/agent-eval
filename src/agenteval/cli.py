@@ -224,10 +224,16 @@ def score_command(
                 "For fair comparison, do not override the task arg defaults."
             )
 
-    # Warn about any missing tasks
-    missing_tasks = eval_result.find_missing_tasks()
-    if missing_tasks:
-        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
+    # Warn about any missing tasks or tasks missing primary metrics
+    # Note: we're comparing to the suite config in the summary file,
+    # not the one provided via CLI args if that one is different.
+    # TODO: should we be comparing against that too?
+    summary_files_suite_config_vs_results = eval_result.check_results_against_my_suite_config()
+    if summary_files_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
+        click.echo(summary_files_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("summary file"))
+    if summary_files_suite_config_vs_results.tasks_missing_primary_metric():
+        for warning in summary_files_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("summary file"):
+            click.echo(warning)
 
     # Compute and display summary statistics
     stats = compute_summary_statistics(
@@ -346,9 +352,36 @@ def publish_command(
         raise click.ClickException(
             f"{EVAL_FILENAME} is not scored. Please run 'score {log_dir}' first."
         )
-    missing_tasks = eval_result.find_missing_tasks()
-    if missing_tasks:
-        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
+
+    # checking for consistency _within_ the provided summary file
+    summary_files_suite_config_vs_results = eval_result.check_results_against_my_suite_config()
+    if summary_files_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
+        click.echo(summary_files_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("summary file"))
+    if summary_files_suite_config_vs_results.tasks_missing_primary_metric():
+        for warning in summary_files_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("summary file"):
+            click.echo(warning)
+
+    # Validate suite config version
+    config_name = eval_result.suite_config.version
+    if not config_name:
+        raise click.ClickException("Suite config version is required for upload.")
+
+    # checking for consistency between the results in the provided summary file
+    # and the suite config from the first row in the results repo
+    maybe_result_repo_suite_config = EvalResult.fetch_first_result_from_result_repo(
+        repo_id=results_repo_id,
+        huggingface_config=config_name,
+        split=eval_result.split,
+    )
+    if maybe_result_repo_suite_config is not None:
+        # checking for consistency between the provided summary file's results
+        # and the suite config we think represents the results repo
+        repos_suite_config_vs_results = eval_result.check_results_against_provided_suite_config(maybe_result_repo_suite_config)
+        if repos_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
+            click.echo(repos_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("results repo"))
+        if repos_suite_config_vs_results.tasks_missing_primary_metric():
+            for warning in repos_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("results repo"):
+                click.echo(warning)
 
     # Determine HF user
     hf_api = HfApi()
@@ -378,11 +411,6 @@ def publish_command(
     eval_result.submission.submit_time = datetime.now(timezone.utc)
     eval_result.submission.openness = openness
     eval_result.submission.tool_usage = tool_usage
-
-    # Validate suite config version
-    config_name = eval_result.suite_config.version
-    if not config_name:
-        raise click.ClickException("Suite config version is required for upload.")
 
     # Build submission name
     ts = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")

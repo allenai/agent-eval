@@ -1,7 +1,8 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Union
+from typing import Dict, Optional, Set, Union
 
+import datasets
 from pydantic import BaseModel, Field
 
 from .config import SuiteConfig
@@ -37,11 +38,36 @@ class SuiteConfigResultsComparisonInfo(BaseModel):
     tasks_in_only_results: Set[str]
     available_metrics_for_tasks_missing_primary_metric_in_results: Dict[str, Set[str]]
 
+    def tasks_expected_by_suite_config_are_missing(self) -> bool:
+        return len(self.tasks_in_only_suite_config) > 0
+
+    def tasks_missing_primary_metric(self) -> bool:
+        return len(self.available_metrics_for_tasks_missing_primary_metric_in_results) > 0
+
+    def warning_for_missing_tasks_expected_by_suite_config(self, which_suite_config: str) -> str:
+        return (
+            f"Warning: Tasks in the {which_suite_config}'s suite config that are missing "
+            f"from results: {', '.join(self.tasks_in_only_suite_config)}"
+        )
+
+    def warnings_for_tasks_missing_primary_metric(self, which_suite_config: str) -> List[str]:
+        warnings = []
+        for task_name, available_metrics in self.available_metrics_for_tasks_missing_primary_metric_in_results.items():
+            warnings.append(
+                (
+                    f"Warning: the {task_name} task does not have the primary metric "
+                    f"expected based on the {which_suite_config}'s suite config. "
+                    f"Available metrics in results for this task: {', '.join(available_metrics)}"
+                )
+            )
+        return warnings
+
 
 class EvalResult(EvalConfig):
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 
+    # TODO: do we still need this?
     def find_missing_tasks(self) -> list[str]:
         try:
             tasks = self.suite_config.get_tasks(self.split)
@@ -133,3 +159,12 @@ class EvalResult(EvalConfig):
 
     def check_results_against_my_suite_config(self) -> SuiteConfigResultsComparisonInfo:
         return check_results_against_provided_suite_config(self.suite_config)
+
+    # TODO: should we use this in view.py too? Probably?
+    @staticmethod
+    def fetch_first_result_from_result_repo(repo_id: str, huggingface_config: str, split: str) -> Optional["EvalResult"]:
+        ds = datasets.load_dataset(repo_id, name=huggingface_config).get(split)
+        if ds:
+            return EvalResult.model_validate(ds[0])
+        else:
+            return None
