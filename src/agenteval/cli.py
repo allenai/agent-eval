@@ -352,7 +352,7 @@ cli.add_command(publish_logs_command)
 
 @click.command(
     name="publish",
-    help="Publish scored results in log_dir to Hugging Face leaderboard.",
+    help="Publish scored results in log_dir to HuggingFace leaderboard.",
 )
 @click.argument("submission_url", type=str)
 @click.option(
@@ -545,7 +545,7 @@ cli.add_command(lb)
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="If set, only print the command that would be run without executing it.",
+    help="Print the command that would be run and save eval_config locally.",
 )
 @click.option(
     "--display",
