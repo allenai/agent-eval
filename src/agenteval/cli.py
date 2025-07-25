@@ -144,37 +144,40 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate(json.load(f))
 
-    task_results = process_eval_logs(log_dir)
-    eval_result = TaskResults(results=task_results.results)
+    log_processing_outcome = process_eval_logs(log_dir)
 
-    if task_results.errors:
-        click.echo("Omitting scores: {}".format("\n".join(task_results.errors)))
+    if log_processing_outcome.errors:
+        click.echo("Errors processing logs")
+        for error in log_processing_outcome.errors:
+            click.echo(f"  - {error}")
         sys.exit(1)
 
+    task_results = TaskResults(results=log_processing_outcome.results)
+
     # Warn if multiple evaluation specs present
-    if len(eval_result.agent_specs) > 1:
+    if len(task_results.agent_specs) > 1:
         click.echo(
-            f"Warning: Found {len(eval_result.agent_specs)} different agent configurations. "
+            f"Warning: Found {len(task_results.agent_specs)} different agent configurations. "
             "Use a single solver + model config per log directory to measure a single "
             "agent's performance across tasks."
         )
-    if len(eval_result.code_specs) > 1:
+    if len(task_results.code_specs) > 1:
         click.echo(
-            f"Warning: Found {len(eval_result.code_specs)} different code versions "
+            f"Warning: Found {len(task_results.code_specs)} different code versions "
             "(revision/packages). This may indicate mixed evaluation runs from "
             "different code states."
         )
 
         # Warn if user-specified task arguments are present
 
-    if eval_result.tasks_with_args:
+    if task_results.tasks_with_args:
         click.echo(
-            f"Warning: User-specified task arguments found for tasks: {', '.join(eval_result.tasks_with_args)}. "
+            f"Warning: User-specified task arguments found for tasks: {', '.join(task_results.tasks_with_args)}. "
             "For fair comparison, do not override the task arg defaults."
         )
 
     # Warn about any missing tasks
-    missing_tasks = eval_config.task_names - eval_result.task_names
+    missing_tasks = eval_config.task_names - task_results.task_names
     if missing_tasks:
         click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
@@ -182,13 +185,13 @@ def score_command(
     stats = compute_summary_statistics(
         eval_config.suite_config,
         eval_config.split,
-        eval_result.results or [],
+        task_results.results or [],
     )
 
     if hf_url_match is None:
         # Persist scores
         scores_path = os.path.join(log_dir, SCORES_FILENAME)
-        atomic_write_file(scores_path, eval_result.model_dump_json(indent=2))
+        atomic_write_file(scores_path, task_results.model_dump_json(indent=2))
         click.echo(f"Wrote scores to {scores_path}")
 
         # Persist summary
@@ -203,7 +206,7 @@ def score_command(
             repo_id=repo_id,
             repo_type="dataset",
             path_or_fileobj=BytesIO(
-                eval_result.model_dump_json(indent=2).encode("utf-8")
+                task_results.model_dump_json(indent=2).encode("utf-8")
             ),
             path_in_repo=f"summaries/{submission_path}/{SCORES_FILENAME}",
         )

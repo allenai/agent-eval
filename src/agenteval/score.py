@@ -98,11 +98,6 @@ class TaskResult(BaseModel):
     """List of model costs per sample. Computed from `model_usages`."""
 
 
-class TaskResults(BaseModel):
-    results: list[TaskResult]
-    errors: list[str]
-
-
 def get_metrics(log: EvalLog) -> list[Metric]:
     """Extract metrics from an evaluation log."""
     metrics_list = []
@@ -141,7 +136,11 @@ def get_normalized_task_name(log: EvalLog) -> str:
     return log.eval.task.split("/")[-1]
 
 
-def process_eval_logs(log_dir: str) -> TaskResults:
+class EvalLogProcessingResult(BaseModel):
+    results: list[TaskResult]
+    errors: list[str]
+
+def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
     """
     Process evaluation logs from a directory and return task results.
 
