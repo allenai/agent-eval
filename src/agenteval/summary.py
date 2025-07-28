@@ -15,6 +15,10 @@ class SummaryStat(BaseModel):
     cost_stderr: float | None
 
 
+class SummaryStats(BaseModel):
+    stats: dict[str, SummaryStat]
+
+
 def _mean(
     vals: Sequence[float], weights: Sequence[float] | None = None
 ) -> float | None:
@@ -64,7 +68,7 @@ def compute_summary_statistics(
     suite_config: SuiteConfig,
     split: str,
     results: list[TaskResult],
-) -> dict[str, SummaryStat]:
+) -> SummaryStats:
     """
     Compute summary statistics for a set of task results.
     """
@@ -137,9 +141,9 @@ def compute_summary_statistics(
             cost_stderr=None,
         )
 
-    # overall summary
-    all_scores = [s.score for s in tasks_summary.values()]
-    all_costs = [s.cost for s in tasks_summary.values()]
+    # overall summary statistics are a macro-average over tag scores
+    all_scores = [s.score for s in tags_summary.values()]
+    all_costs = [s.cost for s in tags_summary.values()]
     overall = SummaryStat(
         score=_safe_mean(all_scores, is_score=True),
         score_stderr=None,
@@ -153,4 +157,4 @@ def compute_summary_statistics(
         stats[f"tag/{tag}"] = stat
     for task_name, stat in tasks_summary.items():
         stats[f"task/{task_name}"] = stat
-    return stats
+    return SummaryStats(stats=stats)

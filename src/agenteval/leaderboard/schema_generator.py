@@ -12,7 +12,7 @@ import yaml
 from datasets import Features
 from pydantic import BaseModel
 
-from ..models import EvalResult
+from .models import LeaderboardSubmission
 
 
 def _pa_type_for_annotation(anno) -> pa.DataType:
@@ -105,7 +105,7 @@ def write_dataset_features(output_path: str) -> None:
     """
     Write the HuggingFace Features data inferred from the EvalResult schema.
     """
-    features = features_from_pydantic(EvalResult)
+    features = features_from_pydantic(LeaderboardSubmission)
     with open(output_path, "w", encoding="utf-8") as f:
         yaml_values = features._to_yaml_list()
         yaml.safe_dump(yaml_values, f, indent=2, sort_keys=False)
