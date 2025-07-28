@@ -1,27 +1,37 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from io import BytesIO
 
 import click
 import datasets
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
+from .io import atomic_write_file
+from .leaderboard.models import LeaderboardSubmission
 from .leaderboard.upload import (
     compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
     upload_summary_to_hf,
 )
-from .models import EvalConfig, EvalResult
+from .models import EvalConfig, SubmissionMetadata, TaskResults
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
-EVAL_FILENAME = "agenteval.json"
+HF_URL_PATTERN = r"^hf://(?P<repo_id>[^/]+/[^/]+)/(?P<path>.*)$"
+AGENTEVAL_FILENAME = "agenteval.json"
+EVAL_CONFIG_FILENAME = "eval_config.json"
+SCORES_FILENAME = "scores.json"
+SUMMARY_FILENAME = "summary_stats.json"
+SUBMISSION_METADATA_FILENAME = "submission.json"
+SUMMARIES_PREFIX = "summaries"
 OPENNESS_MAPPING = {
     "c": "Closed",
     "api": "API Available",
@@ -35,9 +45,29 @@ TOOL_MAPPING = {
 }
 
 
-def verify_git_reproducibility(ignore_git: bool) -> None:
-    if ignore_git:
-        return
+def read_eval_config(log_dir: str) -> EvalConfig:
+    eval_config_path = os.path.join(log_dir, EVAL_CONFIG_FILENAME)
+    if not os.path.exists(eval_config_path):
+        # Fall back to old filename for backwards compatibility
+        eval_config_path = os.path.join(log_dir, AGENTEVAL_FILENAME)
+    with open(eval_config_path, "r", encoding="utf-8") as f:
+        return EvalConfig.model_validate(json.load(f))
+
+
+def read_submission_metadata(log_dir: str) -> SubmissionMetadata:
+    submission_path = os.path.join(log_dir, SUBMISSION_METADATA_FILENAME)
+    if os.path.exists(submission_path):
+        with open(submission_path, "r", encoding="utf-8") as f:
+            return SubmissionMetadata.model_validate_json(f.read())
+    else:
+        with open(
+            os.path.join(log_dir, AGENTEVAL_FILENAME), "r", encoding="utf-8"
+        ) as f:
+            d = json.load(f)
+            return SubmissionMetadata.model_validate(d["submission"])
+
+
+def verify_git_reproducibility() -> None:
     try:
         # Get current commit SHA and origin
         sha_result = subprocess.run(
@@ -117,141 +147,117 @@ def cli():
 
 @click.command(
     name="score",
-    help="Score a directory of evaluation logs.",
+    help="Score a directory of evaluation logs. Can be a local directory or a HuggingFace URL.",
 )
-@click.argument("log_dir", type=click.Path(exists=True, file_okay=False))
-@click.option(
-    "--config-path",
-    "config_path",
+@click.argument(
+    "log_dir",
     type=str,
-    help=f"Path to a yml config file. Ignored if {EVAL_FILENAME} exists.",
-    default=None,
-)
-@click.option(
-    "--split",
-    type=str,
-    help=f"Config data split. Ignored if {EVAL_FILENAME} exists.",
-    default=None,
 )
 def score_command(
     log_dir: str,
-    config_path: str | None,
-    split: str | None,
 ):
-    # Load or create EvalResult and process logs (inlined from processor)
-    json_path = Path(log_dir) / EVAL_FILENAME
-    if json_path.exists():
-        try:
-            raw = json_path.read_text(encoding="utf-8")
-            eval_result = EvalResult.model_validate_json(raw)
-        except Exception as e:
-            raise click.ClickException(
-                f"Failed to load existing '{EVAL_FILENAME}' at {json_path}: {e}"
-            )
-        if config_path:
-            try:
-                cli_cfg = load_suite_config(config_path)
-                if cli_cfg.version != eval_result.suite_config.version:
-                    click.echo(
-                        f"Warning: CLI config version '{cli_cfg.version}' "
-                        f"does not match JSON config version '{eval_result.suite_config.version}'."
-                    )
-            except Exception as e:
-                click.echo(
-                    f"Warning: could not load CLI config '{config_path}' for comparison: {e}"
-                )
-        if split and split != eval_result.split:
-            raise click.ClickException(
-                f"Split mismatch: JSON split '{eval_result.split}' != CLI split '{split}'"
-            )
-    else:
-        if not config_path or not split:
-            raise click.ClickException(
-                "--config-path and --split must be provided when no existing result JSON"
-            )
-        suite_cfg = load_suite_config(config_path)
-        eval_result = EvalResult(suite_config=suite_cfg, split=split)
+    hf_url_match = re.match(HF_URL_PATTERN, log_dir)
+    if hf_url_match is not None:
+        # Download the logs from HF URL
+        from huggingface_hub import snapshot_download
 
-    task_results, had_errors = process_eval_logs(log_dir)
-    eval_result.results = task_results
+        repo_id = hf_url_match.group("repo_id")
+        submission_path = hf_url_match.group("path")
+        temp_dir = tempfile.TemporaryDirectory()
+        download_dir = snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            allow_patterns=f"{submission_path}/*",
+            local_dir=temp_dir.__enter__(),
+        )
+        log_dir = os.path.join(download_dir, submission_path)
+
+    if not os.path.exists(log_dir) or not os.path.isdir(log_dir):
+        click.echo(f"No directory named {log_dir}")
+        sys.exit(1)
+
+    click.echo(f"Processing logs in {log_dir}")
+    eval_config = read_eval_config(log_dir)
+
+    log_processing_outcome = process_eval_logs(log_dir)
+
+    if log_processing_outcome.errors:
+        click.echo("Errors processing logs")
+        for error in log_processing_outcome.errors:
+            click.echo(f"  - {error}")
+        sys.exit(1)
+
+    task_results = TaskResults(results=log_processing_outcome.results)
 
     # Warn if multiple evaluation specs present
-    if eval_result.results:
-        # Check for different solver/model configurations (different agents)
-        unique_agent_specs = set()
-        # Check for different code versions (revision/packages)
-        unique_code_specs = set()
-
-        for task_result in eval_result.results:
-            if task_result.eval_spec:
-                agent_hash = hash(
-                    task_result.eval_spec.model_dump_json(
-                        include={"solver", "solver_args", "model", "model_args"}
-                    )
-                )
-                unique_agent_specs.add(agent_hash)
-
-                code_hash = hash(
-                    task_result.eval_spec.model_dump_json(
-                        include={"revision", "packages"}
-                    )
-                )
-                unique_code_specs.add(code_hash)
-
-        if len(unique_agent_specs) > 1:
-            click.echo(
-                f"Warning: Found {len(unique_agent_specs)} different agent configurations. "
-                "Use a single solver + model config per log directory to measure a single "
-                "agent's performance across tasks."
-            )
-
-        if len(unique_code_specs) > 1:
-            click.echo(
-                f"Warning: Found {len(unique_code_specs)} different code versions "
-                "(revision/packages). This may indicate mixed evaluation runs from "
-                "different code states."
-            )
+    if len(task_results.agent_specs) > 1:
+        click.echo(
+            f"Warning: Found {len(task_results.agent_specs)} different agent configurations. "
+            "Use a single solver + model config per log directory to measure a single "
+            "agent's performance across tasks."
+        )
+    if len(task_results.code_specs) > 1:
+        click.echo(
+            f"Warning: Found {len(task_results.code_specs)} different code versions "
+            "(revision/packages). This may indicate mixed evaluation runs from "
+            "different code states."
+        )
 
         # Warn if user-specified task arguments are present
-        tasks_with_args = []
-        for task_result in eval_result.results:
-            if task_result.eval_spec and task_result.eval_spec.task_args_passed:
-                tasks_with_args.append(task_result.task_name)
 
-        if tasks_with_args:
-            click.echo(
-                f"Warning: User-specified task arguments found for tasks: {', '.join(tasks_with_args)}. "
-                "For fair comparison, do not override the task arg defaults."
-            )
+    if task_results.tasks_with_args:
+        click.echo(
+            f"Warning: User-specified task arguments found for tasks: {', '.join(task_results.tasks_with_args)}. "
+            "For fair comparison, do not override the task arg defaults."
+        )
 
     # Warn about any missing tasks
-    missing_tasks = eval_result.find_missing_tasks()
+    missing_tasks = eval_config.task_names - task_results.task_names
     if missing_tasks:
         click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
-    # Compute and display summary statistics
+    # Persist summary
     stats = compute_summary_statistics(
-        eval_result.suite_config,
-        eval_result.split,
-        eval_result.results or [],
+        eval_config.suite_config,
+        eval_config.split,
+        task_results.results or [],
     )
-    click.echo("Summary statistics:")
-    click.echo(json.dumps({k: v.model_dump() for k, v in stats.items()}, indent=2))
 
-    if had_errors:
-        click.echo(
-            "Error: Errors occurred while computing some metrics. No scores will be written to `agenteval.json`"
+    if hf_url_match is None:
+        # Persist scores
+        scores_path = os.path.join(log_dir, SCORES_FILENAME)
+        atomic_write_file(scores_path, task_results.model_dump_json(indent=2))
+        click.echo(f"Wrote scores to {scores_path}")
+
+        # Persist summary
+        summary_path = os.lpath.join(log_dir, SUMMARY_FILENAME)
+        atomic_write_file(summary_path, json.dumps(stats, indent=2))
+        click.echo(f"Wrote summary scores to {summary_path}")
+
+        temp_dir.__exit__()
+    else:
+        from huggingface_hub import HfApi
+
+        hf_api = HfApi()
+        path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
+        upload = hf_api.upload_file(
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_or_fileobj=BytesIO(
+                task_results.model_dump_json(indent=2).encode("utf-8")
+            ),
+            path_in_repo=path_in_repo,
         )
-        sys.exit(1)
+        click.echo(f"Uploaded scores to hf://{repo_id}/{path_in_repo}")
 
-    # Persist updated EvalResult JSON
-    eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
-
-    click.echo(f"Saved results to {log_dir}/{EVAL_FILENAME}")
-    ctx = click.get_current_context()
-    click.echo(
-        f"You can now run '{ctx.parent.info_name if ctx.parent else 'cli'} publish --agent-name <your-agent-name> --submissions-repo-id <your-submissions-repo-id> --results-repo-id <your-results-repo-id> {log_dir}' to publish the results"
-    )
+        path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SUMMARY_FILENAME}"
+        upload = hf_api.upload_file(
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_or_fileobj=BytesIO(stats.model_dump_json(indent=2).encode("utf-8")),
+            path_in_repo=path_in_repo,
+        )
+        click.echo(f"Uploaded summary to hf://{repo_id}/{path_in_repo}")
 
 
 cli.add_command(score_command)
@@ -259,7 +265,7 @@ cli.add_command(score_command)
 
 @click.command(
     name="publish",
-    help="Publish scored results in log_dir to Hugging Face leaderboard.",
+    help="Upload Inspect logs to HuggingFace for official scoring",
 )
 @click.argument("log_dir", type=click.Path(exists=True, file_okay=False))
 @click.option(
@@ -267,12 +273,6 @@ cli.add_command(score_command)
     type=str,
     default=lambda: os.environ.get("SUBMISSIONS_REPO_ID", ""),
     help="HF repo id for submissions. Defaults to SUBMISSIONS_REPO_ID env var.",
-)
-@click.option(
-    "--results-repo-id",
-    type=str,
-    default=lambda: os.environ.get("RESULTS_REPO_ID", ""),
-    help="HF repo id for result stats. Defaults to RESULTS_REPO_ID env var.",
 )
 @click.option(
     "-o",
@@ -312,10 +312,9 @@ cli.add_command(score_command)
     default=None,
     help="URL to the agent's repository or documentation.",
 )
-def publish_command(
+def publish_logs_command(
     log_dir: str,
     submissions_repo_id: str,
-    results_repo_id: str,
     openness: str,
     tool_usage: str,
     username: str | None,
@@ -334,21 +333,7 @@ def publish_command(
             f"using '{safe_agent_name}' for submission filenames."
         )
 
-    # Load existing scored results from JSON
-    json_path = Path(log_dir) / EVAL_FILENAME
-    if not json_path.exists():
-        raise click.ClickException(f"No scored results found at {json_path}")
-    raw = json_path.read_text(encoding="utf-8")
-    eval_result = EvalResult.model_validate_json(raw)
-
-    # Validate eval result
-    if not eval_result.is_scored():
-        raise click.ClickException(
-            f"{EVAL_FILENAME} is not scored. Please run 'score {log_dir}' first."
-        )
-    missing_tasks = eval_result.find_missing_tasks()
-    if missing_tasks:
-        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
+    eval_config = read_eval_config(log_dir)
 
     # Determine HF user
     hf_api = HfApi()
@@ -371,44 +356,121 @@ def publish_command(
         )
 
     # Fill submission metadata
-    eval_result.submission.username = username
-    eval_result.submission.agent_name = agent_name
-    eval_result.submission.agent_description = agent_description
-    eval_result.submission.agent_url = agent_url
-    eval_result.submission.submit_time = datetime.now(timezone.utc)
-    eval_result.submission.openness = openness
-    eval_result.submission.tool_usage = tool_usage
+    submission = SubmissionMetadata(
+        username=username,
+        agent_name=agent_name,
+        agent_description=agent_description,
+        agent_url=agent_url,
+        submit_time=datetime.now(timezone.utc),
+        openness=openness,
+        tool_usage=tool_usage,
+    )
+
+    atomic_write_file(
+        os.path.join(log_dir, SUBMISSION_METADATA_FILENAME),
+        submission.model_dump_json(indent=2),
+    )
 
     # Validate suite config version
-    config_name = eval_result.suite_config.version
+    config_name = eval_config.suite_config.version
     if not config_name:
         raise click.ClickException("Suite config version is required for upload.")
 
     # Build submission name
-    ts = eval_result.submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
-    subm_name = f"{safe_username}_{safe_agent_name}_{ts}"
+    ts = submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
+    submission_name = f"{safe_username}_{safe_agent_name}_{ts}"
 
     # Upload logs and summary
     logs_url = upload_folder_to_hf(
-        hf_api, log_dir, submissions_repo_id, config_name, eval_result.split, subm_name
+        hf_api,
+        log_dir,
+        submissions_repo_id,
+        config_name,
+        eval_config.split,
+        submission_name,
     )
     click.echo(f"Uploaded submission logs dir to {logs_url}")
-    eval_result.submission.logs_url = logs_url
 
-    summary_url = upload_summary_to_hf(
-        hf_api,
-        eval_result,
-        results_repo_id,
-        config_name,
-        eval_result.split,
-        subm_name,
-    )
-    click.echo(f"Uploaded results summary file to {summary_url}")
-    eval_result.submission.summary_url = summary_url
 
-    # Save updated JSON
-    eval_result.save_json(Path(log_dir) / EVAL_FILENAME)
-    click.echo(f"Updated {EVAL_FILENAME} with publication metadata.")
+cli.add_command(publish_logs_command)
+
+
+@click.command(
+    name="publish",
+    help="Publish scored results in log_dir to HuggingFace leaderboard.",
+)
+@click.argument("submission_url", type=str)
+@click.option(
+    "--repo-id",
+    default="allenai/asta-bench-internal-results",
+    required=False,
+    help="HuggingFace repo",
+)
+def publish_lb_command(repo_id: str, submission_url: str):
+    hf_url_match = re.match(HF_URL_PATTERN, submission_url)
+    if not hf_url_match:
+        click.echo(
+            f"Invalid submission URL format: {submission_url}. "
+            "Expected format: hf://<repo_id>/<submission_path>"
+        )
+        sys.exit(1)
+    submission_repo_id = hf_url_match.group("repo_id")
+    submission_path = hf_url_match.group("path")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        hf_api = HfApi()
+
+        eval_config_rel_path = f"{submission_path}/{EVAL_CONFIG_FILENAME}"
+        agenteval_rel_path = f"{submission_path}/{AGENTEVAL_FILENAME}"
+        scores_rel_path = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
+        submission_metadata__rel_path = (
+            f"{submission_path}/{SUBMISSION_METADATA_FILENAME}"
+        )
+        snapshot_download(
+            repo_id=submission_repo_id,
+            repo_type="dataset",
+            allow_patterns=[
+                eval_config_rel_path,
+                agenteval_rel_path,
+                scores_rel_path,
+                submission_metadata__rel_path,
+            ],
+            local_dir=temp_dir,
+        )
+        local_submission_path = os.path.join(temp_dir, submission_path)
+        local_scores_path = os.path.join(temp_dir, scores_rel_path)
+        required_files = [local_scores_path]
+        if all((os.path.exists(f) for f in required_files)):
+            eval_config = read_eval_config(local_submission_path)
+            submission = read_submission_metadata(local_submission_path)
+            eval_result = LeaderboardSubmission(
+                suite_config=eval_config.suite_config,
+                split=eval_config.split,
+                results=TaskResults.model_validate_json(
+                    open(local_scores_path).read()
+                ).results,
+                submission=submission,
+            )
+        else:
+            click.echo(
+                "Missing required files [{}] in {}".format(
+                    ",".join(required_files), submission_url
+                )
+            )
+            sys.exit(1)
+
+        submission_name = submission_path.split("/")[-1]
+        summary_url = upload_summary_to_hf(
+            hf_api,
+            eval_result,
+            repo_id,
+            eval_result.suite_config.version,
+            eval_result.split,
+            submission_name,
+        )
+        click.echo(f"Uploaded results summary file to {summary_url}")
 
 
 @click.group(name="lb", help="Leaderboard related commands")
@@ -501,7 +563,7 @@ def view_command(repo_id, config, split, tag, dump_plots, plot_dir):
             click.echo(f"Saved plot: {path}")
 
 
-lb.add_command(publish_command)
+lb.add_command(publish_lb_command)
 cli.add_command(lb)
 
 
@@ -534,6 +596,11 @@ cli.add_command(lb)
     help="Ignore git reproducibility checks (not recommended).",
 )
 @click.option(
+    "--config-only",
+    is_flag=True,
+    help="Print the command that would be run and save eval_config locally.",
+)
+@click.option(
     "--display",
     type=str,
     # https://github.com/UKGovernmentBEIS/inspect_ai/issues/1891 and
@@ -548,6 +615,7 @@ def eval_command(
     config_path: str,
     split: str,
     ignore_git: bool,
+    config_only: bool,
     display: str,
     args: tuple[str],
 ):
@@ -556,7 +624,8 @@ def eval_command(
     tasks = suite_config.get_tasks(split)
 
     # Verify git status for reproducibility
-    verify_git_reproducibility(ignore_git)
+    if not ignore_git:
+        verify_git_reproducibility()
 
     if not log_dir:
         log_dir = os.environ.get("INSPECT_LOG_DIR")
@@ -573,9 +642,20 @@ def eval_command(
 
     # Write the config portion of the results file
     os.makedirs(log_dir, exist_ok=True)
-    with open(os.path.join(log_dir, EVAL_FILENAME), "w", encoding="utf-8") as f:
-        unscored_eval_config = EvalConfig(suite_config=suite_config, split=split)
-        f.write(unscored_eval_config.model_dump_json(indent=2))
+    eval_config = EvalConfig(suite_config=suite_config, split=split)
+
+    eval_config_path = os.path.join(log_dir, EVAL_CONFIG_FILENAME)
+    if not os.path.exists(eval_config_path):
+        with open(eval_config_path, "w", encoding="utf-8") as f:
+            f.write(eval_config.model_dump_json(indent=2))
+    else:
+        with open(eval_config_path, "r", encoding="utf-8") as f:
+            existing_config = EvalConfig.model_validate_json(f.read())
+        if existing_config != eval_config:
+            click.echo(
+                f"Suite config does not match pre-existing config in {EVAL_CONFIG_FILENAME}. Rerun in an empty directory"
+            )
+            sys.exit(1)
 
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
@@ -587,6 +667,10 @@ def eval_command(
         + display_args
         + [x.path for x in tasks]
     )
+    if config_only:
+        click.echo(f"Dry run: would run command: {' '.join(full_command)}")
+        return
+
     click.echo(f"Running {config_path}: {' '.join(full_command)}")
     proc = subprocess.run(full_command)
 
@@ -602,7 +686,6 @@ def eval_command(
 
 
 cli.add_command(eval_command)
-
 
 if __name__ == "__main__":
     cli()

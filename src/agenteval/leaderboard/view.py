@@ -14,7 +14,7 @@ import seaborn as sns
 
 from .. import compute_summary_statistics
 from ..config import SuiteConfig
-from ..models import EvalResult
+from .models import LeaderboardSubmission
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class LeaderboardViewer:
         ds = datasets.load_dataset(repo_id, name=config).get(split)
         if not ds:
             raise ValueError(f"Split '{split}' not found in dataset results")
-        suite = EvalResult.model_validate(ds[0]).suite_config
+        suite = LeaderboardSubmission.model_validate(ds[0]).suite_config
         self._cfg = suite
         self.tag_map: dict[str, list[str]] = {}
         for task in suite.get_tasks(split):
@@ -144,7 +144,7 @@ def _get_dataframe(
 
     rows = []
     for itm in ds:
-        ev = EvalResult.model_validate(itm)
+        ev = LeaderboardSubmission.model_validate(itm)
 
         # extract base LLM information
         base_models = set()
