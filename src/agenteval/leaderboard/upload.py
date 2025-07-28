@@ -9,8 +9,8 @@ from huggingface_hub.errors import HfHubHTTPError
 from inspect_ai.model import ModelUsage
 
 from ..log import ModelUsageWithName
-from ..models import EvalResult
 from ..score import TaskResult
+from .models import LeaderboardSubmission
 from .schema_generator import load_dataset_features
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ def upload_folder_to_hf(
 
 def upload_summary_to_hf(
     api: HfApi,
-    eval_result: EvalResult,
+    eval_result: LeaderboardSubmission,
     repo_id: str,
     config_name: str,
     split: str,
@@ -165,7 +165,7 @@ def upload_summary_to_hf(
     _validate_path_component(submission_name, "submission_name")
 
     compressed_result = compress_model_usages(eval_result)
-    summary_bytes = BytesIO(compressed_result.dump_json_bytes(indent=None))
+    summary_bytes = BytesIO(compressed_result.model_dump_json().encode("utf-8"))
     api.upload_file(
         path_or_fileobj=summary_bytes,
         path_in_repo=f"{config_name}/{split}/{submission_name}.json",
@@ -181,7 +181,7 @@ def upload_summary_to_hf(
     return f"hf://datasets/{repo_id}/{config_name}/{split}/{submission_name}.json"
 
 
-def compress_model_usages(eval_result: EvalResult):
+def compress_model_usages(eval_result: LeaderboardSubmission):
     """
     Reduce the size of model usages by compressing to aggregate token
     counts for each token type, model, and task problem
@@ -212,7 +212,7 @@ def compress_model_usages(eval_result: EvalResult):
         compressed_results.append(compressed_task_result)
 
     # Create new EvalResult with compressed results
-    compressed_eval_result = EvalResult(
+    compressed_eval_result = LeaderboardSubmission(
         **eval_result.model_dump(exclude={"results"}), results=compressed_results
     )
 

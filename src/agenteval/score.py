@@ -136,7 +136,12 @@ def get_normalized_task_name(log: EvalLog) -> str:
     return log.eval.task.split("/")[-1]
 
 
-def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], bool]:
+class EvalLogProcessingResult(BaseModel):
+    results: list[TaskResult]
+    errors: list[str]
+
+
+def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
     """
     Process evaluation logs from a directory and return task results.
 
@@ -148,7 +153,7 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], bool]:
     """
     # Read evaluation logs
     logs = {}
-    had_errors = False
+    errors = []
     for loginfo in list_eval_logs(log_dir):
         log = read_eval_log(loginfo.name, header_only=True)
         task_name = get_normalized_task_name(log)
@@ -162,25 +167,22 @@ def process_eval_logs(log_dir: str) -> tuple[list[TaskResult], bool]:
     results = []
     for task_name, log in logs.items():
         eval_spec = EvalSpec.from_eval_log(log)
-        try:
-            metrics = get_metrics(log)
-            if len(metrics) == 0:
-                raise ValueError(f"No metrics found for task {task_name}.")
-            model_usages = get_model_usages(log)
-            model_costs = [compute_model_cost(usages) for usages in model_usages]
-            has_model_usages = any(len(usages) > 0 for usages in model_usages)
-            results.append(
-                TaskResult(
-                    task_name=task_name,
-                    eval_spec=eval_spec,
-                    metrics=metrics,
-                    # Set to None to avoid incorrect pyarrow model usage type inference
-                    model_usages=model_usages if has_model_usages else None,
-                    model_costs=model_costs if has_model_usages else None,
-                )
+        metrics = get_metrics(log)
+        if len(metrics) == 0:
+            errors.append(f"No metrics found for task {task_name}.")
+            continue
+        model_usages = get_model_usages(log)
+        model_costs = [compute_model_cost(usages) for usages in model_usages]
+        has_model_usages = any(len(usages) > 0 for usages in model_usages)
+        results.append(
+            TaskResult(
+                task_name=task_name,
+                eval_spec=eval_spec,
+                metrics=metrics,
+                # Set to None to avoid incorrect pyarrow model usage type inference
+                model_usages=model_usages if has_model_usages else None,
+                model_costs=model_costs if has_model_usages else None,
             )
-        except ValueError as error:
-            had_errors = True
-            logger.exception(f"No metrics for {task_name}:")
+        )
 
-    return results, had_errors
+    return EvalLogProcessingResult(results=results, errors=errors)

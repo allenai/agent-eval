@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Union
 
@@ -16,6 +17,16 @@ class EvalConfig(BaseModel):
     split: str
     """Split used for the results."""
 
+    @cached_property
+    def task_names(self) -> set[str]:
+        """
+        Get the names of all tasks in the suite for the specified split.
+
+        Returns:
+            List of task names.
+        """
+        return set(task.name for task in self.suite_config.get_tasks(self.split))
+
 
 class SubmissionMetadata(BaseModel):
     """Metadata for Hugging Face submission."""
@@ -32,58 +43,47 @@ class SubmissionMetadata(BaseModel):
     tool_usage: str | None = None
 
 
-class EvalResult(EvalConfig):
+class TaskResults(BaseModel):
+    """Scores for all tasks in the suite"""
+
     results: list[TaskResult] | None = None
-    submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 
-    def find_missing_tasks(self) -> list[str]:
-        try:
-            tasks = self.suite_config.get_tasks(self.split)
-            result_task_names = (
-                {result.task_name for result in self.results} if self.results else set()
-            )
-            return [task.name for task in tasks if task.name not in result_task_names]
-        except ValueError:
-            return []
+    @cached_property
+    def agent_specs(self) -> set[str]:
+        specs = set()
+        for task_result in self.results:
+            if task_result.eval_spec:
+                agent_spec = task_result.eval_spec.model_dump_json(
+                    include={"solver", "solver_args", "model", "model_args"}
+                )
+                specs.add(agent_spec)
+        return specs
 
-    def is_scored(self) -> bool:
+    @cached_property
+    def code_specs(self) -> set[str]:
+        specs = set()
+        for task_result in self.results:
+            if task_result.eval_spec:
+                code_spec = task_result.eval_spec.model_dump_json(
+                    include={"revision", "packages"}
+                )
+                specs.add(code_spec)
+        return specs
+
+    @cached_property
+    def tasks_with_args(self) -> list[str]:
+        tasks_with_args = []
+        for task_result in self.results:
+            if task_result.eval_spec and task_result.eval_spec.task_args_passed:
+                tasks_with_args.append(task_result.task_name)
+        return tasks_with_args
+
+    @cached_property
+    def task_names(self) -> set[str]:
         """
-        Check if the evaluation result is scored.
+        Get the names of all tasks in the results.
 
         Returns:
-            bool: True if the evaluation result is scored, False otherwise.
+            List of task names.
         """
-        return self.results is not None and len(self.results) > 0
-
-    def save_json(
-        self,
-        path: Union[str, Path],
-        indent: int = 2,
-        **model_dump_kwargs,
-    ) -> None:
-        """
-        Atomically write this EvalResult to JSON at the given path.
-
-        The motivation for using an atomic write is to avoid data loss of the
-        original config file, if something goes wrong during the write.
-        """
-        content = self.dump_json_bytes(
-            indent=indent,
-            **model_dump_kwargs,
-        ).decode("utf-8")
-        atomic_write_file(path, content, encoding="utf-8")
-
-    def dump_json_bytes(
-        self,
-        indent: int | None = 2,
-        **model_dump_kwargs,
-    ) -> bytes:
-        """
-        Return the JSON representation of this EvalResult as bytes.
-        """
-        return self.model_dump_json(
-            indent=indent,
-            exclude_none=False,
-            exclude_defaults=False,
-            **model_dump_kwargs,
-        ).encode("utf-8")
+        return set(result.task_name for result in self.results)
