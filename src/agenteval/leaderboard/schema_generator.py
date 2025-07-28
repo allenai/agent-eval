@@ -52,13 +52,15 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
         literal_values = get_args(anno)
         if not literal_values:
             return pa.string()  # fallback
-        
+
         # Check that all literal values are the same type
         first_type = type(literal_values[0])
         for value in literal_values:
             if type(value) != first_type:
-                raise ValueError(f"Literal {anno} contains mixed types: {[type(v) for v in literal_values]}")
-        
+                raise ValueError(
+                    f"Literal {anno} contains mixed types: {[type(v) for v in literal_values]}"
+                )
+
         # Map Python type to Arrow type
         if first_type is str:
             return pa.string()
