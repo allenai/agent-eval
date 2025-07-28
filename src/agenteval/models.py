@@ -37,15 +37,18 @@ class EvalResult(EvalConfig):
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 
-    def find_missing_tasks(self) -> list[str]:
+    def find_missing_tasks_compared_to_other_suite_config(self, suite_config: SuiteConfig) -> list[str]:
         try:
-            tasks = self.suite_config.get_tasks(self.split)
+            tasks = suite_config.get_tasks(self.split)
             result_task_names = (
                 {result.task_name for result in self.results} if self.results else set()
             )
             return [task.name for task in tasks if task.name not in result_task_names]
         except ValueError:
             return []
+
+    def find_missing_tasks(self) -> list[str]:
+        return self.find_missing_tasks_compared_to_other_suite_config(self.suite_config)
 
     def is_scored(self) -> bool:
         """

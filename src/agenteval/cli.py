@@ -229,8 +229,15 @@ def score_command(
     if missing_tasks:
         click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
-    # TODO:
-    # warn about missing primary metrics too
+    # warn about missing primary metrics
+    for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
+        primary_metric, available_metrics = metric_info
+        warning = (
+            f"Warning: the results for the {task_name} task are missing the primary metric "
+            f"({primary_metric}) according to the summary file's suite config. Available "
+            f"metrics in the results for this task: {', '.join(available_metrics)}."
+        )
+        click.echo(warning)
 
     # Compute and display summary statistics
     stats = compute_summary_statistics(
@@ -378,7 +385,14 @@ def publish_command(
     if maybe_result_repo_suite_config is not None:
         # checking for consistency between the provided summary file's results
         # and the suite config we think represents the results repo
-        # TODO: warn about missing tasks too
+        missing_tasks_according_to_result_repo_suit_config = eval_result.find_missing_tasks_compared_to_other_suite_config(maybe_result_repo_suite_config)
+        if missing_tasks_according_to_result_repo_suit_config:
+            warning = (
+                f"Warning: Tasks in the result repo's suit config that are missing from "
+                f"the results: {', '.join(missing_tasks_according_to_result_repo_suit_config)}"
+            )
+            click.echo(warning)
+
         for task_name, metric_info in eval_result.check_result_primary_metrics_against_provided_suite_config(maybe_result_repo_suite_config).items():
             primary_metric, available_metrics = metric_info
             warning = (
