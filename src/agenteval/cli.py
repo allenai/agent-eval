@@ -224,16 +224,13 @@ def score_command(
                 "For fair comparison, do not override the task arg defaults."
             )
 
-    # Warn about any missing tasks or tasks missing primary metrics
-    # Note: we're comparing to the suite config in the summary file,
-    # not the one provided via CLI args if that one is different.
-    # TODO: should we be comparing against that too?
-    summary_files_suite_config_vs_results = eval_result.check_results_against_my_suite_config()
-    if summary_files_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
-        click.echo(summary_files_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("summary file"))
-    if summary_files_suite_config_vs_results.tasks_missing_primary_metric():
-        for warning in summary_files_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("summary file"):
-            click.echo(warning)
+    # Warn about any missing tasks
+    missing_tasks = eval_result.find_missing_tasks()
+    if missing_tasks:
+        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
+
+    # TODO:
+    # warn about missing primary metrics too
 
     # Compute and display summary statistics
     stats = compute_summary_statistics(
@@ -352,14 +349,19 @@ def publish_command(
         raise click.ClickException(
             f"{EVAL_FILENAME} is not scored. Please run 'score {log_dir}' first."
         )
+    missing_tasks = eval_result.find_missing_tasks()
+    if missing_tasks:
+        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
     # checking for consistency _within_ the provided summary file
-    summary_files_suite_config_vs_results = eval_result.check_results_against_my_suite_config()
-    if summary_files_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
-        click.echo(summary_files_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("summary file"))
-    if summary_files_suite_config_vs_results.tasks_missing_primary_metric():
-        for warning in summary_files_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("summary file"):
-            click.echo(warning)
+    for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
+        primary_metric, available_metrics = metric_info
+        warning = (
+            f"Warning: the results for the {task_name} task are missing the primary metric "
+            f"({primary_metric}) according to the summary file's suite config. Available "
+            f"metrics in the results for this task: {', '.join(available_metrics)}."
+        )
+        click.echo(warning)
 
     # Validate suite config version
     config_name = eval_result.suite_config.version
@@ -376,12 +378,15 @@ def publish_command(
     if maybe_result_repo_suite_config is not None:
         # checking for consistency between the provided summary file's results
         # and the suite config we think represents the results repo
-        repos_suite_config_vs_results = eval_result.check_results_against_provided_suite_config(maybe_result_repo_suite_config)
-        if repos_suite_config_vs_results.tasks_expected_by_suite_config_are_missing():
-            click.echo(repos_suite_config_vs_results.warning_for_missing_tasks_expected_by_suite_config("results repo"))
-        if repos_suite_config_vs_results.tasks_missing_primary_metric():
-            for warning in repos_suite_config_vs_results.warnings_for_tasks_missing_primary_metric("results repo"):
-                click.echo(warning)
+        # TODO: warn about missing tasks too
+        for task_name, metric_info in eval_result.check_result_primary_metrics_against_provided_suite_config(maybe_result_repo_suite_config).items():
+            primary_metric, available_metrics = metric_info
+            warning = (
+                f"Warning: the results for the {task_name} task are missing the primary metric "
+                f"({primary_metric}) according to the result repo's suite config. Available "
+                f"metrics in the results for this task: {', '.join(available_metrics)}."
+            )
+            click.echo(warning)
 
     # Determine HF user
     hf_api = HfApi()

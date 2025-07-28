@@ -33,41 +33,10 @@ class SubmissionMetadata(BaseModel):
     tool_usage: str | None = None
 
 
-class SuiteConfigResultsComparisonInfo(BaseModel):
-    tasks_in_only_suite_config: Set[str]
-    tasks_in_only_results: Set[str]
-    available_metrics_for_tasks_missing_primary_metric_in_results: Dict[str, Set[str]]
-
-    def tasks_expected_by_suite_config_are_missing(self) -> bool:
-        return len(self.tasks_in_only_suite_config) > 0
-
-    def tasks_missing_primary_metric(self) -> bool:
-        return len(self.available_metrics_for_tasks_missing_primary_metric_in_results) > 0
-
-    def warning_for_missing_tasks_expected_by_suite_config(self, which_suite_config: str) -> str:
-        return (
-            f"Warning: Tasks in the {which_suite_config}'s suite config that are missing "
-            f"from results: {', '.join(self.tasks_in_only_suite_config)}"
-        )
-
-    def warnings_for_tasks_missing_primary_metric(self, which_suite_config: str) -> List[str]:
-        warnings = []
-        for task_name, available_metrics in self.available_metrics_for_tasks_missing_primary_metric_in_results.items():
-            warnings.append(
-                (
-                    f"Warning: the {task_name} task does not have the primary metric "
-                    f"expected based on the {which_suite_config}'s suite config. "
-                    f"Available metrics in results for this task: {', '.join(available_metrics)}"
-                )
-            )
-        return warnings
-
-
 class EvalResult(EvalConfig):
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
 
-    # TODO: do we still need this?
     def find_missing_tasks(self) -> list[str]:
         try:
             tasks = self.suite_config.get_tasks(self.split)
@@ -120,7 +89,7 @@ class EvalResult(EvalConfig):
             **model_dump_kwargs,
         ).encode("utf-8")
 
-    def check_results_against_provided_suite_config(self, provided_suite_config: SuiteConfig) -> SuiteConfigResultsComparisonInfo:
+    def check_result_primary_metrics_against_provided_suite_config(self, provided_suite_config: SuiteConfig) -> Dict[str, Set[str]]:
         # prep for suite config info
         tasks_from_suite_config = provided_suite_config.get_tasks(self.split)
         primary_metric_from_suite_config_by_task_name: Dict[str, str] = {}
@@ -138,26 +107,17 @@ class EvalResult(EvalConfig):
             for metric in result.metrics:
                 task_metric_names_from_results_by_task_name[task_name].add(metric.name)
 
-        # check tasks
-        task_names_from_suite_config = set(tasks_from_suite_config_by_task_name.keys())
-        task_names_from_results = set(task_metric_names_from_results_by_task_name.keys())
-        tasks_in_suite_config_but_not_in_results = task_names_from_suite_config.difference(task_names_from_results)
-        tasks_in_results_but_not_in_suite_config = task_names_from_results.difference(task_names_from_suite_config)
-
         # check metrics
-        available_metrics_for_tasks_missing_primary_metric_by_task_name = {}
+        available_metrics_for_tasks_missing_primary_metric_by_task_name: Dict[str, Tuple[str, Set[str]]] = {}
         for task_name, primary_metric in primary_metric_from_suite_config_by_task_name.items():
             result_metric_names = task_metric_names_from_results_by_task_name.get(task_name)
-            if primary_metric not in result_metric_names:
-                available_metrics_for_tasks_missing_primary_metric_by_task_name[task_name] = result_metric_names
+            if result_metric_names is not None:
+                if primary_metric not in result_metric_names:
+                    available_metrics_for_tasks_missing_primary_metric_by_task_name[task_name] = (primary_metric, result_metric_names)
 
-        return SuiteConfigResultsComparisonInfo(
-            tasks_in_only_suite_config=tasks_in_suite_config_but_not_in_results,
-            tasks_in_only_results=tasks_in_results_but_not_in_suite_config,
-            available_metrics_for_tasks_missing_primary_metric_in_results=available_metrics_for_tasks_missing_primary_metric_by_task_name,
-        )
+        return available_metrics_for_tasks_missing_primary_metric_by_task_name
 
-    def check_results_against_my_suite_config(self) -> SuiteConfigResultsComparisonInfo:
+    def check_result_primary_metrics_against_provided_suite_config(self) -> Dict[str, Tuple[str, Set[str]]]:
         return check_results_against_provided_suite_config(self.suite_config)
 
     # TODO: should we use this in view.py too? Probably?
