@@ -137,9 +137,9 @@ def compute_summary_statistics(
             cost_stderr=None,
         )
 
-    # overall summary
-    all_scores = [s.score for s in tasks_summary.values()]
-    all_costs = [s.cost for s in tasks_summary.values()]
+    # overall summary statistics are a macro-average over tag scores
+    all_scores = [s.score for s in tags_summary.values()]
+    all_costs = [s.cost for s in tags_summary.values()]
     overall = SummaryStat(
         score=_safe_mean(all_scores, is_score=True),
         score_stderr=None,
