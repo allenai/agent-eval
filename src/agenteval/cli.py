@@ -140,6 +140,39 @@ def verify_git_reproducibility() -> None:
         )
 
 
+def check_results_against_eval_config(
+    results: TaskResults, eval_config: eval_config, eval_config_origin: str
+):
+    # warn about results missing
+    if len(results.task_names) == 0:
+        click.echo(f"Warning: no results.")
+
+    # warn about tasks missing from results
+    missing_tasks = eval_config.task_names - results.task_names
+    if len(missing_tasks) > 0:
+        warning = (
+            f"Warning: Tasks in the {eval_config_origin}'s suite config that are missing "
+            f"results: {', '.join(missing_tasks)}"
+        )
+        click.echo(warning)
+
+    # warn about missing primary metrics
+    for (
+        task_name,
+        metric_info,
+    ) in results.check_primary_metrics_against_provided_eval_config(
+        eval_config
+    ).items():
+        primary_metric, available_metrics = metric_info
+        warning = (
+            f"Warning: the results for the {task_name} task are missing the "
+            f"primary metric ({primary_metric}) specified by the eval config "
+            f"in the {eval_config_origin}. Available metrics in the results "
+            f"for this task: {', '.join(available_metrics)}."
+        )
+        click.echo(warning)
+
+
 @click.group()
 def cli():
     pass
@@ -211,25 +244,8 @@ def score_command(
             "For fair comparison, do not override the task arg defaults."
         )
 
-    # Warn about any missing tasks
-    missing_tasks = eval_config.task_names - task_results.task_names
-    if missing_tasks:
-        click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
-
-    # warn about missing primary metrics
-    for (
-        task_name,
-        metric_info,
-    ) in task_results.check_primary_metrics_against_provided_eval_config(
-        eval_config
-    ).items():
-        primary_metric, available_metrics = metric_info
-        warning = (
-            f"Warning: the results for the {task_name} task are missing the primary metric "
-            f"({primary_metric}) specified by the eval config in {log_dir}. Available "
-            f"metrics in the results for this task: {', '.join(available_metrics)}."
-        )
-        click.echo(warning)
+    # warn about missing stuff
+    check_results_against_eval_config(task_results, eval_config, "log dir")
 
     # Persist summary
     stats = compute_summary_statistics(
@@ -466,7 +482,10 @@ def publish_lb_command(repo_id: str, submission_url: str):
 
             # check for consistency between the eval config and results
             # we pulled from the submissions repo
-            eval_configs_to_check_results_against = [(eval_config, "submission repo")]
+            check_results_against_eval_config(
+                task_results, eval_config, "submissions repo"
+            )
+
             # check for consistency between the results in the submissions repo
             # and the suite config from the first row in the results repo
             # (if there's a a first row to find)
@@ -479,39 +498,11 @@ def publish_lb_command(repo_id: str, submission_url: str):
                 split=eval_config.suite_config.split,
             )
             if maybe_result_repo_first_result is not None:
-                eval_configs_to_check_results_against.append(
-                    (maybe_result_repo_first_result.to_eval_config(), "result repo")
+                check_results_against_eval_config(
+                    task_results,
+                    maybe_result_repo_first_result.to_eval_config(),
+                    "results repo",
                 )
-
-            for config_tup in eval_configs_to_check_results_against:
-                eval_config_to_check, eval_config_origin = config_tup
-
-                # warn about missing tasks
-                missing_tasks = (
-                    eval_config_to_check.task_names - task_results.task_names
-                )
-                if missing_tasks:
-                    warning = (
-                        f"Warning: Tasks in the {eval_config_origin}'s suite config that are missing "
-                        f"results: {', '.join(missing_tasks)}"
-                    )
-                    click.echo(warning)
-
-                # warn about missing primary metrics
-                for (
-                    task_name,
-                    metric_info,
-                ) in task_results.check_primary_metrics_against_provided_eval_config(
-                    eval_config_to_check
-                ).items():
-                    primary_metric, available_metrics = metric_info
-                    warning = (
-                        f"Warning: the results for the {task_name} task are missing the "
-                        f"primary metric ({primary_metric}) specified by the eval config "
-                        f"in the {eval_config_origin}. Available metrics in the results "
-                        f"for this task: {', '.join(available_metrics)}."
-                    )
-                    click.echo(warning)
 
             eval_result = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
