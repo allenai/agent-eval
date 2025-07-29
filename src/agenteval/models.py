@@ -118,12 +118,3 @@ class TaskResults(BaseModel):
                     available_metrics_for_tasks_missing_primary_metric_by_task_name[task_name] = (primary_metric, result_metric_names)
 
         return available_metrics_for_tasks_missing_primary_metric_by_task_name
-
-    # # TODO: should we use this in view.py too? Probably?
-    # @staticmethod
-    # def fetch_first_result_from_result_repo(repo_id: str, huggingface_config: str, split: str) -> Optional["EvalResult"]:
-    #     ds = datasets.load_dataset(repo_id, name=huggingface_config).get(split)
-    #     if ds:
-    #         return EvalResult.model_validate(ds[0])
-    #     else:
-    #         return None

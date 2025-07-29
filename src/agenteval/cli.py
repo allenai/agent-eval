@@ -345,43 +345,6 @@ def publish_logs_command(
 
     eval_config = read_eval_config(log_dir)
 
-    # # checking for consistency _within_ the provided summary file
-    # for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
-    #     primary_metric, available_metrics = metric_info
-    #     warning = (
-    #         f"Warning: the results for the {task_name} task are missing the primary metric "
-    #         f"({primary_metric}) according to the summary file's suite config. Available "
-    #         f"metrics in the results for this task: {', '.join(available_metrics)}."
-    #     )
-    #     click.echo(warning)
-
-    # # checking for consistency between the results in the provided summary file
-    # # and the suite config from the first row in the results repo
-    # maybe_result_repo_suite_config = EvalResult.fetch_first_result_from_result_repo(
-    #     repo_id=results_repo_id,
-    #     huggingface_config=config_name,
-    #     split=eval_result.split,
-    # )
-    # if maybe_result_repo_suite_config is not None:
-    #     # checking for consistency between the provided summary file's results
-    #     # and the suite config we think represents the results repo
-    #     missing_tasks_according_to_result_repo_suit_config = eval_result.find_missing_tasks_compared_to_other_suite_config(maybe_result_repo_suite_config)
-    #     if missing_tasks_according_to_result_repo_suit_config:
-    #         warning = (
-    #             f"Warning: Tasks in the result repo's suit config that are missing from "
-    #             f"the results: {', '.join(missing_tasks_according_to_result_repo_suit_config)}"
-    #         )
-    #         click.echo(warning)
-
-    #     for task_name, metric_info in eval_result.check_primary_metrics_against_provided_suite_config(maybe_result_repo_suite_config).items():
-    #         primary_metric, available_metrics = metric_info
-    #         warning = (
-    #             f"Warning: the results for the {task_name} task are missing the primary metric "
-    #             f"({primary_metric}) according to the result repo's suite config. Available "
-    #             f"metrics in the results for this task: {', '.join(available_metrics)}."
-    #         )
-    #         click.echo(warning)
-
     # Determine HF user
     hf_api = HfApi()
     if not username:
@@ -492,12 +455,51 @@ def publish_lb_command(repo_id: str, submission_url: str):
         if all((os.path.exists(f) for f in required_files)):
             eval_config = read_eval_config(local_submission_path)
             submission = read_submission_metadata(local_submission_path)
+            task_results = TaskResults.model_validate_json(open(local_scores_path).read())
+
+            # check for consistency between the eval config and results
+            # we pulled from the submissions repo
+            eval_configs_to_check_results_against = [(eval_config, "submission repo")]
+            # check for consistency between the results in the submissions repo
+            # and the suite config from the first row in the results repo
+            # (if there's a a first row to find)
+            from .leaderboard.view import LeaderboardViewer
+            maybe_result_repo_first_result = LeaderboardViewer.fetch_first_result_from_result_repo(
+                repo_id=repo_id,
+                # use these values because that's where our new result is going to go
+                huggingface_config=eval_config.suite_config.version,
+                split=eval_config.suite_config.split,
+            )
+            if maybe_result_repo_first_result is not None:
+                eval_configs_to_check_results_against.append((maybe_result_repo_first_result.to_eval_config(), "result repo"))
+
+            for config_tup in eval_configs_to_check_results_against:
+                eval_config_to_check, eval_config_origin = config_tup
+
+                # warn about missing tasks
+                missing_tasks = eval_config_to_check.task_names - task_results.task_names
+                if missing_tasks:
+                    warning = (
+                        f"Warning: Tasks in the {eval_config_origin}'s suite config that are missing "
+                        f"results: {', '.join(missing_tasks)}"
+                    )
+                    click.echo(warning)
+
+                # warn about missing primary metrics
+                for task_name, metric_info in task_results.check_primary_metrics_against_provided_eval_config(eval_config_to_check).items():
+                    primary_metric, available_metrics = metric_info
+                    warning = (
+                        f"Warning: the results for the {task_name} task are missing the "
+                        f"primary metric ({primary_metric}) specified by the eval config "
+                        f"in the {eval_config_origin}. Available metrics in the results "
+                        f"for this task: {', '.join(available_metrics)}."
+                    )
+                    click.echo(warning)
+
             eval_result = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,
-                results=TaskResults.model_validate_json(
-                    open(local_scores_path).read()
-                ).results,
+                results=task_results.results,
                 submission=submission,
             )
         else:
