@@ -47,7 +47,9 @@ class LeaderboardViewer:
                 self.tag_map.setdefault(t, []).append(task.name)
 
     @staticmethod
-    def fetch_first_result_repo(repo_id: str, huggingface_config: str, split: str) -> Optional[LeaderboardSubmission]:
+    def fetch_first_result_repo(
+        repo_id: str, huggingface_config: str, split: str
+    ) -> Optional[LeaderboardSubmission]:
         ds = datasets.load_dataset(repo_id, name=huggingface_config).get(split)
         if ds is not None:
             return LeaderboardSubmission.model_validate(ds[0])

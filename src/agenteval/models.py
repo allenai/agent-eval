@@ -5,7 +5,7 @@ from typing import Dict, Set, Tuple
 
 from pydantic import BaseModel, Field
 
-from .config import Task, SuiteConfig
+from .config import SuiteConfig, Task
 from .io import atomic_write_file
 from .score import TaskResult
 
@@ -91,14 +91,18 @@ class TaskResults(BaseModel):
         """
         return set(result.task_name for result in self.results)
 
-    def check_primary_metrics_against_provided_eval_config(self, provided_eval_config: EvalConfig) -> Dict[str, Set[str]]:
+    def check_primary_metrics_against_provided_eval_config(
+        self, provided_eval_config: EvalConfig
+    ) -> Dict[str, Set[str]]:
         # prep for eval config info
         tasks_from_eval_config = provided_eval_config.get_tasks()
         primary_metric_from_eval_config_by_task_name: Dict[str, str] = {}
         for task in tasks_from_eval_config:
             task_name = task.name
             assert task_name not in primary_metric_from_eval_config_by_task_name
-            primary_metric_from_eval_config_by_task_name[task_name] = task.primary_metric
+            primary_metric_from_eval_config_by_task_name[task_name] = (
+                task.primary_metric
+            )
 
         # prep for result info
         task_metric_names_from_results_by_task_name: Dict[str, Set[str]] = {}
@@ -110,11 +114,20 @@ class TaskResults(BaseModel):
                 task_metric_names_from_results_by_task_name[task_name].add(metric.name)
 
         # check metrics
-        available_metrics_for_tasks_missing_primary_metric_by_task_name: Dict[str, Tuple[str, Set[str]]] = {}
-        for task_name, primary_metric in primary_metric_from_eval_config_by_task_name.items():
-            result_metric_names = task_metric_names_from_results_by_task_name.get(task_name)
+        available_metrics_for_tasks_missing_primary_metric_by_task_name: Dict[
+            str, Tuple[str, Set[str]]
+        ] = {}
+        for (
+            task_name,
+            primary_metric,
+        ) in primary_metric_from_eval_config_by_task_name.items():
+            result_metric_names = task_metric_names_from_results_by_task_name.get(
+                task_name
+            )
             if result_metric_names is not None:
                 if primary_metric not in result_metric_names:
-                    available_metrics_for_tasks_missing_primary_metric_by_task_name[task_name] = (primary_metric, result_metric_names)
+                    available_metrics_for_tasks_missing_primary_metric_by_task_name[
+                        task_name
+                    ] = (primary_metric, result_metric_names)
 
         return available_metrics_for_tasks_missing_primary_metric_by_task_name

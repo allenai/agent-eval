@@ -217,7 +217,12 @@ def score_command(
         click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
     # warn about missing primary metrics
-    for task_name, metric_info in task_results.check_primary_metrics_against_provided_eval_config(eval_config).items():
+    for (
+        task_name,
+        metric_info,
+    ) in task_results.check_primary_metrics_against_provided_eval_config(
+        eval_config
+    ).items():
         primary_metric, available_metrics = metric_info
         warning = (
             f"Warning: the results for the {task_name} task are missing the primary metric "
@@ -455,7 +460,9 @@ def publish_lb_command(repo_id: str, submission_url: str):
         if all((os.path.exists(f) for f in required_files)):
             eval_config = read_eval_config(local_submission_path)
             submission = read_submission_metadata(local_submission_path)
-            task_results = TaskResults.model_validate_json(open(local_scores_path).read())
+            task_results = TaskResults.model_validate_json(
+                open(local_scores_path).read()
+            )
 
             # check for consistency between the eval config and results
             # we pulled from the submissions repo
@@ -464,6 +471,7 @@ def publish_lb_command(repo_id: str, submission_url: str):
             # and the suite config from the first row in the results repo
             # (if there's a a first row to find)
             from .leaderboard.view import LeaderboardViewer
+
             maybe_result_repo_first_result = LeaderboardViewer.fetch_first_result_from_result_repo(
                 repo_id=repo_id,
                 # use these values because that's where our new result is going to go
@@ -471,13 +479,17 @@ def publish_lb_command(repo_id: str, submission_url: str):
                 split=eval_config.suite_config.split,
             )
             if maybe_result_repo_first_result is not None:
-                eval_configs_to_check_results_against.append((maybe_result_repo_first_result.to_eval_config(), "result repo"))
+                eval_configs_to_check_results_against.append(
+                    (maybe_result_repo_first_result.to_eval_config(), "result repo")
+                )
 
             for config_tup in eval_configs_to_check_results_against:
                 eval_config_to_check, eval_config_origin = config_tup
 
                 # warn about missing tasks
-                missing_tasks = eval_config_to_check.task_names - task_results.task_names
+                missing_tasks = (
+                    eval_config_to_check.task_names - task_results.task_names
+                )
                 if missing_tasks:
                     warning = (
                         f"Warning: Tasks in the {eval_config_origin}'s suite config that are missing "
@@ -486,7 +498,12 @@ def publish_lb_command(repo_id: str, submission_url: str):
                     click.echo(warning)
 
                 # warn about missing primary metrics
-                for task_name, metric_info in task_results.check_primary_metrics_against_provided_eval_config(eval_config_to_check).items():
+                for (
+                    task_name,
+                    metric_info,
+                ) in task_results.check_primary_metrics_against_provided_eval_config(
+                    eval_config_to_check
+                ).items():
                     primary_metric, available_metrics = metric_info
                     warning = (
                         f"Warning: the results for the {task_name} task are missing the "
