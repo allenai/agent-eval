@@ -34,10 +34,12 @@ class LeaderboardViewer:
 
         # build suite_config and mapping from tags to tasks from the first result
         # TODO: Verify the sort order
-        ds = datasets.load_dataset(repo_id, name=config).get(split)
-        if not ds:
+        maybe_first_result = LeaderboardViewer.fetch_first_result_repo(
+            repo_id=repo_id, huggingface_config=config, split=split
+        )
+        if maybe_first_result is None:
             raise ValueError(f"Split '{split}' not found in dataset results")
-        suite = LeaderboardSubmission.model_validate(ds[0]).suite_config
+        suite = maybe_first_result.suite_config
         self._cfg = suite
         self.tag_map: dict[str, list[str]] = {}
         for task in suite.get_tasks(split):
