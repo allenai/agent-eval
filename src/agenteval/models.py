@@ -1,12 +1,11 @@
 from datetime import datetime
 from functools import cached_property
 from pathlib import Path
-from typing import Dict, Optional, Set, Union
+from typing import Dict, Set, Tuple
 
-import datasets
 from pydantic import BaseModel, Field
 
-from .config import SuiteConfig
+from .config import Task, SuiteConfig
 from .io import atomic_write_file
 from .score import TaskResult
 
@@ -26,7 +25,10 @@ class EvalConfig(BaseModel):
         Returns:
             List of task names.
         """
-        return set(task.name for task in self.suite_config.get_tasks(self.split))
+        return set(task.name for task in self.get_tasks())
+
+    def get_tasks(self) -> Set[Task]:
+        return self.suite_config.get_tasks(self.split)
 
 
 class SubmissionMetadata(BaseModel):
@@ -89,14 +91,14 @@ class TaskResults(BaseModel):
         """
         return set(result.task_name for result in self.results)
 
-    def check_result_primary_metrics_against_provided_suite_config(self, provided_suite_config: SuiteConfig) -> Dict[str, Set[str]]:
-        # prep for suite config info
-        tasks_from_suite_config = provided_suite_config.get_tasks(self.split)
-        primary_metric_from_suite_config_by_task_name: Dict[str, str] = {}
-        for task in tasks_from_suite_config:
+    def check_primary_metrics_against_provided_eval_config(self, provided_eval_config: EvalConfig) -> Dict[str, Set[str]]:
+        # prep for eval config info
+        tasks_from_eval_config = provided_eval_config.get_tasks()
+        primary_metric_from_eval_config_by_task_name: Dict[str, str] = {}
+        for task in tasks_from_eval_config:
             task_name = task.name
-            assert task_name not in primary_metric_from_suite_config_by_task_name
-            primary_metric_from_suite_config_by_task_name[task_name] = task.primary_metric
+            assert task_name not in primary_metric_from_eval_config_by_task_name
+            primary_metric_from_eval_config_by_task_name[task_name] = task.primary_metric
 
         # prep for result info
         task_metric_names_from_results_by_task_name: Dict[str, Set[str]] = {}
@@ -109,7 +111,7 @@ class TaskResults(BaseModel):
 
         # check metrics
         available_metrics_for_tasks_missing_primary_metric_by_task_name: Dict[str, Tuple[str, Set[str]]] = {}
-        for task_name, primary_metric in primary_metric_from_suite_config_by_task_name.items():
+        for task_name, primary_metric in primary_metric_from_eval_config_by_task_name.items():
             result_metric_names = task_metric_names_from_results_by_task_name.get(task_name)
             if result_metric_names is not None:
                 if primary_metric not in result_metric_names:
@@ -117,14 +119,11 @@ class TaskResults(BaseModel):
 
         return available_metrics_for_tasks_missing_primary_metric_by_task_name
 
-    def check_result_primary_metrics_against_provided_suite_config(self) -> Dict[str, Tuple[str, Set[str]]]:
-        return check_results_against_provided_suite_config(self.suite_config)
-
-    # TODO: should we use this in view.py too? Probably?
-    @staticmethod
-    def fetch_first_result_from_result_repo(repo_id: str, huggingface_config: str, split: str) -> Optional["EvalResult"]:
-        ds = datasets.load_dataset(repo_id, name=huggingface_config).get(split)
-        if ds:
-            return EvalResult.model_validate(ds[0])
-        else:
-            return None
+    # # TODO: should we use this in view.py too? Probably?
+    # @staticmethod
+    # def fetch_first_result_from_result_repo(repo_id: str, huggingface_config: str, split: str) -> Optional["EvalResult"]:
+    #     ds = datasets.load_dataset(repo_id, name=huggingface_config).get(split)
+    #     if ds:
+    #         return EvalResult.model_validate(ds[0])
+    #     else:
+    #         return None

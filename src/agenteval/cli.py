@@ -217,11 +217,11 @@ def score_command(
         click.echo(f"Warning: Missing tasks in result set: {', '.join(missing_tasks)}")
 
     # warn about missing primary metrics
-    for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
+    for task_name, metric_info in task_results.check_primary_metrics_against_provided_eval_config(eval_config).items():
         primary_metric, available_metrics = metric_info
         warning = (
             f"Warning: the results for the {task_name} task are missing the primary metric "
-            f"({primary_metric}) according to the summary file's suite config. Available "
+            f"({primary_metric}) specified by the eval config in {log_dir}. Available "
             f"metrics in the results for this task: {', '.join(available_metrics)}."
         )
         click.echo(warning)
@@ -345,47 +345,42 @@ def publish_logs_command(
 
     eval_config = read_eval_config(log_dir)
 
-    # checking for consistency _within_ the provided summary file
-    for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
-        primary_metric, available_metrics = metric_info
-        warning = (
-            f"Warning: the results for the {task_name} task are missing the primary metric "
-            f"({primary_metric}) according to the summary file's suite config. Available "
-            f"metrics in the results for this task: {', '.join(available_metrics)}."
-        )
-        click.echo(warning)
+    # # checking for consistency _within_ the provided summary file
+    # for task_name, metric_info in eval_result.check_result_primary_metrics_against_my_suite_config().items():
+    #     primary_metric, available_metrics = metric_info
+    #     warning = (
+    #         f"Warning: the results for the {task_name} task are missing the primary metric "
+    #         f"({primary_metric}) according to the summary file's suite config. Available "
+    #         f"metrics in the results for this task: {', '.join(available_metrics)}."
+    #     )
+    #     click.echo(warning)
 
-    # Validate suite config version
-    config_name = eval_result.suite_config.version
-    if not config_name:
-        raise click.ClickException("Suite config version is required for upload.")
+    # # checking for consistency between the results in the provided summary file
+    # # and the suite config from the first row in the results repo
+    # maybe_result_repo_suite_config = EvalResult.fetch_first_result_from_result_repo(
+    #     repo_id=results_repo_id,
+    #     huggingface_config=config_name,
+    #     split=eval_result.split,
+    # )
+    # if maybe_result_repo_suite_config is not None:
+    #     # checking for consistency between the provided summary file's results
+    #     # and the suite config we think represents the results repo
+    #     missing_tasks_according_to_result_repo_suit_config = eval_result.find_missing_tasks_compared_to_other_suite_config(maybe_result_repo_suite_config)
+    #     if missing_tasks_according_to_result_repo_suit_config:
+    #         warning = (
+    #             f"Warning: Tasks in the result repo's suit config that are missing from "
+    #             f"the results: {', '.join(missing_tasks_according_to_result_repo_suit_config)}"
+    #         )
+    #         click.echo(warning)
 
-    # checking for consistency between the results in the provided summary file
-    # and the suite config from the first row in the results repo
-    maybe_result_repo_suite_config = EvalResult.fetch_first_result_from_result_repo(
-        repo_id=results_repo_id,
-        huggingface_config=config_name,
-        split=eval_result.split,
-    )
-    if maybe_result_repo_suite_config is not None:
-        # checking for consistency between the provided summary file's results
-        # and the suite config we think represents the results repo
-        missing_tasks_according_to_result_repo_suit_config = eval_result.find_missing_tasks_compared_to_other_suite_config(maybe_result_repo_suite_config)
-        if missing_tasks_according_to_result_repo_suit_config:
-            warning = (
-                f"Warning: Tasks in the result repo's suit config that are missing from "
-                f"the results: {', '.join(missing_tasks_according_to_result_repo_suit_config)}"
-            )
-            click.echo(warning)
-
-        for task_name, metric_info in eval_result.check_result_primary_metrics_against_provided_suite_config(maybe_result_repo_suite_config).items():
-            primary_metric, available_metrics = metric_info
-            warning = (
-                f"Warning: the results for the {task_name} task are missing the primary metric "
-                f"({primary_metric}) according to the result repo's suite config. Available "
-                f"metrics in the results for this task: {', '.join(available_metrics)}."
-            )
-            click.echo(warning)
+    #     for task_name, metric_info in eval_result.check_primary_metrics_against_provided_suite_config(maybe_result_repo_suite_config).items():
+    #         primary_metric, available_metrics = metric_info
+    #         warning = (
+    #             f"Warning: the results for the {task_name} task are missing the primary metric "
+    #             f"({primary_metric}) according to the result repo's suite config. Available "
+    #             f"metrics in the results for this task: {', '.join(available_metrics)}."
+    #         )
+    #         click.echo(warning)
 
     # Determine HF user
     hf_api = HfApi()
@@ -422,6 +417,11 @@ def publish_logs_command(
         os.path.join(log_dir, SUBMISSION_METADATA_FILENAME),
         submission.model_dump_json(indent=2),
     )
+
+    # Validate suite config version
+    config_name = eval_config.suite_config.version
+    if not config_name:
+        raise click.ClickException("Suite config version is required for upload.")
 
     # Build submission name
     ts = submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
