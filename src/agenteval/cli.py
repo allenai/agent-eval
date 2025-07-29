@@ -141,7 +141,7 @@ def verify_git_reproducibility() -> None:
 
 
 def check_results_against_eval_config(
-    results: TaskResults, eval_config: eval_config, eval_config_origin: str
+    results: TaskResults, eval_config: EvalConfig, eval_config_origin: str
 ):
     # warn about results missing
     if len(results.task_names) == 0:
