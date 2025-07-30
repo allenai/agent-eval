@@ -175,7 +175,7 @@ def _get_dataframe(
             suite_config=cfg, split=split, results=ev.results
         )
         flat = {}
-        for key, s in stats.items():
+        for key, s in stats.stats.items():
             parts = key.split("/")
             if parts[0] == "overall":
                 flat["overall/score"], flat["overall/cost"] = s.score, s.cost
