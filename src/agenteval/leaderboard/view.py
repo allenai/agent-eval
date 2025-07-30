@@ -154,14 +154,16 @@ def _get_dataframe(
                         for model_usage in usage_list:
                             model_name = model_usage.model
                             total_tokens = model_usage.usage.total_tokens
-                            
+
                             if model_name in model_token_counts:
                                 model_token_counts[model_name] += total_tokens
                             else:
                                 model_token_counts[model_name] = total_tokens
 
         # Sort by cumulative token count (descending - most used first)
-        model_names = sorted(model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True)
+        model_names = sorted(
+            model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
+        )
 
         sub = ev.submission
         # only format if submit_time present, else leave as None
