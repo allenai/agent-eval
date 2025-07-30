@@ -146,16 +146,22 @@ def _get_dataframe(
     for itm in ds:
         ev = LeaderboardSubmission.model_validate(itm)
 
-        # extract base LLM information
-        base_models = set()
+        model_token_counts = {}
         if ev.results:
             for task_result in ev.results:
                 if task_result.model_usages:
                     for usage_list in task_result.model_usages:
                         for model_usage in usage_list:
-                            base_models.add(model_usage.model)
+                            model_name = model_usage.model
+                            total_tokens = model_usage.usage.total_tokens
+                            
+                            if model_name in model_token_counts:
+                                model_token_counts[model_name] += total_tokens
+                            else:
+                                model_token_counts[model_name] = total_tokens
 
-        model_names = sorted(list(base_models))
+        # Sort by cumulative token count (descending - most used first)
+        model_names = sorted(model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True)
 
         sub = ev.submission
         # only format if submit_time present, else leave as None
