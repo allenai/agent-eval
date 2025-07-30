@@ -197,11 +197,11 @@ def compress_model_usages(eval_result: LeaderboardSubmission):
             model_costs = None
 
         # Create a new TaskResult with compressed model_usages
-        compressed_task_result = TaskResult(
-            task_name=task_result.task_name,
-            metrics=task_result.metrics,
-            model_costs=model_costs,
-            model_usages=None if task_result.model_usages is None else [],
+        compressed_task_result = task_result.model_copy(
+            update={
+                "model_costs": model_costs,
+                "model_usages": None if task_result.model_usages is None else [],
+            }
         )
 
         if task_result.model_usages:
