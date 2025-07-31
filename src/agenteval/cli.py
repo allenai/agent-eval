@@ -26,7 +26,6 @@ from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
 HF_URL_PATTERN = r"^hf://(?P<repo_id>[^/]+/[^/]+)/(?P<path>.*)$"
-AGENTEVAL_FILENAME = "agenteval.json"
 EVAL_CONFIG_FILENAME = "eval_config.json"
 SCORES_FILENAME = "scores.json"
 SUMMARY_FILENAME = "summary_stats.json"
@@ -45,26 +44,15 @@ TOOL_MAPPING = {
 }
 
 
-def read_eval_config(log_dir: str) -> EvalConfig:
-    eval_config_path = os.path.join(log_dir, EVAL_CONFIG_FILENAME)
-    if not os.path.exists(eval_config_path):
-        # Fall back to old filename for backwards compatibility
-        eval_config_path = os.path.join(log_dir, AGENTEVAL_FILENAME)
-    with open(eval_config_path, "r", encoding="utf-8") as f:
-        return EvalConfig.model_validate(json.load(f))
+def parse_hf_url(url: str) -> tuple[str, str]:
+    hf_url_match = re.match(HF_URL_PATTERN, url)
+    if not hf_url_match:
+        click.echo(
+            f"Invalid URL: {url}. " "Expected format: hf://<repo_id>/<submission_path>"
+        )
+        sys.exit(1)
 
-
-def read_submission_metadata(log_dir: str) -> SubmissionMetadata:
-    submission_path = os.path.join(log_dir, SUBMISSION_METADATA_FILENAME)
-    if os.path.exists(submission_path):
-        with open(submission_path, "r", encoding="utf-8") as f:
-            return SubmissionMetadata.model_validate_json(f.read())
-    else:
-        with open(
-            os.path.join(log_dir, AGENTEVAL_FILENAME), "r", encoding="utf-8"
-        ) as f:
-            d = json.load(f)
-            return SubmissionMetadata.model_validate(d["submission"])
+    return hf_url_match.group("repo_id"), hf_url_match.group("path")
 
 
 def verify_git_reproducibility() -> None:
@@ -177,7 +165,8 @@ def score_command(
         sys.exit(1)
 
     click.echo(f"Processing logs in {log_dir}")
-    eval_config = read_eval_config(log_dir)
+    with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
+        eval_config = EvalConfig.model_validate_json(f.read())
 
     log_processing_outcome = process_eval_logs(log_dir)
 
@@ -333,7 +322,8 @@ def publish_logs_command(
             f"using '{safe_agent_name}' for submission filenames."
         )
 
-    eval_config = read_eval_config(log_dir)
+    with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
+        eval_config = EvalConfig.model_validate_json(f.read())
 
     # Determine HF user
     hf_api = HfApi()
@@ -396,81 +386,219 @@ cli.add_command(publish_logs_command)
 
 
 @click.command(
+    name="backfill",
+    help="Backfill eval_config, scores, and submission files from legacy agenteval.json file",
+)
+@click.option(
+    "--results-repo-id",
+    type=str,
+    required=False,
+    default="allenai/asta-bench-internal-results",
+)
+@click.option(
+    "--submissions-repo-id",
+    type=str,
+    required=False,
+    default="allenai/asta-bench-internal-submissions",
+)
+@click.argument("submission_path", type=str)
+def backfill_command(results_repo_id, submissions_repo_id, submission_path):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        submissions_dir = os.path.join(temp_dir, "submissions")
+        results_dir = os.path.join(temp_dir, "results")
+
+        import huggingface_hub
+
+        api = huggingface_hub.HfApi()
+        api.snapshot_download(
+            repo_id=results_repo_id,
+            repo_type="dataset",
+            allow_patterns=[f"{submission_path}.json"],
+            local_dir=results_dir,
+        )
+        api.snapshot_download(
+            repo_id=submissions_repo_id,
+            repo_type="dataset",
+            allow_patterns=[f"{submission_path}/agenteval.json"],
+            local_dir=submissions_dir,
+        )
+
+        lb_submission = LeaderboardSubmission.model_validate_json(
+            open(os.path.join(results_dir, f"{submission_path}.json")).read()
+        )
+        with open(
+            os.path.join(submissions_dir, f"{submission_path}/submission.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(lb_submission.submission.model_dump_json(indent=2))
+        with open(
+            os.path.join(submissions_dir, f"{submission_path}/eval_config.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            eval_config = EvalConfig(
+                suite_config=lb_submission.suite_config, split=lb_submission.split
+            )
+            f.write(eval_config.model_dump_json(indent=2))
+        os.makedirs(
+            os.path.join(submissions_dir, f"{SUMMARIES_PREFIX}/{submission_path}"),
+            exist_ok=True,
+        )
+        with open(
+            os.path.join(
+                submissions_dir, f"{SUMMARIES_PREFIX}/{submission_path}/scores.json"
+            ),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            results = TaskResults(results=lb_submission.results)
+            f.write(results.model_dump_json(indent=2))
+        api.upload_folder(
+            repo_id=submissions_repo_id,
+            repo_type="dataset",
+            folder_path=submissions_dir,
+            path_in_repo="",
+        )
+        click.echo(f"Backfilled submission {submission_path} in {submissions_repo_id}")
+
+
+cli.add_command(backfill_command)
+
+
+@click.command(
     name="publish",
     help="Publish scored results in log_dir to HuggingFace leaderboard.",
 )
-@click.argument("submission_url", type=str)
+@click.argument("submission_urls", nargs=-1, required=True, type=str)
 @click.option(
     "--repo-id",
     default="allenai/asta-bench-internal-results",
     required=False,
     help="HuggingFace repo",
 )
-def publish_lb_command(repo_id: str, submission_url: str):
-    hf_url_match = re.match(HF_URL_PATTERN, submission_url)
-    if not hf_url_match:
-        click.echo(
-            f"Invalid submission URL format: {submission_url}. "
-            "Expected format: hf://<repo_id>/<submission_path>"
-        )
+def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
+    if not submission_urls:
+        click.echo("At least one submission URL is required.")
         sys.exit(1)
-    submission_repo_id = hf_url_match.group("repo_id")
-    submission_path = hf_url_match.group("path")
+
+    lb_submissions = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download
 
+        local_submissions_dir = os.path.join(temp_dir, "submissions")
+        local_results_dir = os.path.join(temp_dir, "results")
+
         hf_api = HfApi()
 
-        eval_config_rel_path = f"{submission_path}/{EVAL_CONFIG_FILENAME}"
-        agenteval_rel_path = f"{submission_path}/{AGENTEVAL_FILENAME}"
-        scores_rel_path = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
-        submission_metadata__rel_path = (
-            f"{submission_path}/{SUBMISSION_METADATA_FILENAME}"
-        )
+        submission_repo_ids = set()
+        submission_paths = []
+
+        # Validate URLs
+        for submission_url in submission_urls:
+            submission_repo_id, submission_path = parse_hf_url(submission_url)
+            submission_repo_ids.add(submission_repo_id)
+            submission_paths.append(submission_path)
+
+        if len(submission_repo_ids) > 1:
+            click.echo("All submission URLs must reference the same repo")
+            sys.exit(1)
+
+        submission_repo_id = submission_repo_ids.pop()
+
+        eval_config_rel_paths = [
+            f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
+        ]
+        scores_rel_paths = [
+            f"{SUMMARIES_PREFIX}/{p}/{SCORES_FILENAME}" for p in submission_paths
+        ]
+        submission_metadata_rel_paths = [
+            f"{p}/{SUBMISSION_METADATA_FILENAME}" for p in submission_paths
+        ]
+
+        # Download all input files in one shot
         snapshot_download(
             repo_id=submission_repo_id,
             repo_type="dataset",
-            allow_patterns=[
-                eval_config_rel_path,
-                agenteval_rel_path,
-                scores_rel_path,
-                submission_metadata__rel_path,
-            ],
-            local_dir=temp_dir,
+            allow_patterns=eval_config_rel_paths
+            + scores_rel_paths
+            + submission_metadata_rel_paths,
+            local_dir=local_submissions_dir,
         )
-        local_submission_path = os.path.join(temp_dir, submission_path)
-        local_scores_path = os.path.join(temp_dir, scores_rel_path)
-        required_files = [local_scores_path]
-        if all((os.path.exists(f) for f in required_files)):
-            eval_config = read_eval_config(local_submission_path)
-            submission = read_submission_metadata(local_submission_path)
-            eval_result = LeaderboardSubmission(
+
+        # Create results files locally
+        for (
+            submission_path,
+            eval_config_path,
+            scores_path,
+            submission_metadata_path,
+        ) in zip(
+            submission_paths,
+            eval_config_rel_paths,
+            scores_rel_paths,
+            submission_metadata_rel_paths,
+        ):
+            local_eval_config_path = os.path.join(
+                local_submissions_dir, eval_config_path
+            )
+            local_scores_path = os.path.join(local_submissions_dir, scores_path)
+            local_submission_path = os.path.join(
+                local_submissions_dir, submission_metadata_path
+            )
+            required_files = [
+                local_eval_config_path,
+                local_scores_path,
+                local_submission_path,
+            ]
+
+            missing = [
+                os.path.basename(f) for f in required_files if not os.path.exists(f)
+            ]
+            if missing:
+                click.echo(
+                    "Skipping {}: missing {}".format(
+                        submission_path, ", ".join(missing)
+                    )
+                )
+                continue
+
+            eval_config = EvalConfig.model_validate_json(
+                open(local_eval_config_path).read()
+            )
+            results = TaskResults.model_validate_json(
+                open(local_scores_path).read()
+            ).results
+            submission = SubmissionMetadata.model_validate_json(
+                open(local_submission_path).read()
+            )
+            lb_submission = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,
-                results=TaskResults.model_validate_json(
-                    open(local_scores_path).read()
-                ).results,
+                results=results,
                 submission=submission,
             )
-        else:
-            click.echo(
-                "Missing required files [{}] in {}".format(
-                    ",".join(required_files), submission_url
-                )
+            lb_submission = compress_model_usages(lb_submission)
+            os.makedirs(
+                os.path.join(local_results_dir, os.path.dirname(submission_path)),
+                exist_ok=True,
             )
-            sys.exit(1)
+            with open(
+                os.path.join(local_results_dir, f"{submission_path}.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(lb_submission.model_dump_json(indent=None))
 
-        submission_name = submission_path.split("/")[-1]
-        summary_url = upload_summary_to_hf(
-            hf_api,
-            eval_result,
-            repo_id,
-            eval_result.suite_config.version,
-            eval_result.split,
-            submission_name,
+        # Upload all results files in one shot
+        click.echo(f"Uploading {len(submission_paths)} results to {repo_id}...")
+        hf_api.upload_folder(
+            folder_path=local_results_dir,
+            path_in_repo="",
+            repo_id=repo_id,
+            repo_type="dataset",
         )
-        click.echo(f"Uploaded results summary file to {summary_url}")
+        click.echo("Done")
 
 
 @click.group(name="lb", help="Leaderboard related commands")
