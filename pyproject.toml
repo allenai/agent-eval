@@ -27,6 +27,8 @@ dev = [
   "black==24.2.0",
   "isort",
   "autoflake",
+  "flake8",
+  "flake8-pyproject",
   "pytest",
   "pytest-asyncio",
   "mypy==1.15",
@@ -50,6 +52,22 @@ where = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
+[tool.flake8]
+select = [
+  "F", # Logical errors
+
+  # Serious "E" errors
+  "E721", # `type(x) == <t>` instead of `isinstance(x, <t>)`
+  "E901", "E902", "E999" # syntax errors
+]
+
+ignore = [
+  "E501",  # line too long
+  "F401",  # module imported but unused
+  "F541",  # f-string is missing placeholders
+]
+
+
 [tool.setuptools]
 include-package-data = true
 
@@ -58,3 +76,7 @@ include-package-data = true
 
 [tool.isort]
 profile = "black"
+
+[tool.mypy]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]

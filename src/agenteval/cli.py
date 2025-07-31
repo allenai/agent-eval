@@ -219,17 +219,17 @@ def score_command(
         click.echo(f"Wrote scores to {scores_path}")
 
         # Persist summary
-        summary_path = os.lpath.join(log_dir, SUMMARY_FILENAME)
+        summary_path = os.path.join(log_dir, SUMMARY_FILENAME)
         atomic_write_file(summary_path, json.dumps(stats, indent=2))
         click.echo(f"Wrote summary scores to {summary_path}")
 
-        temp_dir.__exit__()
+        temp_dir.__exit__(None, None, None)
     else:
         from huggingface_hub import HfApi
 
         hf_api = HfApi()
         path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
-        upload = hf_api.upload_file(
+        hf_api.upload_file(
             repo_id=repo_id,
             repo_type="dataset",
             path_or_fileobj=BytesIO(
@@ -240,7 +240,7 @@ def score_command(
         click.echo(f"Uploaded scores to hf://{repo_id}/{path_in_repo}")
 
         path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SUMMARY_FILENAME}"
-        upload = hf_api.upload_file(
+        hf_api.upload_file(
             repo_id=repo_id,
             repo_type="dataset",
             path_or_fileobj=BytesIO(stats.model_dump_json(indent=2).encode("utf-8")),
@@ -367,6 +367,8 @@ def publish_logs_command(
         raise click.ClickException("Suite config version is required for upload.")
 
     # Build submission name
+    if submission.submit_time is None:
+        raise click.ClickException("Submission timestamp is required for upload.")
     ts = submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
     submission_name = f"{safe_username}_{safe_agent_name}_{ts}"
 
@@ -481,8 +483,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
     if not submission_urls:
         click.echo("At least one submission URL is required.")
         sys.exit(1)
-
-    lb_submissions = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download

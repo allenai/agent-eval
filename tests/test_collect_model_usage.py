@@ -146,7 +146,10 @@ def test_collect_model_usage_e2e():
         async def score(state: TaskState, target: Target) -> Score:
             output = await model.generate(input="test")
             content = output.choices[0].message.content
-            value = float(content)
+            if isinstance(content, str):
+                value = float(content)
+            else:
+                value = 1.0
             return Score(
                 value=value,
                 explanation="Test scorer completed.",
@@ -159,8 +162,6 @@ def test_collect_model_usage_e2e():
         """A task that uses the exception_solver to test error handling."""
 
         return Task(
-            name="test_task",
-            description="Test task",
             dataset=MemoryDataset([Sample(id="1", input="Test input")]),
             solver=test_solver(),
             scorer=test_scorer(),

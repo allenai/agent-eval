@@ -93,12 +93,12 @@ def adapt_model_name(model: str) -> str:
         return model
 
 
-def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
+def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
     Handles cached tokens via litellm Usage object.
     """
-    total_cost = 0.0
+    total_cost: float | None = 0.0
     for model_usage in model_usages:
         input_tokens = model_usage.usage.input_tokens
         output_tokens = model_usage.usage.output_tokens
@@ -176,7 +176,8 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     usage_object=litellm_usage,
                 )
 
-            total_cost += prompt_cost + completion_cost
+            if total_cost is not None:
+                total_cost += prompt_cost + completion_cost
         except Exception as e:
             total_cost = None
             logger.warning(

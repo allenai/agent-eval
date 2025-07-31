@@ -42,7 +42,7 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
         return pa.list_(_pa_type_for_annotation(inner))
     # Handle dict[str, Any] and dict[str, str] specifically - these are serialized as JSON strings
     if origin is dict:
-        args = get_args(anno)
+        args = list(get_args(anno))
         if len(args) == 2 and args[0] is str and (args[1] is Any or args[1] is str):
             return pa.string()  # dict[str, Any] and dict[str, str] become JSON strings
         # Other dict types could be handled as proper Arrow maps/structs
@@ -56,7 +56,7 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
         # Check that all literal values are the same type
         first_type = type(literal_values[0])
         for value in literal_values:
-            if type(value) != first_type:
+            if value is not first_type:
                 raise ValueError(
                     f"Literal {anno} contains mixed types: {[type(v) for v in literal_values]}"
                 )

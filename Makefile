@@ -5,6 +5,18 @@ format:
 	isort .
 	black .
 
+format-check:
+	@echo "Checking formatting with isort and black..."
+	isort --check .
+	black --check .
+
+lint-check:
+	@echo "Running lint checks..."
+	flake8 src/ tests/
+	mypy src/ tests/
+
+code-check: format-check lint-check
+
 tag:
 	@echo "Tagging version..."
 	@bash ./tag.sh
