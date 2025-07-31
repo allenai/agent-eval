@@ -16,7 +16,6 @@ from .config import load_suite_config
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission
 from .leaderboard.upload import (
-    compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
     upload_summary_to_hf,
@@ -145,6 +144,7 @@ def score_command(
     log_dir: str,
 ):
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
+    temp_dir: tempfile.TemporaryDirectory | None = None
     if hf_url_match is not None:
         # Download the logs from HF URL
         from huggingface_hub import snapshot_download
@@ -219,11 +219,14 @@ def score_command(
         click.echo(f"Wrote scores to {scores_path}")
 
         # Persist summary
-        summary_path = os.lpath.join(log_dir, SUMMARY_FILENAME)
-        atomic_write_file(summary_path, json.dumps(stats, indent=2))
+        summary_path = os.path.join(log_dir, SUMMARY_FILENAME)
+        atomic_write_file(
+            summary_path, json.dumps(stats.model_dump(mode="json"), indent=2)
+        )
         click.echo(f"Wrote summary scores to {summary_path}")
 
-        temp_dir.__exit__()
+        if temp_dir is not None:
+            temp_dir.__exit__(None, None, None)
     else:
         from huggingface_hub import HfApi
 

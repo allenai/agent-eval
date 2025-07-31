@@ -1,12 +1,9 @@
 from datetime import datetime
 from functools import cached_property
-from pathlib import Path
-from typing import Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .config import SuiteConfig
-from .io import atomic_write_file
 from .score import TaskResult
 
 
@@ -46,7 +43,7 @@ class SubmissionMetadata(BaseModel):
 class TaskResults(BaseModel):
     """Scores for all tasks in the suite"""
 
-    results: list[TaskResult] | None = None
+    results: list[TaskResult]
 
     @cached_property
     def agent_specs(self) -> set[str]:
