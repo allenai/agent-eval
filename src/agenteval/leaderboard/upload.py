@@ -204,7 +204,7 @@ def compress_model_usages(eval_result: LeaderboardSubmission):
             }
         )
 
-        if task_result.model_usages:
+        if task_result.model_usages and compressed_task_result.model_usages is not None:
             for problem_usages in task_result.model_usages:
                 compressed_problem_usages = compress_usages_by_problem(problem_usages)
                 compressed_task_result.model_usages.append(compressed_problem_usages)

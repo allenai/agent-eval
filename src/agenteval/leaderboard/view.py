@@ -146,7 +146,7 @@ def _get_dataframe(
     for itm in ds:
         ev = LeaderboardSubmission.model_validate(itm)
 
-        model_token_counts = {}
+        model_token_counts: dict[str, int] = {}
         if ev.results:
             for task_result in ev.results:
                 if task_result.model_usages:

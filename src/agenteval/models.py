@@ -47,8 +47,8 @@ class TaskResults(BaseModel):
 
     @cached_property
     def agent_specs(self) -> set[str]:
-        specs = set()
-        for task_result in self.results:
+        specs: set[str] = set()
+        for task_result in self.results or []:
             if task_result.eval_spec:
                 agent_spec = task_result.eval_spec.model_dump_json(
                     include={"solver", "solver_args", "model", "model_args"}
@@ -58,8 +58,8 @@ class TaskResults(BaseModel):
 
     @cached_property
     def code_specs(self) -> set[str]:
-        specs = set()
-        for task_result in self.results:
+        specs: set[str] = set()
+        for task_result in self.results or []:
             if task_result.eval_spec:
                 code_spec = task_result.eval_spec.model_dump_json(
                     include={"revision", "packages"}
@@ -69,8 +69,8 @@ class TaskResults(BaseModel):
 
     @cached_property
     def tasks_with_args(self) -> list[str]:
-        tasks_with_args = []
-        for task_result in self.results:
+        tasks_with_args: list[str] = []
+        for task_result in self.results or []:
             if task_result.eval_spec and task_result.eval_spec.task_args_passed:
                 tasks_with_args.append(task_result.task_name)
         return tasks_with_args
@@ -83,4 +83,6 @@ class TaskResults(BaseModel):
         Returns:
             List of task names.
         """
-        return set(result.task_name for result in self.results)
+        return (
+            set(result.task_name for result in self.results) if self.results else set()
+        )

@@ -16,9 +16,9 @@ from .config import load_suite_config
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission
 from .leaderboard.upload import (
+    compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
-    upload_summary_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
 from .score import process_eval_logs
@@ -232,7 +232,7 @@ def score_command(
 
         hf_api = HfApi()
         path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
-        upload = hf_api.upload_file(
+        hf_api.upload_file(
             repo_id=repo_id,
             repo_type="dataset",
             path_or_fileobj=BytesIO(
@@ -243,7 +243,7 @@ def score_command(
         click.echo(f"Uploaded scores to hf://{repo_id}/{path_in_repo}")
 
         path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SUMMARY_FILENAME}"
-        upload = hf_api.upload_file(
+        hf_api.upload_file(
             repo_id=repo_id,
             repo_type="dataset",
             path_or_fileobj=BytesIO(stats.model_dump_json(indent=2).encode("utf-8")),
@@ -370,6 +370,8 @@ def publish_logs_command(
         raise click.ClickException("Suite config version is required for upload.")
 
     # Build submission name
+    if submission.submit_time is None:
+        raise click.ClickException("Submission timestamp is required for upload.")
     ts = submission.submit_time.strftime("%Y-%m-%dT%H-%M-%S")
     submission_name = f"{safe_username}_{safe_agent_name}_{ts}"
 
@@ -484,8 +486,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
     if not submission_urls:
         click.echo("At least one submission URL is required.")
         sys.exit(1)
-
-    lb_submissions = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download

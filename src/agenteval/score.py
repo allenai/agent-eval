@@ -172,7 +172,9 @@ def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
             errors.append(f"No metrics found for task {task_name}.")
             continue
         model_usages = get_model_usages(log)
-        model_costs = [compute_model_cost(usages) for usages in model_usages]
+        model_costs: list[float | None] = [
+            compute_model_cost(usages) for usages in model_usages
+        ]
         has_model_usages = any(len(usages) > 0 for usages in model_usages)
         results.append(
             TaskResult(

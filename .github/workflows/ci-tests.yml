@@ -24,10 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[dev]
 
-      - name: Check Formatting
-        run: |
-          isort --check .
-          black --check . 
+      - name: Check Code Style
+        run: make code-check
 
       - name: Run tests
         run: pytest --maxfail=1 --disable-warnings -q
