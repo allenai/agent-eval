@@ -16,10 +16,10 @@ from .config import load_suite_config
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission
 from .leaderboard.upload import (
+    compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
     upload_summary_to_hf,
-    compress_model_usages
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
 from .score import process_eval_logs
