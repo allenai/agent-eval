@@ -19,6 +19,7 @@ from .leaderboard.upload import (
     sanitize_path_component,
     upload_folder_to_hf,
     upload_summary_to_hf,
+    compress_model_usages
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
 from .score import process_eval_logs
