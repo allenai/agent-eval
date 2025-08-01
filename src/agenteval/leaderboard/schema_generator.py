@@ -56,7 +56,7 @@ def _pa_type_for_annotation(anno) -> pa.DataType:
         # Check that all literal values are the same type
         first_type = type(literal_values[0])
         for value in literal_values:
-            if value is not first_type:
+            if type(value) is not first_type:
                 raise ValueError(
                     f"Literal {anno} contains mixed types: {[type(v) for v in literal_values]}"
                 )
