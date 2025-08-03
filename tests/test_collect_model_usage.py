@@ -1,7 +1,7 @@
 """Tests for collect_model_usage function."""
 
+from collections.abc import Generator
 from random import Random
-from typing import Generator
 
 import inspect_ai
 from inspect_ai import Task, task

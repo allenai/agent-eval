@@ -3,7 +3,6 @@ View and plot leaderboard results.
 """
 
 import logging
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 import datasets
@@ -55,7 +54,7 @@ class LeaderboardViewer:
         return overview, self.tag_map
 
     def view(
-        self, tag: Optional[str] = None, with_plots: bool = False
+        self, tag: str | None = None, with_plots: bool = False
     ) -> tuple[pd.DataFrame, dict[str, plt.Figure]]:
         """
         If tag is None, primary="Overall" and group=all tags.
