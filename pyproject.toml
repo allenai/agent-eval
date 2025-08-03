@@ -29,6 +29,8 @@ dev = [
   "autoflake",
   "flake8",
   "flake8-pyproject",
+  "flake8-pep585",
+  "flake8-new-union-types",
   "pytest",
   "pytest-asyncio",
   "mypy==1.15",
@@ -55,6 +57,8 @@ python_files = ["test_*.py"]
 [tool.flake8]
 select = [
   "F", # Logical errors
+  "PEA", # flake8-pep585 - enforce modern collection type hints (Dict -> dict, List -> list, etc.)
+  "NU", # flake8-new-union-types - enforce X | Y instead of Union[X, Y] and X | None instead of Optional[X]
 
   # Serious "E" errors
   "E721", # `type(x) == <t>` instead of `isinstance(x, <t>)`
