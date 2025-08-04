@@ -1,5 +1,3 @@
-from typing import Dict
-
 import pytest
 from inspect_ai.model import ModelUsage
 
@@ -9,7 +7,7 @@ from agenteval.log import ModelUsageWithName
 
 def calculate_model_usages_cost(
     model_usages: list[list[ModelUsageWithName]],
-    model_costs: Dict[str, Dict[str, float]],
+    model_costs: dict[str, dict[str, float]],
 ) -> float:
     total_cost = 0.0
 
