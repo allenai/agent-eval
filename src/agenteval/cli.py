@@ -532,11 +532,13 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         # Create results files locally
         for (
+            submission_url,
             submission_path,
             eval_config_path,
             scores_path,
             submission_metadata_path,
         ) in zip(
+            submission_urls,
             submission_paths,
             eval_config_rel_paths,
             scores_rel_paths,
@@ -575,6 +577,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
+            submission.logs_url = submission_url
             lb_submission = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,
