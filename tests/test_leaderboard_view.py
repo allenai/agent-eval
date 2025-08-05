@@ -10,6 +10,7 @@ pytest.importorskip("seaborn")
 from agenteval.leaderboard.view import _plot_combined_scatter
 
 
+@pytest.mark.leaderboard
 class TestPaperWorkflowFunctionality:
     """Test core functionality used in paper_plots.sh workflow."""
 
