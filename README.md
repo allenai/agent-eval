@@ -51,6 +51,11 @@ agenteval lb view [OPTIONS]
 ```
 View results from the leaderboard.
 
+To save plots:
+```shell
+agenteval lb view --save-dir DIR [OPTIONS]
+```
+
 # Administer the leaderboard
 Prior to publishing scores, two HuggingFace datasets should be set up, one for full submissions and one for results files.
 
