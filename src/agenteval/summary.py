@@ -45,21 +45,17 @@ def _mean(
 
 def _safe_mean(
     xs: Sequence[float | None],
+    is_score: bool = False,
     weights: Sequence[float] | None = None,
-    replace_none: float | int | None = None,
 ) -> float | None:
-    """Compute mean, optionally replacing None values with a specified value."""
+    """Compute mean, treating None as 0 for scores, otherwise returning None if any Nones."""
     if not xs:
         return None
-
-    if replace_none is not None:
-        # Replace None values with the specified value (e.g., 0.0 for scores)
-        vals = [x if x is not None else replace_none for x in xs]
+    if is_score:
+        vals = [x if x is not None else 0.0 for x in xs]
         return _mean(vals, weights)
-    else:
-        # Preserve None values - only aggregate non-None values
-        vals = [x for x in xs if x is not None]
-        return _mean(vals, weights) if vals and len(vals) == len(xs) else None
+    vals = [x for x in xs if x is not None]
+    return _mean(vals, weights) if vals and len(vals) == len(xs) else None
 
 
 def _safe_stderr(xs: Sequence[float | None]) -> float | None:
@@ -75,7 +71,6 @@ def compute_summary_statistics(
     suite_config: SuiteConfig,
     split: str,
     results: list[TaskResult],
-    preserve_none_scores: bool = False,
 ) -> SummaryStats:
     """
     Compute summary statistics for a set of task results.
@@ -146,11 +141,7 @@ def compute_summary_statistics(
             weights.append(task_weight)
 
         tags_summary[tag_name] = SummaryStat(
-            score=_safe_mean(
-                tag_scores,
-                weights=weights,
-                replace_none=0.0 if not preserve_none_scores else None,
-            ),
+            score=_safe_mean(tag_scores, is_score=True, weights=weights),
             score_stderr=None,
             cost=_safe_mean(tag_costs, weights=weights),
             cost_stderr=None,
@@ -160,9 +151,7 @@ def compute_summary_statistics(
     all_scores = [s.score for s in tags_summary.values()]
     all_costs = [s.cost for s in tags_summary.values()]
     overall = SummaryStat(
-        score=_safe_mean(
-            all_scores, replace_none=0.0 if not preserve_none_scores else None
-        ),
+        score=_safe_mean(all_scores, is_score=True),
         score_stderr=None,
         cost=_safe_mean(all_costs),
         cost_stderr=None,
