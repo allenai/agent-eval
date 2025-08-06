@@ -11,6 +11,12 @@ CUSTOM_PRICING = {
     "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": CostPerToken(
         input_cost_per_token=2.7e-07, output_cost_per_token=8.5e-07
     ),
+    "together_ai/meta-llama/Llama-4-Scout-17B-16E-Instruct": CostPerToken(
+        input_cost_per_token=1.8e-07, output_cost_per_token=5.9e-07
+    ),
+    "together_ai/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": CostPerToken(
+        input_cost_per_token=2.7e-07, output_cost_per_token=8.5e-07
+    ),
     "deepseek-ai/DeepSeek-V3": CostPerToken(
         input_cost_per_token=1.25e-06, output_cost_per_token=1.25e-06
     ),
