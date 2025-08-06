@@ -101,8 +101,9 @@ def compute_summary_statistics(
             )
             continue
 
-        expected_stderr_name = f"{task.primary_metric.rpartition('/')[0]}/stderr"
         tasks_summary[task.name].score = metrics_by_name[task.primary_metric].value
+
+        expected_stderr_name = f"{task.primary_metric.rpartition('/')[0]}/stderr"
         stderr_metric = metrics_by_name.get(expected_stderr_name, None)
         tasks_summary[task.name].score_stderr = (
             stderr_metric.value if stderr_metric else None
