@@ -787,6 +787,17 @@ def validate_split(ctx, param, value):
     multiple=True,
     help="Include tasks matching pattern (regex, case-insensitive) with optional renaming (format: 'pattern' or 'pattern:Display Name'). Order preserved. Only applies when --tag IS specified.",
 )
+@click.option(
+    "--group-agent",
+    multiple=True,
+    help="Group agents matching pattern (regex, case-insensitive) to use same color with different markers in scatter plots (format: 'pattern' or 'pattern:Group Name'). Can be specified multiple times for different groups.",
+)
+@click.option(
+    "--group-agent-fixed-colors",
+    type=int,
+    default=None,
+    help="Number of first --group-agent groups to assign fixed colors. These groups will always get the same colors across plots. Remaining groups get colors dynamically.",
+)
 def view_command(
     repo_id,
     config,
@@ -807,6 +818,8 @@ def view_command(
     is_internal,
     include_tag,
     include_task,
+    group_agent,
+    group_agent_fixed_colors,
 ):
     """View a specific config and split; show overview or tag detail."""
     from .leaderboard.view import LeaderboardViewer
@@ -835,12 +848,14 @@ def view_command(
         ),
         include_tag_specs=(list(include_tag) if include_tag else None),
         include_task_specs=(list(include_task) if include_task else None),
+        group_agent_specs=(list(group_agent) if group_agent else None),
         scatter_show_missing_cost=scatter_show_missing_cost,
         scatter_legend_max_width=scatter_legend_max_width,
         scatter_figure_width=scatter_figure_width,
         scatter_subplot_height=scatter_subplot_height,
         scatter_subplot_spacing=scatter_subplot_spacing,
         scatter_x_log_scale=scatter_x_log_scale,
+        group_agent_fixed_colors=group_agent_fixed_colors,
     )
     click.echo(df.to_string(index=False))
 

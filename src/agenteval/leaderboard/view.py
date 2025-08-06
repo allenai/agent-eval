@@ -4,6 +4,7 @@ View and plot leaderboard results.
 
 import logging
 import re
+import sys
 from typing import Callable, Literal
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,7 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
@@ -25,6 +27,10 @@ SCATTER_SUBPLOT_TITLE_FONTSIZE = 11
 SCATTER_AXIS_LABEL_FONTSIZE = 9
 SCATTER_TICK_LABEL_FONTSIZE = 8
 SCATTER_LEGEND_FONTSIZE = 7
+
+# Special label constants for legend entries
+FRONTIER_LABEL = "Efficiency Frontier"
+NO_COST_SUFFIX = " (no cost)"
 
 
 class LeaderboardViewer:
@@ -78,32 +84,110 @@ class LeaderboardViewer:
         exclude_agent_patterns: list[str] | None = None,
         include_tag_specs: list[str] | None = None,
         include_task_specs: list[str] | None = None,
+        group_agent_specs: list[str] | None = None,
         scatter_show_missing_cost: bool = False,
         scatter_legend_max_width: int | None = None,
         scatter_figure_width: float | None = None,
         scatter_subplot_height: float | None = None,
         scatter_subplot_spacing: float | None = None,
         scatter_x_log_scale: bool = False,
+        group_agent_fixed_colors: int | None = None,
     ) -> tuple[pd.DataFrame, dict[str, Figure]]:
         """
         If tag is None, primary="Overall" and group=all tags.
         Otherwise primary=tag and group=tasks under that tag.
         """
+
+        # Parse pattern:name specifications into patterns and display names
+        def parse_specs(specs):
+            """Parse list of 'pattern' or 'pattern:name' into patterns and display map."""
+            if not specs:
+                return None, {}
+
+            patterns = []
+            display_map = {}
+            for spec in specs:
+                if ":" in spec:
+                    pattern, display_name = spec.split(":", 1)
+                    patterns.append(pattern)
+                    # Store the display name for later use (will map after matching)
+                else:
+                    pattern = spec
+                    patterns.append(pattern)
+                    display_name = None
+
+                # Store pattern -> display_name mapping for later
+                if display_name:
+                    display_map[pattern] = display_name
+
+            return patterns, display_map
+
         # Load raw data for internal processing
         raw_data, tag_map = self._load(
             apply_pretty_names=False, preserve_none_scores=preserve_none_scores
         )
+
+        # First, filter out excluded agents based on original agent_name
+        if exclude_agent_patterns:
+            for pattern in exclude_agent_patterns:
+                mask = raw_data["agent_name"].apply(
+                    lambda x: (
+                        not re.search(pattern, x, re.IGNORECASE)
+                        if pd.notna(x)
+                        else True
+                    )
+                )
+                raw_data = raw_data[mask].reset_index(drop=True)
+
+        # Process agent grouping specs (after exclusion, before display name creation)
+        agent_name_mapping = {}  # Maps original agent_name to display name
+        parsed_group_specs = None  # Will hold (pattern, group_name) tuples
+        if group_agent_specs:
+            patterns, pattern_group_map = parse_specs(group_agent_specs)
+
+            # Track first agent matched by each pattern (for default group names)
+            pattern_first_agent = {}
+
+            if patterns:  # Only iterate if patterns exist
+                for agent_name in raw_data["agent_name"].unique():
+                    for pattern in patterns:
+                        if re.search(pattern, agent_name, re.IGNORECASE):
+                            # Track first agent for this pattern if not seen yet
+                            if pattern not in pattern_first_agent:
+                                pattern_first_agent[pattern] = agent_name
+
+                            # Use custom group name if provided, otherwise use first matched agent name
+                            if pattern in pattern_group_map:
+                                group_name = pattern_group_map[pattern]
+                            else:
+                                group_name = pattern_first_agent[pattern]
+
+                            agent_name_mapping[agent_name] = group_name
+                            break  # First matching pattern wins
+
+            # Create list of (pattern, group_name) tuples for plotting functions
+            parsed_group_specs = [
+                (
+                    pattern,
+                    pattern_group_map.get(
+                        pattern, pattern_first_agent.get(pattern, pattern)
+                    ),
+                )
+                for pattern in patterns
+            ]
 
         # Create combined agent names with model information
         if not raw_data.empty:
 
             def create_display_name(row):
                 agent_name = row["agent_name"]
+                # Use mapped name if available, otherwise original name
+                display_name = agent_name_mapping.get(agent_name, agent_name)
                 base_models = row["base_models"]
                 if base_models and len(base_models) > 0:
                     models_str = ", ".join(base_models)
-                    return f"{agent_name} ({models_str})"
-                return agent_name
+                    return f"{display_name} ({models_str})"
+                return display_name
 
             raw_data["display_name"] = raw_data.apply(create_display_name, axis=1)
 
@@ -142,30 +226,6 @@ class LeaderboardViewer:
             "base_models",
         ]
 
-        # Parse pattern:name specifications into patterns and display names
-        def parse_specs(specs):
-            """Parse list of 'pattern' or 'pattern:name' into patterns and display map."""
-            if not specs:
-                return None, {}
-
-            patterns = []
-            display_map = {}
-            for spec in specs:
-                if ":" in spec:
-                    pattern, display_name = spec.split(":", 1)
-                    patterns.append(pattern)
-                    # Store the display name for later use (will map after matching)
-                else:
-                    pattern = spec
-                    patterns.append(pattern)
-                    display_name = None
-
-                # Store pattern -> display_name mapping for later
-                if display_name:
-                    display_map[pattern] = display_name
-
-            return patterns, display_map
-
         # choose primary metric and its sub‐group (using raw column names)
         if tag is None:
             primary = "overall/score"
@@ -191,7 +251,7 @@ class LeaderboardViewer:
             for pattern in patterns:
                 for tag_name in group:
                     if (
-                        re.match(pattern, tag_name, re.IGNORECASE)
+                        re.search(pattern, tag_name, re.IGNORECASE)
                         and tag_name not in filtered_group
                     ):
                         filtered_group.append(tag_name)
@@ -208,7 +268,7 @@ class LeaderboardViewer:
             for pattern in patterns:
                 for task_name in group:
                     if (
-                        re.match(pattern, task_name, re.IGNORECASE)
+                        re.search(pattern, task_name, re.IGNORECASE)
                         and task_name not in filtered_group
                     ):
                         filtered_group.append(task_name)
@@ -301,13 +361,24 @@ class LeaderboardViewer:
         if score_cols:
             raw_df = raw_df.dropna(subset=score_cols, how="all")
 
-        # Filter out agents matching any exclude pattern (based on display name)
-        if exclude_agent_patterns:
-            for pattern in exclude_agent_patterns:
-                mask = raw_df["display_name"].apply(
-                    lambda x: not re.match(pattern, x, re.IGNORECASE) if pd.notna(x) else True
-                )
-                raw_df = raw_df[mask].reset_index(drop=True)
+        # Sort the dataframe by agent_name then base_models for consistent ordering across all plots
+        if "agent_name" in raw_df.columns and "base_models" in raw_df.columns:
+            # Extract first model for sorting
+            raw_df["_first_model"] = raw_df["base_models"].apply(
+                lambda x: x[0] if x and len(x) > 0 else ""
+            )
+            raw_df = raw_df.sort_values(by=["agent_name", "_first_model"])
+            raw_df = raw_df.drop(columns=["_first_model"])
+
+        # Add agent grouping information for scatter plot colors/markers
+        # (display names already updated earlier)
+        if group_agent_specs:
+            # Reuse the agent_name_mapping from earlier
+            raw_df["agent_group"] = (
+                raw_df["agent_name"].map(agent_name_mapping).fillna("")
+            )
+        else:
+            raw_df["agent_group"] = ""
 
         # Build scatter pairs for score/cost metrics
         scatter_pairs = []
@@ -339,9 +410,8 @@ class LeaderboardViewer:
                 # Fallback to the last segment if not a recognized pattern
                 return metric_path.split("/")[-1]
 
-        plots: dict[str, Figure] = {}
+        plots: dict = {}
         if with_plots:
-
             # Use available_metrics which already has primary excluded if requested
             plots["bar"] = _plot_hbar(
                 raw_df,
@@ -363,12 +433,15 @@ class LeaderboardViewer:
                     raw_df,
                     scatter_pairs=valid_pairs,
                     agent_col="display_name",
+                    agent_group_col="agent_group" if group_agent_specs else None,
+                    group_specs=parsed_group_specs,
                     use_cost_fallback=scatter_show_missing_cost,
                     legend_max_width=scatter_legend_max_width,
                     figure_width=scatter_figure_width,
                     subplot_height=scatter_subplot_height,
                     subplot_spacing=scatter_subplot_spacing,
                     use_log_scale=scatter_x_log_scale,
+                    group_fixed_colors=group_agent_fixed_colors,
                     label_transform=transform_axis_label,
                 )
 
@@ -383,11 +456,14 @@ class LeaderboardViewer:
                     x=x,
                     y=y,
                     agent_col="display_name",
+                    agent_group_col="agent_group" if group_agent_specs else None,
+                    group_specs=parsed_group_specs,
                     use_cost_fallback=scatter_show_missing_cost,
                     legend_max_width=scatter_legend_max_width,
                     figure_width=scatter_figure_width,
                     subplot_height=scatter_subplot_height,
                     use_log_scale=scatter_x_log_scale,
+                    group_fixed_colors=group_agent_fixed_colors,
                     label_transform=transform_axis_label,
                 )
 
@@ -640,7 +716,6 @@ def _plot_hbar(
     label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Horizontal bar chart of metrics, one row per agent."""
-    import seaborn as sns
 
     n = len(metrics)
     # color each metric pair the same
@@ -678,6 +753,8 @@ def _plot_hbar(
                     xerr=ci,
                     fmt="none",
                     ecolor="gray",
+                    elinewidth=1,
+                    capthick=1,
                     capsize=3,
                 )
         # Use transform function if provided, otherwise use metric as-is
@@ -699,21 +776,274 @@ def _plot_hbar(
     return fig
 
 
+def _get_agent_colors(
+    data: pd.DataFrame,
+    agent_col: str,
+    agent_group_col: str | None,
+    group_specs: list[tuple[str, str]] | None,
+    fixed_colors: int | None = None,
+) -> dict:
+    """Get stable color assignments for agents based on group specifications.
+
+    Colors are assigned in this order:
+    1. First N groups from group_specs (in CLI order) get fixed colors
+    2. Remaining groups and ungrouped agents get dynamic colors
+
+    This ensures important groups always get the same colors across different plots.
+    """
+    # Start with colorblind palette for accessibility (fixed at 8 colors)
+    base_palette = sns.color_palette("colorblind", n_colors=8)
+    agent_colors = {}
+
+    # First, identify all groups from specs (preserve CLI order)
+    group_names_from_specs = []
+    if group_specs:
+        # Extract unique group names preserving order
+        seen = set()
+        for _, group_name in group_specs:
+            if group_name not in seen:
+                group_names_from_specs.append(group_name)
+                seen.add(group_name)
+
+    # Now scan agents in current data
+    unique_agents = data[agent_col].unique()
+
+    # Separate grouped and ungrouped agents
+    grouped_agents: dict[str, list] = {}  # {group_name: [agents]}
+    ungrouped_agents = []
+
+    for agent in unique_agents:
+        agent_row = data[data[agent_col] == agent].iloc[0]
+        if (
+            agent_group_col
+            and agent_group_col in agent_row
+            and agent_row[agent_group_col]
+        ):
+            group = agent_row[agent_group_col]
+            if group not in grouped_agents:
+                grouped_agents[group] = []
+            grouped_agents[group].append(agent)
+        else:
+            ungrouped_agents.append(agent)
+
+    # Determine how many colors to fix
+    num_fixed = (
+        fixed_colors if fixed_colors is not None else len(group_names_from_specs)
+    )
+    num_fixed = min(
+        num_fixed, len(group_names_from_specs)
+    )  # Can't fix more than we have
+
+    # Count total colors needed and collect entities that would need extra colors
+    total_colors_needed = num_fixed  # Start with fixed colors
+    entities_needing_extra_colors = []
+
+    # Add groups that aren't getting fixed colors
+    for group_name in grouped_agents.keys():
+        if group_name not in group_names_from_specs[:num_fixed]:
+            total_colors_needed += 1
+            if total_colors_needed > 8:
+                entities_needing_extra_colors.append(f"group:{group_name}")
+
+    # Add ungrouped agents
+    for agent in sorted(ungrouped_agents):
+        total_colors_needed += 1
+        if total_colors_needed > 8:
+            entities_needing_extra_colors.append(agent)
+
+    # Extend palette if needed and warn
+    if total_colors_needed > 8:
+        colors_added = total_colors_needed - 8
+        entities_list = ", ".join(entities_needing_extra_colors)
+        logger.warning(
+            f"Need {total_colors_needed} colors but colorblind palette has 8. "
+            f"Adding {colors_added} additional colors for: {entities_list}"
+        )
+        # Extend with additional colors from a different palette
+        extra_colors = sns.color_palette("husl", n_colors=colors_added)
+        palette = list(base_palette) + extra_colors
+    else:
+        palette = base_palette
+
+    # Now actually assign colors
+    # First assign fixed colors to first N groups from specs
+    group_colors = {}
+    for idx, group_name in enumerate(group_names_from_specs[:num_fixed]):
+        group_colors[group_name] = palette[idx]
+
+    next_color_idx = num_fixed
+
+    # Assign group colors to grouped agents
+    for group_name, agents in grouped_agents.items():
+        if group_name in group_colors:
+            # Use pre-reserved color
+            group_color = group_colors[group_name]
+        else:
+            # Group not in specs, assign next available color
+            group_color = palette[next_color_idx]
+            next_color_idx += 1
+
+        for agent in agents:
+            agent_colors[agent] = group_color
+
+    # Assign colors to ungrouped agents (sorted for stability)
+    for agent in sorted(ungrouped_agents):
+        agent_colors[agent] = palette[next_color_idx]
+        next_color_idx += 1
+
+    return agent_colors
+
+
+def _get_model_based_markers(
+    data: pd.DataFrame,
+    agent_col: str,
+    agent_group_col: str | None = None,
+    group_specs: list[tuple[str, str]] | None = None,
+    group_fixed_colors: int | None = None,
+) -> tuple[dict, dict]:
+    """Create marker mapping based on primary model for each agent.
+
+    Only assigns different markers for models within agent groups that have multiple agents.
+    Single-agent groups and ungrouped agents use the default marker.
+    Within each group, models are sorted and assigned markers sequentially to avoid collisions.
+
+    Args:
+        data: DataFrame with agent data
+        agent_col: Column name containing agent names
+        agent_group_col: Column name containing agent group names (optional)
+
+    Returns:
+        Tuple of (agent_markers, model_to_marker) where:
+        - agent_markers: Dictionary mapping agent names to marker symbols
+        - model_to_marker: Dictionary mapping model names to marker symbols
+    """
+    # Exclude "o" from model markers to avoid confusion with default marker
+    # Markers ordered by visual distinctiveness (best first)
+    available_markers = [
+        "s",  # square - very clear
+        "^",  # triangle up - clear
+        "v",  # triangle down - clear
+        "D",  # diamond - clear
+        "P",  # plus (filled) - clear
+        "*",  # star - clear
+        "X",  # x (filled) - clear
+        "h",  # hexagon1 - clear
+        "p",  # pentagon - clear
+        "d",  # thin diamond - ok
+        "H",  # hexagon2 - ok
+        "<",  # triangle left - ok
+        ">",  # triangle right - ok
+        "+",  # plus (thin) - less visible but still ok
+        "x",  # x (thin) - less visible but still ok
+    ]
+    agent_markers = {}
+
+    # Global model-to-marker mapping (consistent across all groups)
+    model_to_marker = {}
+    marker_index = 0
+
+    # Identify fixed-color groups (first N groups from group_specs)
+    fixed_groups = set()
+    if group_specs and group_fixed_colors:
+        # Take first N group display names (preserve order from specs)
+        for spec in group_specs[:group_fixed_colors]:
+            fixed_groups.add(spec[1])  # spec[1] is the display name
+
+    # Collect models from fixed-color groups first, then others
+    fixed_models = set()
+    other_models = set()
+
+    for agent in data[agent_col].unique():
+        agent_row = data[data[agent_col] == agent].iloc[0]
+
+        # Only consider grouped agents for model markers
+        if (
+            agent_group_col
+            and agent_group_col in agent_row
+            and agent_row[agent_group_col]
+        ):
+            if "base_models" in agent_row and agent_row["base_models"]:
+                primary_model = (
+                    agent_row["base_models"][0]
+                    if isinstance(agent_row["base_models"], list)
+                    else agent_row["base_models"]
+                )
+
+                # Check if this agent belongs to a fixed-color group
+                if agent_row[agent_group_col] in fixed_groups:
+                    fixed_models.add(primary_model)
+                else:
+                    other_models.add(primary_model)
+
+    # Assign markers to fixed-group models first (in sorted order for consistency)
+    for model in sorted(fixed_models):
+        model_to_marker[model] = available_markers[
+            marker_index % len(available_markers)
+        ]
+        marker_index += 1
+
+    # Then assign markers to other models (excluding those already assigned)
+    remaining_models = other_models - fixed_models
+    for model in sorted(remaining_models):
+        model_to_marker[model] = available_markers[
+            marker_index % len(available_markers)
+        ]
+        marker_index += 1
+
+    # Warn if we need more markers than available
+    total_models = len(fixed_models) + len(remaining_models)
+    if total_models > len(available_markers):
+        models_needing_reuse = []
+        for i, model in enumerate(sorted(fixed_models) + sorted(remaining_models)):
+            if i >= len(available_markers):
+                models_needing_reuse.append(model)
+
+        logger.warning(
+            f"Need {total_models} distinct markers but only {len(available_markers)} available. "
+            f"Reusing markers for: {', '.join(models_needing_reuse)}"
+        )
+
+    # Assign markers to agents based on their primary model
+    for agent in data[agent_col].unique():
+        agent_row = data[data[agent_col] == agent].iloc[0]
+
+        # Check if agent is grouped (has a non-empty group assignment)
+        is_grouped = (
+            agent_group_col
+            and agent_group_col in agent_row
+            and agent_row[agent_group_col]  # Non-empty string
+        )
+
+        # Only assign model-based markers to grouped agents
+        if is_grouped and "base_models" in agent_row and agent_row["base_models"]:
+            primary_model = (
+                agent_row["base_models"][0]
+                if isinstance(agent_row["base_models"], list)
+                else agent_row["base_models"]
+            )
+            agent_markers[agent] = model_to_marker[primary_model]
+        else:
+            agent_markers[agent] = "o"  # Default for ungrouped agents or no model info
+
+    return agent_markers, model_to_marker
+
+
 def _plot_scatter(
     data: pd.DataFrame,
     x: str,
     y: str,
     agent_col: str,
+    agent_group_col: str | None = None,
+    group_specs: list[tuple[str, str]] | None = None,
     use_cost_fallback: bool = False,
     legend_max_width: int | None = None,
     figure_width: float | None = None,
     subplot_height: float | None = None,
     use_log_scale: bool = False,
+    group_fixed_colors: int | None = None,
     label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Scatter plot of agent results, for showing score vs cost."""
-    import seaborn as sns
-
     # Create figure with constrained layout for automatic spacing
     if figure_width is not None or subplot_height is not None:
         # Only specify figsize if user provided dimensions
@@ -730,27 +1060,33 @@ def _plot_scatter(
         # Use matplotlib defaults for everything
         fig, ax = plt.subplots(layout="constrained")
 
-    # Get unique agents for consistent coloring
-    unique_agents = data[agent_col].unique()
-    palette = sns.color_palette(n_colors=len(unique_agents))
-    agent_colors = dict(zip(unique_agents, palette))
+    # Get stable color assignments based on group specs
+    agent_colors = _get_agent_colors(
+        data, agent_col, agent_group_col, group_specs, group_fixed_colors
+    )
 
-    _plot_single_scatter_subplot(
+    # Get model-based markers (with sequential assignment within groups)
+    agent_markers, _ = _get_model_based_markers(
+        data, agent_col, agent_group_col, group_specs, group_fixed_colors
+    )
+
+    handles, labels = _plot_single_scatter_subplot(
         ax,
         data,
         x,
         y,
         agent_col,
         agent_colors,
+        agent_markers,
         use_cost_fallback,
         collect_legend=True,  # Need to collect legend entries for single plots
         use_log_scale=use_log_scale,
         label_transform=label_transform,
     )
 
-    # Sort and format legend entries
-    handles, labels = ax.get_legend_handles_labels()
-    sorted_handles, sorted_labels = _sort_legend_entries(handles, labels)
+    # Order legend entries: Efficiency Frontier → Regular → (no cost)
+    # Preserves input order within each group (which is already dataframe order)
+    sorted_handles, sorted_labels = _order_legend_entries(handles, labels)
 
     # Apply text wrapping if specified
     if legend_max_width is not None:
@@ -779,6 +1115,7 @@ def _plot_single_scatter_subplot(
     y: str,
     agent_col: str,
     agent_colors: dict,
+    agent_markers: dict,
     use_cost_fallback: bool = False,
     collect_legend: bool = False,
     show_xlabel: bool = True,
@@ -811,13 +1148,14 @@ def _plot_single_scatter_subplot(
         for agent in real_cost_data[agent_col].unique():
             agent_data = real_cost_data[real_cost_data[agent_col] == agent]
 
-            # Plot all points with the same marker
+            # Plot all points with the appropriate marker
             scatter = ax.scatter(
                 agent_data[x],
                 agent_data[y],
                 color=agent_colors[agent],
-                marker="o",
+                marker=agent_markers.get(agent, "o"),
                 label=agent if collect_legend else "",
+                zorder=5,  # Draw markers on top of lines
             )
 
             if collect_legend:
@@ -832,19 +1170,20 @@ def _plot_single_scatter_subplot(
             frontier_line = ax.plot(
                 frontier_points[x],
                 frontier_points[y],
-                color="firebrick",
+                color="#888888",  # Light gray to be subtle
                 linestyle="--",
-                linewidth=1.5,
-                alpha=0.5,
-                label="Efficiency Frontier",
+                linewidth=1,
+                alpha=1.0,
+                label=FRONTIER_LABEL,
+                zorder=4.5,  # Draw frontier line above error bars (4) but below markers (5)
             )[
                 0
             ]  # plot returns a list, we want the line object
 
-            # Add frontier to legend entries (will be sorted to top by _sort_legend_entries)
+            # Add frontier to legend entries (will be sorted to top by _order_legend_entries)
             if collect_legend:
                 handles.append(frontier_line)
-                labels.append("Efficiency Frontier")
+                labels.append(FRONTIER_LABEL)
     else:
         max_x = 1
 
@@ -898,12 +1237,14 @@ def _plot_single_scatter_subplot(
                     agent_data[y],
                     facecolors="none",
                     edgecolors=agent_colors[agent],
+                    marker=agent_markers.get(agent, "o"),
                     linewidths=2,
-                    label=f"{agent} (no cost)",
+                    label=f"{agent}{NO_COST_SUFFIX}",
+                    zorder=5,  # Draw markers on top of lines
                 )
                 if collect_legend:
                     handles.append(scatter)
-                    labels.append(f"{agent} (no cost)")
+                    labels.append(f"{agent}{NO_COST_SUFFIX}")
         else:
             # Add some padding on the right
             max_x = real_cost_data[x].max()
@@ -926,12 +1267,14 @@ def _plot_single_scatter_subplot(
                     agent_data[y],
                     facecolors="none",
                     edgecolors=agent_colors[agent],
+                    marker=agent_markers.get(agent, "o"),
                     linewidths=2,
-                    label=f"{agent} (no cost)",
+                    label=f"{agent}{NO_COST_SUFFIX}",
+                    zorder=5,  # Draw markers on top of lines
                 )
                 if collect_legend:
                     handles.append(scatter)
-                    labels.append(f"{agent} (no cost)")
+                    labels.append(f"{agent}{NO_COST_SUFFIX}")
         else:
             ax.set_xlim(left=0)
 
@@ -984,17 +1327,18 @@ def _plot_combined_scatter(
     data: pd.DataFrame,
     scatter_pairs: list[tuple[str, str]],
     agent_col: str,
+    agent_group_col: str | None = None,
+    group_specs: list[tuple[str, str]] | None = None,
     use_cost_fallback: bool = False,
     legend_max_width: int | None = None,
     figure_width: float | None = None,
     subplot_height: float | None = None,
     subplot_spacing: float | None = None,
     use_log_scale: bool = False,
+    group_fixed_colors: int | None = None,
     label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Combined scatter plot with multiple score/cost pairs in subplots and single legend."""
-    import seaborn as sns
-
     n_plots = len(scatter_pairs)
 
     # Always use single column layout for simplicity
@@ -1054,13 +1398,20 @@ def _plot_combined_scatter(
     else:
         axes = list(axes)
 
-    # Get unique agents for consistent coloring
-    unique_agents = data[agent_col].unique()
-    palette = sns.color_palette(n_colors=len(unique_agents))
-    agent_colors = dict(zip(unique_agents, palette))
+    # Get unique agents and groups for consistent coloring
+    # Get stable color assignments based on group specs
+    agent_colors = _get_agent_colors(
+        data, agent_col, agent_group_col, group_specs, group_fixed_colors
+    )
+
+    # Get model-based markers (with sequential assignment within groups)
+    agent_markers, _ = _get_model_based_markers(
+        data, agent_col, agent_group_col, group_specs, group_fixed_colors
+    )
 
     # Plot each subplot
-    all_handles, all_labels = [], []
+    # First pass: collect all handles and labels from all subplots
+    subplot_handles_labels = []
     for idx, (y, x) in enumerate(scatter_pairs):
         ax = axes[idx]
 
@@ -1075,18 +1426,15 @@ def _plot_combined_scatter(
             y,
             agent_col,
             agent_colors,
+            agent_markers,
             use_cost_fallback,
             collect_legend=True,
             show_xlabel=is_bottom_subplot,
             use_log_scale=use_log_scale,
             label_transform=label_transform,
         )
-
-        # Merge legend entries from all subplots
-        for handle, label in zip(handles, labels):
-            if label not in all_labels:
-                all_handles.append(handle)
-                all_labels.append(label)
+        
+        subplot_handles_labels.append((handles, labels))
 
         # Set subplot title
         # Simply extract the name from the metric path (columns already renamed)
@@ -1102,9 +1450,39 @@ def _plot_combined_scatter(
     for idx in range(n_plots, len(axes)):
         axes[idx].set_visible(False)
 
-    # Add single legend with sorted entries
+    # Merge legend entries from all subplots while preserving dataframe order
+    # First collect all entries into a dict
+    label_to_handle = {}
+    for handles, labels in subplot_handles_labels:
+        for handle, label in zip(handles, labels):
+            if label not in label_to_handle:
+                label_to_handle[label] = handle
+    
+    # Build lists in dataframe order
+    all_handles, all_labels = [], []
+    
+    # Special entries first
+    if FRONTIER_LABEL in label_to_handle:
+        all_handles.append(label_to_handle[FRONTIER_LABEL])
+        all_labels.append(FRONTIER_LABEL)
+    
+    # Add all agents in dataframe order (both regular and no-cost)
+    for agent in data[agent_col].unique():
+        if agent in label_to_handle:
+            all_handles.append(label_to_handle[agent])
+            all_labels.append(agent)
+        no_cost_label = f"{agent}{NO_COST_SUFFIX}"
+        if no_cost_label in label_to_handle:
+            all_handles.append(label_to_handle[no_cost_label])
+            all_labels.append(no_cost_label)
+    
+    # Now reorder to group by type: Frontier → Regular → (no cost)
+    # while preserving dataframe order within each group
     if all_handles:
-        sorted_handles, sorted_labels = _sort_legend_entries(all_handles, all_labels)
+        sorted_handles, sorted_labels = _order_legend_entries(all_handles, all_labels)
+        # Convert to lists so we can append
+        sorted_handles = list(sorted_handles)
+        sorted_labels = list(sorted_labels)
 
         # Wrap legend text if specified
         legend_labels = (
@@ -1166,28 +1544,44 @@ def _get_frontier_indices(
     return frontier_indices
 
 
-def _sort_legend_entries(handles, labels):
-    """Sort legend entries: Efficiency Frontier first, then regular entries (alphabetical), then '(no cost)' entries (alphabetical)."""
+
+
+def _order_legend_entries(handles, labels):
+    """Order legend entries: Efficiency Frontier → Regular → (no cost).
+    
+    Preserves input order within each group.
+    
+    Args:
+        handles: List of legend handles
+        labels: List of legend labels
+    
+    Returns:
+        Tuple of (ordered_handles, ordered_labels)
+    """
     if not handles or not labels:
-        return handles, labels
-
-    legend_pairs = list(zip(handles, labels))
-
-    # Sort with custom key:
-    # - Priority 0: Efficiency Frontier (always first)
-    # - Priority 1: Regular entries (alphabetical)
-    # - Priority 2: (no cost) entries (alphabetical)
-    def sort_key(pair):
-        label = pair[1]
-        if label == "Efficiency Frontier":
-            return (0, label)
-        elif label.endswith("(no cost)"):
-            return (2, label)
+        return [], []
+    
+    # Separate into three groups while preserving input order
+    frontier_items = []
+    regular_items = []
+    no_cost_items = []
+    
+    for handle, label in zip(handles, labels):
+        if label == FRONTIER_LABEL:
+            frontier_items.append((handle, label))
+        elif label.endswith(NO_COST_SUFFIX):
+            no_cost_items.append((handle, label))
         else:
-            return (1, label)
-
-    legend_pairs.sort(key=sort_key)
-    return zip(*legend_pairs)
+            regular_items.append((handle, label))
+    
+    # Combine in desired order
+    ordered_items = frontier_items + regular_items + no_cost_items
+    
+    if ordered_items:
+        ordered_handles, ordered_labels = zip(*ordered_items)
+        return list(ordered_handles), list(ordered_labels)
+    
+    return [], []
 
 
 def _wrap_legend_text(text, max_width=35):
@@ -1244,8 +1638,10 @@ def _plot_error_bars(
         yerr=y_err,
         fmt="none",
         ecolor="gray",
+        elinewidth=1,
+        capsize=2,  # Small caps in points
         alpha=0.5,
-        capsize=3,
+        zorder=4,  # Draw error bars above lines but below markers
     )
 
 
