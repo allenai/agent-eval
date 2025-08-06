@@ -1,3 +1,4 @@
+import logging
 import math
 from collections.abc import Sequence
 from statistics import mean, stdev
@@ -6,6 +7,9 @@ from pydantic import BaseModel
 
 from .config import SuiteConfig
 from .score import TaskResult
+
+
+logger = logging.getLogger(__name__)
 
 
 class SummaryStat(BaseModel):
@@ -89,28 +93,30 @@ def compute_summary_statistics(
         cost: float | None = None
         cost_stderr: float | None = None
         if res:
-            try:
-                m = next(m for m in res.metrics if m.name == task.primary_metric)
-            except StopIteration:
-                raise ValueError(
+            m = next((m for m in res.metrics if m.name == task.primary_metric), None)
+            if m is None:
+                # We don't have a value for the primary metric.
+                logger.warning(
                     f"Task {task.name} does not have a metric named {task.primary_metric}."
                     f" Available metrics: {', '.join(m.name for m in res.metrics)}"
                 )
-            score = m.value
+            else:
+                # We do have a value for the primary metric.
+                score = m.value
 
-            stderr = next(
-                (
-                    m.value
-                    for m in res.metrics
-                    if m.name.startswith(f"{task.primary_metric.split('/')[0]}/")
-                    and "stderr" in m.name
-                ),
-                None,
-            )
+                stderr = next(
+                    (
+                        m.value
+                        for m in res.metrics
+                        if m.name.startswith(f"{task.primary_metric.split('/')[0]}/")
+                        and "stderr" in m.name
+                    ),
+                    None,
+                )
 
-            task_costs = res.model_costs or []
-            cost = _safe_mean(task_costs)
-            cost_stderr = _safe_stderr(task_costs)
+                task_costs = res.model_costs or []
+                cost = _safe_mean(task_costs)
+                cost_stderr = _safe_stderr(task_costs)
 
         tasks_summary[task.name] = SummaryStat(
             score=score,
