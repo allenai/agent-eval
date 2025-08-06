@@ -660,159 +660,42 @@ def validate_split(ctx, param, value):
     help="If provided, show detail for this tag instead of overview",
 )
 @click.option(
-    "--save-dir",
-    default=None,
+    "--dump-plots/--no-plots",
+    default=False,
+    help="Enable saving plots",
+)
+@click.option(
+    "--plot-dir",
+    default="plots",
     type=click.Path(),
-    help="Directory for saving plots (plots saved when specified)",
-)
-@click.option(
-    "--save-no-subdirs",
-    is_flag=True,
-    default=False,
-    help="Use exact save directory without auto-generated subdirectories",
-)
-@click.option(
-    "--scatter-show-missing-cost",
-    is_flag=True,
-    default=False,
-    help=(
-        "Show agents with scores but no cost data in a separate section "
-        "to the right of the dividing line in scatter plots"
-    ),
-)
-@click.option(
-    "--preserve-none-scores",
-    is_flag=True,
-    default=False,
-    help="Preserve None values instead of treating them as 0 for incomplete scores",
-)
-@click.option(
-    "--exclude-primary-metric",
-    is_flag=True,
-    default=False,
-    help="Exclude primary metric (overall score+cost for overview, tag score+cost for tag views) from tables and plots",
-)
-@click.option(
-    "--dedup",
-    type=click.Choice(["index", "latest"]),
-    default="index",
-    help="How to handle duplicate agent names: 'index' (add numbers, default) or 'latest' (keep only latest)",
-)
-@click.option(
-    "--exclude-agent-pattern",
-    multiple=True,
-    help="Regex pattern to exclude agents by name/model (case-insensitive, can be specified multiple times)",
-)
-@click.option(
-    "--include-task-pattern",
-    multiple=True,
-    help="Regex pattern to include only matching tasks/sub-benchmarks by name (case-insensitive, can be specified multiple times). Only applies when --tag is specified.",
-)
-@click.option(
-    "--scatter-legend-max-width",
-    type=int,
-    default=None,
-    help="Maximum width in characters for scatter legend text wrapping (default: no wrapping). Set to enable wrapping, e.g., 35.",
-)
-@click.option(
-    "--scatter-figure-width",
-    type=float,
-    default=None,
-    help="Total scatter figure width in inches including legend space (default: auto-calculate based on subplots).",
-)
-@click.option(
-    "--scatter-subplot-height",
-    type=float,
-    default=None,
-    help="Height of each scatter subplot in inches (default: matplotlib default aspect ratio).",
-)
-@click.option(
-    "--scatter-subplot-spacing",
-    type=float,
-    default=None,
     show_default=True,
-    help="Vertical spacing between scatter subplots as fraction of subplot height (default: matplotlib default).",
+    help="Base directory for saving plots",
 )
-@click.option(
-    "--scatter-x-log-scale",
-    is_flag=True,
-    help="Use log scale for x-axis in scatter plots.",
-)
-@click.option(
-    "--is-internal",
-    is_flag=True,
-    default=False,
-    help="Show internal logs URLs instead of public ones.",
-)
-def view_command(
-    repo_id,
-    config,
-    split,
-    tag,
-    save_dir,
-    save_no_subdirs,
-    scatter_show_missing_cost,
-    preserve_none_scores,
-    exclude_primary_metric,
-    dedup,
-    exclude_agent_pattern,
-    include_task_pattern,
-    scatter_legend_max_width,
-    scatter_figure_width,
-    scatter_subplot_height,
-    scatter_subplot_spacing,
-    scatter_x_log_scale,
-    is_internal,
-):
+def view_command(repo_id, config, split, tag, dump_plots, plot_dir):
     """View a specific config and split; show overview or tag detail."""
     from .leaderboard.view import LeaderboardViewer
 
-    viewer = LeaderboardViewer(repo_id, config, split, is_internal=is_internal)
+    viewer = LeaderboardViewer(repo_id, config, split)
 
-    df, plots = viewer.view(
-        tag,
-        with_plots=bool(save_dir),
-        preserve_none_scores=preserve_none_scores,
-        exclude_primary_metric=exclude_primary_metric,
-        duplicate_handling=dedup,
-        exclude_agent_patterns=(
-            list(exclude_agent_pattern) if exclude_agent_pattern else None
-        ),
-        include_task_patterns=(
-            list(include_task_pattern) if include_task_pattern else None
-        ),
-        scatter_show_missing_cost=scatter_show_missing_cost,
-        scatter_legend_max_width=scatter_legend_max_width,
-        scatter_figure_width=scatter_figure_width,
-        scatter_subplot_height=scatter_subplot_height,
-        scatter_subplot_spacing=scatter_subplot_spacing,
-        scatter_x_log_scale=scatter_x_log_scale,
-    )
+    df, plots = viewer.view(tag, with_plots=True)
     click.echo(df.to_string(index=False))
 
-    if save_dir:
-        if not save_no_subdirs:
-            subdir = tag or "overall"
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_repo = repo_id.replace("/", "_")
-            base = save_dir
-            sub = f"{safe_repo}_{config}_{split}"
-            outdir = os.path.join(base, sub, f"{subdir}_{ts}")
-        else:
-            outdir = save_dir
+    if dump_plots:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_repo = repo_id.replace("/", "_")
+        base = plot_dir
+        sub = f"{safe_repo}_{config}_{split}"
+        subdir = tag or "overview"
+        outdir = os.path.join(base, sub, f"{subdir}_{ts}")
         os.makedirs(outdir, exist_ok=True)
 
-        jsonl_path = os.path.join(outdir, "data.jsonl")
-        df.to_json(jsonl_path, orient="records", lines=True)
-        click.echo(f"Saved data: {jsonl_path}")
+        csv_path = os.path.join(outdir, f"{subdir}.csv")
+        df.to_csv(csv_path, index=False)
+        click.echo(f"Saved data: {csv_path}")
 
         for name, fig in plots.items():
             path = os.path.join(outdir, f"{name}.png")
-            if "scatter" in name and scatter_figure_width is not None:
-                # When custom width is specified (likely for publication), use higher DPI
-                fig.savefig(path, bbox_inches="tight", dpi=300)
-            else:
-                fig.savefig(path, bbox_inches="tight")
+            fig.savefig(path, bbox_inches="tight")
             click.echo(f"Saved plot: {path}")
 
 

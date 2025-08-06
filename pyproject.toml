@@ -35,9 +35,7 @@ dev = [
   "pytest-asyncio",
   "mypy==1.15",
   "types-PyYAML",
-  "types-setuptools",
-  "pandas-stubs",
-  "types-seaborn"
+  "types-setuptools"
 ]
 # Leaderboard view dependencies
 leaderboard = [
@@ -55,10 +53,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-markers = [
-    "leaderboard: tests that require leaderboard dependencies"
-]
-addopts = "-m 'not leaderboard'"
 
 [tool.flake8]
 select = [
