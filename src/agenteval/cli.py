@@ -500,7 +500,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         # Validate URLs
         for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(submission_url)
+            submission_repo_id, submission_path = parse_hf_url(
+                submission_url
+            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
             submission_repo_ids.add(submission_repo_id)
             submission_paths.append(submission_path)
 
@@ -577,7 +579,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
-            submission.logs_url = submission_url
+            submission.logs_url = submission_url.replace("hf://", "hf://datasets/", 1)
             lb_submission = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,
