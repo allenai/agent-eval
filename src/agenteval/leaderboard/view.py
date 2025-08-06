@@ -3,6 +3,7 @@ View and plot leaderboard results.
 """
 
 import logging
+import re
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -75,7 +76,8 @@ class LeaderboardViewer:
         exclude_primary_metric: bool = False,
         duplicate_handling: Literal["latest", "index"] = "index",
         exclude_agent_patterns: list[str] | None = None,
-        include_task_patterns: list[str] | None = None,
+        include_tag_specs: list[str] | None = None,
+        include_task_specs: list[str] | None = None,
         scatter_show_missing_cost: bool = False,
         scatter_legend_max_width: int | None = None,
         scatter_figure_width: float | None = None,
@@ -140,6 +142,30 @@ class LeaderboardViewer:
             "base_models",
         ]
 
+        # Parse pattern:name specifications into patterns and display names
+        def parse_specs(specs):
+            """Parse list of 'pattern' or 'pattern:name' into patterns and display map."""
+            if not specs:
+                return None, {}
+
+            patterns = []
+            display_map = {}
+            for spec in specs:
+                if ":" in spec:
+                    pattern, display_name = spec.split(":", 1)
+                    patterns.append(pattern)
+                    # Store the display name for later use (will map after matching)
+                else:
+                    pattern = spec
+                    patterns.append(pattern)
+                    display_name = None
+
+                # Store pattern -> display_name mapping for later
+                if display_name:
+                    display_map[pattern] = display_name
+
+            return patterns, display_map
+
         # choose primary metric and its sub‐group (using raw column names)
         if tag is None:
             primary = "overall/score"
@@ -154,22 +180,80 @@ class LeaderboardViewer:
                 f"Column '{primary}' not found. Available columns: {list(raw_data.columns)}"
             )
 
-        # Filter tasks/sub-benchmarks by include patterns (only applies when viewing a specific tag)
-        # Preserve the order of include_task_patterns arguments
-        if tag is not None and include_task_patterns and group:
-            import re
+        # Apply filtering and collect display name mappings
+        item_display_map = {}  # Maps actual item names to display names
+
+        # Filter and rename tags (for overall view)
+        if tag is None and include_tag_specs:
+            patterns, pattern_display_map = parse_specs(include_tag_specs)
 
             filtered_group = []
-            for pattern in include_task_patterns:
+            for pattern in patterns:
+                for tag_name in group:
+                    if (
+                        re.match(pattern, tag_name, re.IGNORECASE)
+                        and tag_name not in filtered_group
+                    ):
+                        filtered_group.append(tag_name)
+                        # Map matched tag to display name if provided
+                        if pattern in pattern_display_map:
+                            item_display_map[tag_name] = pattern_display_map[pattern]
+            group = filtered_group
+
+        # Filter and rename tasks (for tag-specific view)
+        elif tag is not None and include_task_specs:
+            patterns, pattern_display_map = parse_specs(include_task_specs)
+
+            filtered_group = []
+            for pattern in patterns:
                 for task_name in group:
                     if (
                         re.match(pattern, task_name, re.IGNORECASE)
                         and task_name not in filtered_group
                     ):
                         filtered_group.append(task_name)
+                        # Map matched task to display name if provided
+                        if pattern in pattern_display_map:
+                            item_display_map[task_name] = pattern_display_map[pattern]
             group = filtered_group
 
         raw_data = raw_data.sort_values(primary, ascending=False)
+
+        # Apply column renaming based on display map
+        if item_display_map:
+            columns_to_rename = {}
+            for col in raw_data.columns:
+                # Check tags
+                for orig_name, display_name in item_display_map.items():
+                    if f"tag/{orig_name}/" in col:
+                        new_col = col.replace(
+                            f"tag/{orig_name}/", f"tag/{display_name}/"
+                        )
+                        columns_to_rename[col] = new_col
+                        break
+                    elif f"task/{orig_name}/" in col:
+                        new_col = col.replace(
+                            f"task/{orig_name}/", f"task/{display_name}/"
+                        )
+                        columns_to_rename[col] = new_col
+                        break
+
+            if columns_to_rename:
+                raw_data = raw_data.rename(columns=columns_to_rename)
+
+                # Update primary metric name if renamed
+                for orig_name, display_name in item_display_map.items():
+                    if f"tag/{orig_name}/" in primary:
+                        primary = primary.replace(
+                            f"tag/{orig_name}/", f"tag/{display_name}/"
+                        )
+                    elif f"task/{orig_name}/" in primary:
+                        primary = primary.replace(
+                            f"task/{orig_name}/", f"task/{display_name}/"
+                        )
+
+                # Update group list with display names
+                group = [item_display_map.get(item, item) for item in group]
 
         # build full metric list: primary + its cost + each member and its cost (using raw names)
         if tag is None:
@@ -220,7 +304,9 @@ class LeaderboardViewer:
         # Filter out agents matching any exclude pattern (based on display name)
         if exclude_agent_patterns:
             for pattern in exclude_agent_patterns:
-                mask = ~raw_df["display_name"].str.match(pattern, case=False, na=False)
+                mask = raw_df["display_name"].apply(
+                    lambda x: not re.match(pattern, x, re.IGNORECASE) if pd.notna(x) else True
+                )
                 raw_df = raw_df[mask].reset_index(drop=True)
 
         # Build scatter pairs for score/cost metrics
@@ -977,6 +1063,7 @@ def _plot_combined_scatter(
                 all_labels.append(label)
 
         # Set subplot title
+        # Simply extract the name from the metric path (columns already renamed)
         title = (
             y.replace("/score", "")
             .replace("tag/", "")

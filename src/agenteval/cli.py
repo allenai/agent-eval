@@ -737,14 +737,9 @@ def validate_split(ctx, param, value):
     help="How to handle duplicate agent names: 'index' (add numbers, default) or 'latest' (keep only latest)",
 )
 @click.option(
-    "--exclude-agent-pattern",
+    "--exclude-agent",
     multiple=True,
-    help="Regex pattern to exclude agents by name/model (case-insensitive, can be specified multiple times)",
-)
-@click.option(
-    "--include-task-pattern",
-    multiple=True,
-    help="Regex pattern to include only matching tasks/sub-benchmarks by name (case-insensitive, can be specified multiple times). Only applies when --tag is specified.",
+    help="Exclude agents matching pattern (regex, case-insensitive). Can be specified multiple times.",
 )
 @click.option(
     "--scatter-legend-max-width",
@@ -782,6 +777,16 @@ def validate_split(ctx, param, value):
     default=False,
     help="Show internal logs URLs instead of public ones.",
 )
+@click.option(
+    "--include-tag",
+    multiple=True,
+    help="Include tags matching pattern (regex, case-insensitive) with optional renaming (format: 'pattern' or 'pattern:Display Name'). Order preserved. Only applies when --tag is NOT specified.",
+)
+@click.option(
+    "--include-task",
+    multiple=True,
+    help="Include tasks matching pattern (regex, case-insensitive) with optional renaming (format: 'pattern' or 'pattern:Display Name'). Order preserved. Only applies when --tag IS specified.",
+)
 def view_command(
     repo_id,
     config,
@@ -793,17 +798,29 @@ def view_command(
     preserve_none_scores,
     exclude_primary_metric,
     dedup,
-    exclude_agent_pattern,
-    include_task_pattern,
+    exclude_agent,
     scatter_legend_max_width,
     scatter_figure_width,
     scatter_subplot_height,
     scatter_subplot_spacing,
     scatter_x_log_scale,
     is_internal,
+    include_tag,
+    include_task,
 ):
     """View a specific config and split; show overview or tag detail."""
     from .leaderboard.view import LeaderboardViewer
+
+    # Check for conflicting options
+    if include_tag and tag is not None:
+        click.echo(
+            "Error: --include-tag can only be used when --tag is NOT specified (overall view)"
+        )
+        sys.exit(1)
+
+    if include_task and tag is None:
+        click.echo("Error: --include-task can only be used when --tag IS specified")
+        sys.exit(1)
 
     viewer = LeaderboardViewer(repo_id, config, split, is_internal=is_internal)
 
@@ -814,11 +831,10 @@ def view_command(
         exclude_primary_metric=exclude_primary_metric,
         duplicate_handling=dedup,
         exclude_agent_patterns=(
-            list(exclude_agent_pattern) if exclude_agent_pattern else None
+            list(exclude_agent) if exclude_agent else None
         ),
-        include_task_patterns=(
-            list(include_task_pattern) if include_task_pattern else None
-        ),
+        include_tag_specs=(list(include_tag) if include_tag else None),
+        include_task_specs=(list(include_task) if include_task else None),
         scatter_show_missing_cost=scatter_show_missing_cost,
         scatter_legend_max_width=scatter_legend_max_width,
         scatter_figure_width=scatter_figure_width,
