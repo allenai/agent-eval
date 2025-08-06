@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from .config import SuiteConfig
 from .score import TaskResult
 
-
 logger = logging.getLogger(__name__)
 
 
