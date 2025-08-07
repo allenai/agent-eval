@@ -579,7 +579,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             eval_config = EvalConfig.model_validate_json(
                 open(local_eval_config_path).read()
             )
-            config_splits[eval_config.suite_config.name].append(eval_config.split)
+            config_splits[eval_config.suite_config.version].append(eval_config.split)
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
