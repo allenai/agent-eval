@@ -80,44 +80,43 @@ def compute_summary_statistics(
     # build per-task stats
     tasks_summary: dict[str, SummaryStat] = {}
     for task in tasks:
-        res = next((r for r in results if r.task_name == task.name), None)
-        # initialize variables with explicit types
-        score: float | None = None
-        stderr: float | None = None
-        cost: float | None = None
-        cost_stderr: float | None = None
-        if res:
-            m = next((m for m in res.metrics if m.name == task.primary_metric), None)
-            if m is None:
-                # We don't have a value for the primary metric.
-                logger.warning(
-                    f"Task {task.name} does not have a metric named {task.primary_metric}."
-                    f" Available metrics: {', '.join(m.name for m in res.metrics)}"
-                )
-            else:
-                # We do have a value for the primary metric.
-                score = m.value
-
-                stderr = next(
-                    (
-                        m.value
-                        for m in res.metrics
-                        if m.name.startswith(f"{task.primary_metric.split('/')[0]}/")
-                        and "stderr" in m.name
-                    ),
-                    None,
-                )
-
-                task_costs = res.model_costs or []
-                cost = _safe_mean(task_costs)
-                cost_stderr = _safe_stderr(task_costs)
-
         tasks_summary[task.name] = SummaryStat(
-            score=score,
-            score_stderr=stderr,
-            cost=cost,
-            cost_stderr=cost_stderr,
+            score=None,
+            score_stderr=None,
+            cost=None,
+            cost_stderr=None,
         )
+
+        res = next((r for r in results if r.task_name == task.name), None)
+        if not res:
+            logger.warning(f"Task {task.name} has no results.")
+            continue
+
+        metrics_by_name = {m.name: m for m in res.metrics}
+        if task.primary_metric not in metrics_by_name:
+            # We don't have a value for the primary metric.
+            logger.warning(
+                f"Task {task.name} does not have a metric named {task.primary_metric}."
+                f" Available metrics: {', '.join(m.name for m in res.metrics)}"
+            )
+            continue
+
+        tasks_summary[task.name].score = metrics_by_name[task.primary_metric].value
+
+        expected_stderr_name = f"{task.primary_metric.rpartition('/')[0]}/stderr"
+        stderr_metric = metrics_by_name.get(expected_stderr_name, None)
+        tasks_summary[task.name].score_stderr = (
+            stderr_metric.value if stderr_metric else None
+        )
+
+        if tasks_summary[task.name].score_stderr is None:
+            logger.warning(
+                f"Task {task.name} does not have a metric named {expected_stderr_name}."
+            )
+
+        task_costs = res.model_costs or []
+        tasks_summary[task.name].cost = _safe_mean(task_costs)
+        tasks_summary[task.name].cost_stderr = _safe_stderr(task_costs)
 
     # per-tag summary with weighted averaging
     split_obj = suite_config.get_split(split)
