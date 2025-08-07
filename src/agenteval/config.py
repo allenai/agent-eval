@@ -76,6 +76,14 @@ class SuiteConfig(BaseModel):
         """
         return self.get_split(split_name).tasks
 
+    def get_tasks_by_name(self, split_name: str) -> Dict[str, Task]:
+        tasks = {}
+        for task in self.get_tasks(split_name):
+            task_name = task.name
+            assert task_name not in tasks
+            tasks[task_name] = task
+        return tasks
+
     def get_split(self, split_name: str) -> Split:
         """Get a specific split by name."""
         for split in self.splits:
@@ -85,6 +93,13 @@ class SuiteConfig(BaseModel):
         raise ValueError(
             f"Split '{split_name}' not found. Available splits: {available_splits}"
         )
+    
+    def get_splits_by_name(self) -> Dict[str, Task]:
+        splits = {}
+        for split in self.splits:
+            assert split.name not in splits
+            splits[split.name] = split
+        return splits
 
 
 def load_suite_config(file_path: str) -> SuiteConfig:
