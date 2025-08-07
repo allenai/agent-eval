@@ -89,7 +89,7 @@ def compute_summary_statistics(
 
         res = next((r for r in results if r.task_name == task.name), None)
         if not res:
-            logger.warning(f"Task {task.name} has no results.")
+            # logger.warning(f"Task {task.name} has no results.")
             continue
 
         metrics_by_name = {m.name: m for m in res.metrics}
