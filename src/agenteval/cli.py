@@ -778,7 +778,18 @@ def eval_command(
 
     # Write the config portion of the results file
     os.makedirs(log_dir, exist_ok=True)
-    eval_config = EvalConfig(suite_config=suite_config, split=split)
+
+    inspect_command = (
+        ["inspect", "eval-set"]
+        + list(args)
+        + logd_args
+        + display_args
+        + [x.path for x in tasks]
+    )
+
+    eval_config = EvalConfig(
+        suite_config=suite_config, split=split, inspect_command=inspect_command
+    )
 
     eval_config_path = os.path.join(log_dir, EVAL_CONFIG_FILENAME)
     if not os.path.exists(eval_config_path):
@@ -796,19 +807,12 @@ def eval_command(
     # We use subprocess here to keep arg management simple; an alternative
     # would be calling `inspect_ai.eval_set()` directly, which would allow for
     # programmatic execution
-    full_command = (
-        ["inspect", "eval-set"]
-        + list(args)
-        + logd_args
-        + display_args
-        + [x.path for x in tasks]
-    )
     if config_only:
-        click.echo(f"Dry run: would run command: {' '.join(full_command)}")
+        click.echo(f"Dry run: would run command: {' '.join(inspect_command)}")
         return
 
-    click.echo(f"Running {config_path}: {' '.join(full_command)}")
-    proc = subprocess.run(full_command)
+    click.echo(f"Running {' '.join(inspect_command)}")
+    proc = subprocess.run(inspect_command)
 
     if proc.returncode != 0:
         raise click.ClickException(
