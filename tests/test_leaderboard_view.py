@@ -5,8 +5,6 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
-from agenteval.leaderboard.view import LeaderboardViewer
-
 
 def setup_mock_dataset(mock_load_dataset, split_name="test"):
     """Setup mock dataset for LeaderboardViewer initialization."""
@@ -48,6 +46,12 @@ def setup_mock_dataset(mock_load_dataset, split_name="test"):
 class TestWebappLeaderboardViewerContract:
     """Test the minimal API contracts that the leaderboard webapp client uses."""
 
+    @pytest.fixture(autouse=True)
+    def leaderboard_viewer_class(self):
+        """Lazily import LeaderboardViewer to avoid matplotlib dependency in main tests."""
+        from agenteval.leaderboard.view import LeaderboardViewer
+        self.LeaderboardViewer = LeaderboardViewer
+
     @patch("agenteval.leaderboard.view.datasets.load_dataset")
     def test_initialization(self, mock_load_dataset):
         """Test LeaderboardViewer accepts parameters used by webapp.
@@ -62,7 +66,7 @@ class TestWebappLeaderboardViewerContract:
         setup_mock_dataset(mock_load_dataset)
 
         # Pattern from webapp client - just verify it doesn't raise an error
-        LeaderboardViewer(
+        self.LeaderboardViewer(
             repo_id="allenai/asta-bench-results",
             config="1.0.0-dev1",
             split="test",
@@ -77,7 +81,7 @@ class TestWebappLeaderboardViewerContract:
         """
         setup_mock_dataset(mock_load_dataset)
 
-        viewer = LeaderboardViewer("test-repo", "1.0.0", "test", False)
+        viewer = self.LeaderboardViewer("test-repo", "1.0.0", "test", False)
 
         # Webapp accesses viewer.tag_map directly
         assert hasattr(viewer, "tag_map")
@@ -99,7 +103,7 @@ class TestWebappLeaderboardViewerContract:
         with patch("agenteval.leaderboard.view._get_dataframe") as mock_get_df:
             mock_get_df.return_value = pd.DataFrame({"col": [1, 2]})
 
-            viewer = LeaderboardViewer("test", "1.0.0", "test", False)
+            viewer = self.LeaderboardViewer("test", "1.0.0", "test", False)
 
             # Webapp calls _load() with no parameters
             result = viewer._load()
