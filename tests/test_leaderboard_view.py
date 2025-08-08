@@ -8,15 +8,9 @@ Includes:
 
 from unittest.mock import Mock, patch
 
-import pytest
-
-# Skip these tests if leaderboard dependencies are not installed
-pytest.importorskip("pandas")
-pytest.importorskip("matplotlib")
-pytest.importorskip("seaborn")  # Required by LeaderboardViewer
-
 import matplotlib.pyplot as plt
 import pandas as pd
+import pytest
 
 from agenteval.leaderboard.view import (
     LeaderboardViewer,
