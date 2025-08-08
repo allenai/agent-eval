@@ -4,7 +4,7 @@ View and plot leaderboard results.
 
 import logging
 import re
-from typing import Literal
+from typing import Callable, Literal
 from zoneinfo import ZoneInfo
 
 import datasets
@@ -328,13 +328,26 @@ class LeaderboardViewer:
                     (f"task/{task_name}/score", f"task/{task_name}/cost")
                 )
 
+        # Define label transform function - single place to maintain axis label transformations
+        def transform_axis_label(metric_path: str) -> str:
+            """Transform metric paths like 'tag/lit/score' to 'Score' or 'task/foo/cost' to 'Cost (USD)'."""
+            if metric_path.endswith("/score"):
+                return "Score"
+            elif metric_path.endswith("/cost"):
+                return "Cost (USD)"
+            else:
+                # Fallback to the last segment if not a recognized pattern
+                return metric_path.split("/")[-1]
+
         plots: dict[str, Figure] = {}
         if with_plots:
+
             # Use available_metrics which already has primary excluded if requested
             plots["bar"] = _plot_hbar(
                 raw_df,
                 agent_col="display_name",
                 metrics=available_metrics,
+                label_transform=transform_axis_label,
             )
 
             # Filter to only valid pairs that exist in the data
@@ -356,6 +369,7 @@ class LeaderboardViewer:
                     subplot_height=scatter_subplot_height,
                     subplot_spacing=scatter_subplot_spacing,
                     use_log_scale=scatter_x_log_scale,
+                    label_transform=transform_axis_label,
                 )
 
             # Also generate individual scatter plots
@@ -374,6 +388,7 @@ class LeaderboardViewer:
                     figure_width=scatter_figure_width,
                     subplot_height=scatter_subplot_height,
                     use_log_scale=scatter_x_log_scale,
+                    label_transform=transform_axis_label,
                 )
 
         # Calculate frontier information for each scatter pair
@@ -622,6 +637,7 @@ def _plot_hbar(
     data: pd.DataFrame,
     agent_col: str,
     metrics: list[str],
+    label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Horizontal bar chart of metrics, one row per agent."""
     import seaborn as sns
@@ -664,7 +680,12 @@ def _plot_hbar(
                     ecolor="gray",
                     capsize=3,
                 )
-        ax.set_xlabel(metric)
+        # Use transform function if provided, otherwise use metric as-is
+        if label_transform:
+            xlabel = label_transform(metric)
+        else:
+            xlabel = metric
+        ax.set_xlabel(xlabel)
         ax.set_xlim(left=0)
         # Adjust font sizes to be proportional to the scaled figure height
         # Since we scale height with number of agents, text should scale too
@@ -688,6 +709,7 @@ def _plot_scatter(
     figure_width: float | None = None,
     subplot_height: float | None = None,
     use_log_scale: bool = False,
+    label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Scatter plot of agent results, for showing score vs cost."""
     import seaborn as sns
@@ -723,6 +745,7 @@ def _plot_scatter(
         use_cost_fallback,
         collect_legend=True,  # Need to collect legend entries for single plots
         use_log_scale=use_log_scale,
+        label_transform=label_transform,
     )
 
     # Sort and format legend entries
@@ -760,6 +783,7 @@ def _plot_single_scatter_subplot(
     collect_legend: bool = False,
     show_xlabel: bool = True,
     use_log_scale: bool = False,
+    label_transform: Callable[[str], str] | None = None,
 ) -> tuple[list, list]:
     """Plot a single scatter subplot. Returns (handles, labels) if collect_legend=True."""
     plot_data = data.dropna(subset=[y])
@@ -843,7 +867,7 @@ def _plot_single_scatter_subplot(
     ax.margins(y=0.05)  # Add only 5% margin at the top
 
     # Apply consistent axis formatting
-    _setup_axis_formatting(ax, x, y, show_xlabel)
+    _setup_axis_formatting(ax, x, y, show_xlabel, label_transform)
     # Note: Legend font at 7pt visually matches 8pt tick labels due to matplotlib rendering differences
 
     # Set axis limits based on scale type
@@ -966,6 +990,7 @@ def _plot_combined_scatter(
     subplot_height: float | None = None,
     subplot_spacing: float | None = None,
     use_log_scale: bool = False,
+    label_transform: Callable[[str], str] | None = None,
 ) -> Figure:
     """Combined scatter plot with multiple score/cost pairs in subplots and single legend."""
     import seaborn as sns
@@ -1054,6 +1079,7 @@ def _plot_combined_scatter(
             collect_legend=True,
             show_xlabel=is_bottom_subplot,
             use_log_scale=use_log_scale,
+            label_transform=label_transform,
         )
 
         # Merge legend entries from all subplots
@@ -1171,18 +1197,22 @@ def _wrap_legend_text(text, max_width=35):
     return "\n".join(textwrap.wrap(text, width=max_width))
 
 
-def _setup_axis_formatting(ax, x_label: str, y_label: str, show_xlabel: bool = True):
+def _setup_axis_formatting(
+    ax,
+    x_label: str,
+    y_label: str,
+    show_xlabel: bool = True,
+    label_transform: Callable[[str], str] | None = None,
+):
     """Apply consistent axis formatting including labels and tick styling."""
     if show_xlabel:
-        # Simplify x-axis label to just the part after final "/"
-        simplified_xlabel = x_label.split("/")[-1]
-        ax.set_xlabel(simplified_xlabel, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
+        xlabel_display = label_transform(x_label) if label_transform else x_label
+        ax.set_xlabel(xlabel_display, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
     else:
         ax.set_xlabel("", fontsize=SCATTER_AXIS_LABEL_FONTSIZE)  # Hide x-axis label
 
-    # Simplify y-axis label to just the part after final "/"
-    simplified_ylabel = y_label.split("/")[-1]
-    ax.set_ylabel(simplified_ylabel, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
+    ylabel_display = label_transform(y_label) if label_transform else y_label
+    ax.set_ylabel(ylabel_display, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
     ax.tick_params(axis="both", which="major", labelsize=SCATTER_TICK_LABEL_FONTSIZE)
 
 
