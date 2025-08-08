@@ -128,6 +128,65 @@ class TestWebappLeaderboardViewerContract:
             assert isinstance(df, pd.DataFrame)
             assert isinstance(tag_map, dict)
 
+    @patch("agenteval.leaderboard.view.datasets.load_dataset")
+    def test_webapp_expected_column_names(self, mock_load_dataset):
+        """Test that the DataFrame has columns with names expected by the webapp."""
+        # Webapp expects these exact column names
+        webapp_expected_columns = [
+            "id",
+            "Agent",
+            "Agent description",
+            "User/organization",
+            "Submission date",
+            "Overall",
+            "Overall cost",
+            "Logs",
+            "Openness",
+            "Agent tooling",
+            "LLM base",
+        ]
+
+        # Reuse setup_mock_dataset but extend it with more complete data
+        mock_dataset = setup_mock_dataset(mock_load_dataset)
+
+        # Update the mock to have complete submission data with results
+        mock_dataset.get.return_value[0].update(
+            {
+                "split": "test",
+                "submission": {
+                    "agent_name": "Test Agent Name",
+                    "agent_description": "Test Description",
+                    "username": "test_user",
+                    "submit_time": "2024-01-01T00:00:00Z",
+                    "openness": "open",
+                    "tool_usage": "basic",
+                    "logs_url": "http://logs",
+                    "logs_url_public": "http://logs",
+                },
+                "results": [
+                    {
+                        "task_name": "task1",
+                        "metrics": [
+                            {"name": "score", "value": 0.5},
+                            {"name": "cost", "value": 10.0},
+                        ],
+                        "model_usages": [
+                            [{"model": "gpt-4", "usage": {"total_tokens": 100}}]
+                        ],
+                    }
+                ],
+            }
+        )
+
+        viewer = LeaderboardViewer("test-repo", "1.0.0", "test", False)
+        df, _ = viewer._load()
+
+        # Check that all expected columns exist
+        for expected_col in webapp_expected_columns:
+            assert (
+                expected_col in df.columns
+            ), f"Expected column '{expected_col}' not found. Available: {list(df.columns)}"
+
 
 @pytest.mark.leaderboard
 class TestPaperWorkflowFunctionality:
