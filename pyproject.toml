@@ -35,7 +35,9 @@ dev = [
   "pytest-asyncio",
   "mypy==1.15",
   "types-PyYAML",
-  "types-setuptools"
+  "types-setuptools",
+  "pandas-stubs",
+  "types-seaborn"
 ]
 # Leaderboard view dependencies
 leaderboard = [
