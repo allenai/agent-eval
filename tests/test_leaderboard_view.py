@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pandas as pd
+import pytest
 
 from agenteval.leaderboard.view import LeaderboardViewer
 
@@ -43,6 +44,7 @@ def setup_mock_dataset(mock_load_dataset, split_name="test"):
     return mock_dataset
 
 
+@pytest.mark.leaderboard
 class TestWebappLeaderboardViewerContract:
     """Test the minimal API contracts that the leaderboard webapp client uses."""
 
