@@ -50,6 +50,7 @@ class TestWebappLeaderboardViewerContract:
     def leaderboard_viewer_class(self):
         """Lazily import LeaderboardViewer to avoid matplotlib dependency in main tests."""
         from agenteval.leaderboard.view import LeaderboardViewer
+
         self.LeaderboardViewer = LeaderboardViewer
 
     @patch("agenteval.leaderboard.view.datasets.load_dataset")
