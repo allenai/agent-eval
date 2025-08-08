@@ -1,4 +1,4 @@
-.PHONY: format tag publish test
+.PHONY: format tag publish test test-core test-leaderboard test-all
 
 format:
 	@echo "Formatting with isort and black..."
@@ -31,6 +31,16 @@ update-schema:
 	@echo "Updating schema..."
 	python scripts/update_schema.py
 
-test:
-	@echo "Running tests..."
+test-core:
+	@echo "Running core tests (excluding leaderboard)..."
+	pytest -m "not leaderboard"
+
+test-leaderboard:
+	@echo "Running leaderboard tests..."
+	pytest -m leaderboard
+
+test: test-core  # Default to core tests
+
+test-all:
+	@echo "Running all tests..."
 	pytest

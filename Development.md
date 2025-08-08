@@ -2,7 +2,19 @@
 
 # Setup
 
-Clone the repo and run `pip install -e ".[dev]"`.
+```bash
+pip install -e ".[dev]"
+```
+
+For leaderboard viewing features: `pip install -e ".[dev,leaderboard]"`
+
+# Testing
+
+```bash
+make test
+```
+
+For all tests including leaderboard: `make test-all` (requires `.[dev,leaderboard]`)
 
 # Publication
 
