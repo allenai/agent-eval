@@ -53,6 +53,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "leaderboard: tests that require leaderboard dependencies"
+]
+addopts = "-m 'not leaderboard'"
 
 [tool.flake8]
 select = [
