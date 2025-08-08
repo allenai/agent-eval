@@ -479,7 +479,7 @@ def _pretty_column_name(col: str) -> str:
     mapping = {
         "submit_time": "Submission date",
         "agent_name": "Agent",
-        "display_name": "Agent",
+        "display_name": "Agent (with models)",
         "agent_description": "Agent description",
         "username": "User/organization",
         "openness": "Openness",
