@@ -14,6 +14,9 @@ class EvalConfig(BaseModel):
     split: str
     """Split used for the results."""
 
+    inspect_command: list[str] | None = None
+    """InspectAI command line invoked to run the evaluation."""
+
     @cached_property
     def task_names(self) -> set[str]:
         """

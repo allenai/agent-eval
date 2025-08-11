@@ -5,107 +5,82 @@ This mapping is used to convert verbose model names (often including paths, date
 to clean, readable names for display in plots and leaderboards.
 """
 
-import logging
-
-logger = logging.getLogger(__name__)
-
-# Model name mapping dictionary
-MODEL_NAME_MAPPING = {
+# Display names for leaderboard
+LB_MODEL_NAME_MAPPING = {
     # OpenAI models
-    "o3-pro-2025-06-10": "o3-pro",
-    "o3-2025-04-16": "o3",
-    "o4-mini-2025-04-16": "o4-mini",
-    "gpt-4.1-2025-04-14": "gpt-4.1",
-    "gpt-4.1-nano-2025-04-14": "gpt-4.1-nano",
-    "gpt-4o-2024-11-20": "gpt-4o",
-    "codex-mini-latest": "codex-mini",
+    "o3-pro-2025-06-10": "o3 Pro (2025-06)",
+    "o3-2025-04-16": "o3 (2025-04)",
+    "o4-mini-2025-04-16": "o4 Mini (2025-04)",
+    "gpt-4.1-2025-04-14": "GPT-4.1 (2025-04)",
+    "gpt-4.1-nano-2025-04-14": "GPT-4.1 Nano (2025-04)",
+    "gpt-4o-2024-11-20": "GPT-4o (2024-11)",
+    "codex-mini-latest": "Codex Mini (unpinned)",
     # Anthropic models
-    "claude-opus-4-20250514": "claude-opus-4",
-    "claude-sonnet-4-20250514": "claude-sonnet-4",
-    "claude-3-5-haiku-20241022": "claude-3-5-haiku",
-    "claude-3-7-sonnet-20250219": "claude-3-7-sonnet",
+    "claude-opus-4-20250514": "Claude Opus 4 (2025-05)",
+    "claude-sonnet-4-20250514": "Claude Sonnet 4 (2025-05)",
+    "claude-3-5-haiku-20241022": "Claude 3.5 Haiku (2024-10)",
+    "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet (2025-02)",
     # Google models
-    "gemini-2.5-pro": "gemini-2.5-pro-unpinned",
-    "gemini-2.5-flash": "gemini-2.5-flash-unpinned",
-    "gemini-2-flash": "gemini-2-flash-unpinned",
-    "gemini-2.5-flash-lite-preview-06-17": "gemini-2.5-flash-lite",
-    "gemma-3-27b": "gemma-3-27b-unpinned",
-    "gemma-3n-e4b-it": "gemma-3n-e4b-it-unpinned",
+    "gemini-2.5-pro": "Gemini 2.5 Pro (unpinned)",
+    "gemini-2.5-flash": "Gemini 2.5 Flash (unpinned)",
+    "gemini-2-flash": "Gemini 2 Flash (unpinned)",
+    "gemini-2.5-flash-lite-preview-06-17": "Gemini 2.5 Flash Lite (2024-06)",
+    "gemma-3-27b": "Gemma 3 27B (unpinned)",
+    "gemma-3n-e4b-it": "Gemma 3N E4B IT (unpinned)",
     # XAI models
-    "grok-3": "grok-3-unpinned",
-    "grok-3-mini": "grok-3-mini-unpinned",
+    "grok-3": "Grok 3 (unpinned)",
+    "grok-3-mini": "Grok 3 Mini (unpinned)",
     # Microsoft models
-    "phi-4-reasoning": "phi-4-reasoning-unpinned",
-    "phi-4-reasoning-plus": "phi-4-reasoning-plus-unpinned",
+    "phi-4-reasoning": "Phi-4 Reasoning (unpinned)",
+    "phi-4-reasoning-plus": "Phi-4 Reasoning Plus (unpinned)",
     # Alibaba models
-    "qwen3-8b": "qwen3-8b-unpinned",
-    "qwen3-235b": "qwen3-235b-unpinned",
-    "qwq-32b": "qwq-32b-unpinned",
+    "qwen3-8b": "Qwen 3 8B (unpinned)",
+    "qwen3-235b": "Qwen 3 235B (unpinned)",
+    "qwq-32b": "QwQ 32B (unpinned)",
     # DeepSeek models
-    "deepseek-v3-0324": "deepseek-v3",
-    "deepseek-r1-0528": "deepseek-r1",
+    "deepseek-v3-0324": "DeepSeek V3 (2025-03)",
+    "deepseek-r1-0528": "DeepSeek R1 (2025-05)",
     # Meta models
-    "llama-4-scout": "llama-4-scout-unpinned",
-    "llama-4-maverick": "llama-4-maverick-unpinned",
+    "llama-4-scout": "Llama 4 Scout (unpinned)",
+    "llama-4-maverick": "Llama 4 Maverick (unpinned)",
     # Mistral models
-    "mistral-large-2024-11": "mistral-large",
-    "mistral-medium-3-2025-05": "mistral-medium-3",
-    "mistral-small-2503": "mistral-small",
-    "mistral-codestral-2025-01": "mistral-codestral",
-    "mistral-devstral": "mistral-devstral-unpinned",
+    "mistral-large-2024-11": "Mistral Large (2024-11)",
+    "mistral-medium-3-2025-05": "Mistral Medium 3 (2025-05)",
+    "mistral-small-2503": "Mistral Small (2025-03)",
+    "mistral-codestral-2025-01": "Mistral Codestral (2025-01)",
+    "mistral-devstral": "Mistral Devstral (unpinned)",
     # Perplexity models
-    "perplexity-sonar": "perplexity-sonar-unpinned",
-    "perplexity-sonar-pro": "perplexity-sonar-pro-unpinned",
-    "perplexity-sonar-reasoning": "perplexity-sonar-reasoning-unpinned",
-    "perplexity-sonar-reasoning-pro": "perplexity-sonar-reasoning-pro-unpinned",
-    "perplexity-sonar-deep-research": "perplexity-sonar-deep-research-unpinned",
+    "perplexity-sonar": "Perplexity Sonar (unpinned)",
+    "perplexity-sonar-pro": "Perplexity Sonar Pro (unpinned)",
+    "perplexity-sonar-reasoning": "Perplexity Sonar Reasoning (unpinned)",
+    "perplexity-sonar-reasoning-pro": "Perplexity Sonar Reasoning Pro (unpinned)",
+    "perplexity-sonar-deep-research": "Perplexity Sonar Deep Research (unpinned)",
     # Additional long model names found in data
     # Keep dates only for old versions to distinguish from current
-    "gpt-4o-2024-08-06": "gpt-4o-old-aug24",
-    "gpt-4o-mini-2024-07-18": "gpt-4o-mini-old-jul24",
+    "gpt-4o-2024-08-06": "GPT-4o (2024-08)",
+    "gpt-4o-mini-2024-07-18": "GPT-4o Mini (2024-07)",
     # Remove path prefixes and shorten recent versions
-    "claude-3-7-sonnet-20250219": "claude-3-7-sonnet",
-    "gpt-4o-2024-11-20": "gpt-4o",
-    "claude-3-5-haiku-20241022": "claude-3-5-haiku",
-    "models/gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
-    "gemini/gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
-    "models/gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct": "llama-4-scout",
-    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": "llama-4-maverick",
-    "anthropic/claude-3-7-sonnet-20250219": "claude-3-7-sonnet",
-    "anthropic/claude-sonnet-4-20250514": "claude-sonnet-4",
-    "anthropic/claude-3-5-haiku-20241022": "claude-3-5-haiku",
+    "models/gemini-2.5-flash-preview-05-20": "Gemini 2.5 Flash (2024-05)",
+    "gemini/gemini-2.5-flash-preview-05-20": "Gemini 2.5 Flash (2024-05)",
+    "models/gemini-2.5-pro-preview-05-06": "Gemini 2.5 Pro (2024-05)",
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct": "Llama 4 Scout 17B (unpinned)",
+    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": "Llama 4 Maverick 17B (unpinned)",
+    "anthropic/claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet (2025-02)",
+    "anthropic/claude-sonnet-4-20250514": "Claude Sonnet 4 (2025-05)",
+    "anthropic/claude-3-5-haiku-20241022": "Claude 3.5 Haiku (2024-10)",
     # Mark unpinned versions
-    "openai/gpt-4.1": "gpt-4.1-unpinned",
-    "openai/gpt-4.1-2025-04-14": "gpt-4.1",
-    "openai/gpt-4.1-nano-2025-04-14": "gpt-4.1-nano",
-    "openai/gpt-4.1-nano": "gpt-4.1-nano-unpinned",
-    "openai/gpt-4.1-mini": "gpt-4.1-mini-unpinned",
-    "openai/o3-2025-04-16": "o3",
-    "openai/o3-mini": "o3-mini-unpinned",
-    "sonar-deep-research": "sonar-deep-unpinned",
-    "perplexity/sonar-deep-research": "sonar-deep-unpinned",
-    "deepseek-ai/DeepSeek-V3": "deepseek-v3-unpinned",
-    "gemini/gemini-2.0-flash": "gemini-2.0-flash-unpinned",
-    "gemini/gemini-2.5-pro": "gemini-2.5-pro-unpinned",
-    "openai/gpt-4o": "gpt-4o-unpinned",
-    "gpt-3.5-turbo-0125": "gpt-3.5-turbo",
+    "openai/gpt-4.1": "GPT-4.1 (unpinned)",
+    "openai/gpt-4.1-2025-04-14": "GPT-4.1 (2025-04)",
+    "openai/gpt-4.1-nano-2025-04-14": "GPT-4.1 Nano (2025-04)",
+    "openai/gpt-4.1-nano": "GPT-4.1 Nano (unpinned)",
+    "openai/gpt-4.1-mini": "GPT-4.1 Mini (unpinned)",
+    "openai/o3-2025-04-16": "o3 (2025-04)",
+    "openai/o3-mini": "o3 Mini (unpinned)",
+    "sonar-deep-research": "Sonar Deep Research (unpinned)",
+    "perplexity/sonar-deep-research": "Sonar Deep Research (unpinned)",
+    "deepseek-ai/DeepSeek-V3": "DeepSeek V3 (unpinned)",
+    "gemini/gemini-2.0-flash": "Gemini 2.0 Flash (unpinned)",
+    "gemini/gemini-2.5-pro": "Gemini 2.5 Pro (unpinned)",
+    "openai/gpt-4o": "GPT-4o (unpinned)",
+    "gpt-3.5-turbo-0125": "GPT-3.5 Turbo (2025-01)",
 }
-
-
-def get_model_shortname(model_name: str) -> str:
-    """Convert full model names to their short display names.
-
-    Args:
-        model_name: The full model name as it appears in the data
-
-    Returns:
-        The shortened display name for the model
-    """
-    # Log when we perform shortening for auditing
-    original_name = model_name
-    shortened_name = MODEL_NAME_MAPPING.get(model_name, model_name)
-    if original_name != shortened_name:
-        logger.info(f"Model name shortened: '{original_name}' -> '{shortened_name}'")
-
-    return shortened_name

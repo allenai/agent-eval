@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
 from ..config import SuiteConfig
-from .model_name_mapping import get_model_shortname
+from .model_name_mapping import LB_MODEL_NAME_MAPPING
 from .models import LeaderboardSubmission
 
 logger = logging.getLogger(__name__)
@@ -99,9 +99,7 @@ class LeaderboardViewer:
                 agent_name = row["agent_name"]
                 base_models = row["base_models"]
                 if base_models and len(base_models) > 0:
-                    # Use all model names with short name transformation, comma-separated
-                    short_models = [get_model_shortname(model) for model in base_models]
-                    models_str = ", ".join(short_models)
+                    models_str = ", ".join(base_models)
                     return f"{agent_name} ({models_str})"
                 return agent_name
 
@@ -351,9 +349,13 @@ def _get_dataframe(
                                 model_token_counts[model_name] = total_tokens
 
         # Sort by cumulative token count (descending - most used first)
-        model_names = sorted(
+        sorted_raw_names = sorted(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
+
+        model_names = [
+            LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
+        ]
 
         sub = ev.submission
         # only format if submit_time present, else leave as None
@@ -476,8 +478,8 @@ def _pretty_column_name(col: str) -> str:
     # fixed mappings
     mapping = {
         "submit_time": "Submission date",
-        "agent_name": "Agent name",
-        "display_name": "Agent",
+        "agent_name": "Agent",
+        "display_name": "Agent (with models)",
         "agent_description": "Agent description",
         "username": "User/organization",
         "openness": "Openness",

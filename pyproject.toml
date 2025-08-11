@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval"
-version = "0.1.26"
+version = "0.1.32"
 description = "Agent evaluation toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,7 +58,6 @@ python_files = ["test_*.py"]
 markers = [
     "leaderboard: tests that require leaderboard dependencies"
 ]
-addopts = "-m 'not leaderboard'"
 
 [tool.flake8]
 select = [
