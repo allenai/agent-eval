@@ -309,6 +309,15 @@ class LeaderboardViewer:
         return display_df, plots
 
 
+def _agent_with_probably_incomplete_model_usage_info(agent_name):
+    # See https://github.com/allenai/astabench-issues/issues/330
+    lowered_agent_name = agent_name.lower()
+    is_elicit = lowered_agent_name == "elicit"
+    is_scispace = lowered_agent_name == "scispace"
+    is_you_dot_com = ("you" in lowered_agent_name) and ("com" in lowered_agent_name)
+    return any([is_elicit, is_scispace, is_you_dot_com])
+
+
 def _get_dataframe(
     eval_results: datasets.DatasetDict,
     split: str,
@@ -333,10 +342,23 @@ def _get_dataframe(
     rows = []
     for itm in ds:
         ev = LeaderboardSubmission.model_validate(itm)
+        sub = ev.submission
+
+        probably_incomplete_model_info = (
+            _agent_with_probably_incomplete_model_usage_info(sub.agent_name)
+        )
 
         model_token_counts: dict[str, int] = {}
         if ev.results:
             for task_result in ev.results:
+
+                if probably_incomplete_model_info:
+                    logger.warning(
+                        f"Dropping model_usages and model_costs for the following submission because model usage info may be incomplete: {sub}."
+                    )
+                    task_result.model_usages = None
+                    task_result.model_costs = None
+
                 if task_result.model_usages:
                     for usage_list in task_result.model_usages:
                         for model_usage in usage_list:
@@ -357,7 +379,6 @@ def _get_dataframe(
             LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
         ]
 
-        sub = ev.submission
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
         if ts is not None:
