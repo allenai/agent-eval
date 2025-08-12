@@ -33,6 +33,7 @@ class SubmissionMetadata(BaseModel):
 
     submit_time: datetime | None = None
     username: str | None = None
+    role: str | None = None
     agent_name: str | None = None
     agent_description: str | None = None
     agent_url: str | None = None
