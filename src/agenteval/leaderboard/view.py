@@ -353,6 +353,9 @@ def _get_dataframe(
             for task_result in ev.results:
 
                 if probably_incomplete_model_info:
+                    logger.warning(
+                        f"Dropping model_usages and model_costs for submission {sub} because model usage info may be incomplete."
+                    )
                     task_result.model_usages = None
                     task_result.model_costs = None
 
