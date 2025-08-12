@@ -87,6 +87,8 @@
     dtype: timestamp[us, tz=UTC]
   - name: username
     dtype: string
+  - name: role
+    dtype: string
   - name: agent_name
     dtype: string
   - name: agent_description
