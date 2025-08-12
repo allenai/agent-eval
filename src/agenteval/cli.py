@@ -739,7 +739,7 @@ def validate_split(ctx, param, value):
 @click.option(
     "--exclude-agent",
     multiple=True,
-    help="Exclude agents matching pattern (regex, case-insensitive). Can be specified multiple times.",
+    help="Exclude agents matching pattern (regex, case-insensitive). Can also use 'agent_pattern:model_pattern' format to filter by both agent and model. Can be specified multiple times.",
 )
 @click.option(
     "--scatter-legend-max-width",

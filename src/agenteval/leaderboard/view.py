@@ -127,16 +127,33 @@ class LeaderboardViewer:
             apply_pretty_names=False, preserve_none_scores=preserve_none_scores
         )
 
-        # First, filter out excluded agents based on original agent_name
+        # Filter out excluded agents (handles both simple patterns and agent:model patterns)
         if exclude_agent_patterns:
             for pattern in exclude_agent_patterns:
-                mask = raw_data["agent_name"].apply(
-                    lambda x: (
-                        not re.search(pattern, x, re.IGNORECASE)
-                        if pd.notna(x)
-                        else True
+                if ":" in pattern:
+                    # Handle agent:model pattern
+                    agent_pattern, model_pattern = pattern.split(":", 1)
+                    
+                    # Create mask for rows to keep (those that don't match both patterns)
+                    # Check if base_models field exists and contains the model pattern
+                    mask = raw_data.apply(
+                        lambda row: not (
+                            re.search(agent_pattern, row["agent_name"], re.IGNORECASE) and
+                            any(re.search(model_pattern, model, re.IGNORECASE) 
+                                for model in (row.get("base_models", []) or [])
+                                if isinstance(model, str))
+                        ) if pd.notna(row["agent_name"]) else True,
+                        axis=1
                     )
-                )
+                else:
+                    # Handle simple agent name pattern
+                    mask = raw_data["agent_name"].apply(
+                        lambda x: (
+                            not re.search(pattern, x, re.IGNORECASE)
+                            if pd.notna(x)
+                            else True
+                        )
+                    )
                 raw_data = raw_data[mask].reset_index(drop=True)
 
         # Process agent grouping specs (after exclusion, before display name creation)
