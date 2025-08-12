@@ -354,6 +354,7 @@ def publish_logs_command(
     # Fill submission metadata
     submission = SubmissionMetadata(
         username=username,
+        role=role,
         agent_name=agent_name,
         agent_description=agent_description,
         agent_url=agent_url,
