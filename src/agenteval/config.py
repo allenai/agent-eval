@@ -2,6 +2,8 @@
 Configuration management for agent evaluation.
 """
 
+from typing import Dict
+
 import yaml
 from pydantic import BaseModel, ValidationError
 

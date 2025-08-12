@@ -474,6 +474,35 @@ def backfill_command(results_repo_id, submissions_repo_id, submission_path):
 cli.add_command(backfill_command)
 
 
+@click.command(name="convert", help="TODO")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+@click.option("--target-config", required=True, help="TODO")
+@click.option(
+    "--source-repo-id",
+    default="allenai/asta-bench-internal-results",
+    required=False,
+    help="TODO",
+)
+@click.option(
+    "--target-repo-id",
+    default="allenai/asta-bench-internal-results",
+    required=False,
+    help="TODO",
+)
+def convert_result_command(
+    target_config: str,
+    source_repo_id: str,
+    target_repo_id: str,
+    result_urls: tuple[str, ...],
+):
+    click.echo(
+        f"Hello, in the convert command. {result_urls}, {source_repo_id}, {target_repo_id}, {target_config}"
+    )
+
+
+cli.add_command(convert_result_command)
+
+
 @click.command(
     name="publish",
     help="Publish scored results in log_dir to HuggingFace leaderboard.",

@@ -41,6 +41,7 @@ class SubmissionMetadata(BaseModel):
     summary_url: str | None = None
     openness: str | None = None
     tool_usage: str | None = None
+    original_results_url: str | None = None
 
 
 class TaskResults(BaseModel):
