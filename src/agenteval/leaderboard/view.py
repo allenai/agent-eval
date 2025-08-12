@@ -354,7 +354,7 @@ def _get_dataframe(
 
                 if probably_incomplete_model_info:
                     logger.warning(
-                        f"Dropping model_usages and model_costs for submission {sub} because model usage info may be incomplete."
+                        f"Dropping model_usages and model_costs for the following submission because model usage info may be incomplete: {sub}."
                     )
                     task_result.model_usages = None
                     task_result.model_costs = None
