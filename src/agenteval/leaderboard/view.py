@@ -310,6 +310,7 @@ class LeaderboardViewer:
 
 
 def _agent_with_probably_incomplete_model_usage_info(agent_name):
+    # See https://github.com/allenai/astabench-issues/issues/330
     lowered_agent_name = agent_name.lower()
     is_elicit = lowered_agent_name == "elicit"
     is_scispace = lowered_agent_name == "scispace"
@@ -343,7 +344,6 @@ def _get_dataframe(
         ev = LeaderboardSubmission.model_validate(itm)
         sub = ev.submission
 
-        # https://github.com/allenai/astabench-issues/issues/330
         probably_incomplete_model_info = (
             _agent_with_probably_incomplete_model_usage_info(sub.agent_name)
         )
