@@ -93,7 +93,7 @@ class SuiteConfig(BaseModel):
         raise ValueError(
             f"Split '{split_name}' not found. Available splits: {available_splits}"
         )
-    
+
     def get_splits_by_name(self) -> Dict[str, Task]:
         splits = {}
         for split in self.splits:
