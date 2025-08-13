@@ -46,8 +46,8 @@ class Readme:
                 "features": self.features._to_yaml_list(),
             }
             configs.append(config_def)
-        yaml_section = yaml.dump({"configs": configs}, sort_keys=False)
-        return f"---\n{yaml_section.strip()}\n---{self.text_content.lstrip()}"
+        yaml_section = yaml.dump({"configs": configs})
+        return f"---\n{yaml_section.strip()}\n---\n{self.text_content.lstrip()}"
 
     @staticmethod
     def download_and_parse(repo_id: str) -> "Readme":
