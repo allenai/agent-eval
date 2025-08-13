@@ -109,23 +109,19 @@ class LeaderboardSubmissionAndSubmissionPath:
 def convert_one_task_result(
     result: TaskResult,
     split: str,
-    src_suite_config: SuiteConfig,
-    src_tasks_by_name: Dict[str, Task],
-    target_suite_config: SuiteConfig,
+    src_hf_config: str,
+    target_hf_config: str,
     target_tasks_by_name: Dict[str, Task],
 ):
     changed_something = False
 
-    src_hf_config_version = src_suite_config.version
-    target_hf_config_version = target_suite_config.version
-
     original_task_name = result.task_name
-    if original_task_name in TASK_NAME_ALIASES.get(src_hf_config_version, {}).get(
-        target_hf_config_version, {}
+    if original_task_name in TASK_NAME_ALIASES.get(src_hf_config, {}).get(
+        target_hf_config, {}
     ).get(split, {}):
-        new_task_name = TASK_NAME_ALIASES[src_hf_config_version][
-            target_hf_config_version
-        ][split][original_task_name]
+        new_task_name = TASK_NAME_ALIASES[src_hf_config][target_hf_config][split][
+            original_task_name
+        ]
         result.task_name = new_task_name
 
     final_task_name = result.task_name
@@ -149,24 +145,18 @@ def convert_one_task_result(
 def convert_task_results(
     task_results: List[TaskResult],
     split: str,
-    src_suite_config: SuiteConfig,
-    target_suite_config: SuiteConfig,
+    src_hf_config: str,
+    target_hf_config: str,
     target_tasks_by_name: Dict[str, Task],
 ):
-    # this in theory could throw an error, but if it does let it bubble up
-    src_tasks_by_name = src_suite_config.get_tasks_by_name(split)
-
-    # changes happen in place
     changed_something = False
     for result in task_results:
-        # you can get src_tasks_by_name from src_suite_config, but pass
-        # it in to avoid recomputing it again and again
+        # changes happen in place
         changed_something = changed_something or convert_one_task_result(
             result=result,
             split=split,
-            src_suite_config=src_suite_config,
-            src_tasks_by_name=src_tasks_by_name,
-            target_suite_config=target_suite_config,
+            src_hf_config=src_hf_config,
+            target_hf_config=target_hf_config,
             target_tasks_by_name=target_tasks_by_name,
         )
 
@@ -185,8 +175,8 @@ def convert_lb_submission_with_path(
     changed_something = convert_task_results(
         task_results=lb_submission_with_path.lb_submission.results,
         split=lb_submission_with_path.split(),
-        src_suite_config=src_suite_config,
-        target_suite_config=target_suite_config,
+        src_hf_config=lb_submission_with_path.hf_config(),
+        target_hf_config=target_suite_config.version,
         target_tasks_by_name=target_tasks_by_name,
     )
     if src_suite_config != target_suite_config:
