@@ -232,6 +232,8 @@ def convert_result_files(
             changed_anything = changed_anything or changed_this_thing
 
             if changed_this_thing:
+                # TODO: update original results url
+                # lb_submission.submission.original_results_url = f"hf://datasets/{src_repo_id}/{src_result_path_within_repo}"
                 all_updated_lb_submissions.append(lb_submission)
 
                 target_structured_path = src_structured_path.with_different_hf_config(
