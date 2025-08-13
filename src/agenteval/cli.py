@@ -679,10 +679,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 f.write(lb_submission.model_dump_json(indent=None))
 
         # Validate the config with the schema in HF
-        readme = Readme.download_and_parse(repo_id)
         try:
             check_submissions_against_readme(
-                lb_submissions=lb_submissions, readme=readme, repo_id=repo_id
+                lb_submissions=lb_submissions, repo_id=repo_id
             )
         except Exception as exc:
             click.echo(str(exc))

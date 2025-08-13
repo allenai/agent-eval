@@ -73,37 +73,26 @@ class WithinRepoPath:
         )
 
 
-@dataclass
-class LeaderboardSubmissionAndSubmissionPath:
-    lb_submission: LeaderboardSubmission
-    within_repo_path: WithinRepoPath
+def check_lb_submission_against_path(
+    lb_submission: LeaderboardSubmission,
+    within_repo_path: WithinRepoPath,
+):
+    hf_config_from_submission = lb_submission.suite_config.version
+    hf_config_from_path = within_repo_path.hf_config
+    if hf_config_from_submission != hf_config_from_path:
+        # I think in regular operations this is rare,
+        # but probably can happen in testing (e.g. using the test results repo)
+        print(
+            f"For result {within_repo_path.to_path()}: HF config from path {hf_config_from_path} is different from HF config from submission {hf_config_from_submission}."
+        )
 
-    def __post_init__(self):
-        self.check()
-
-    def check(self):
-        hf_config_from_submission = self.lb_submission.suite_config.version
-        hf_config_from_path = self.within_repo_path.hf_config
-        if hf_config_from_submission != hf_config_from_path:
-            print(
-                f"For result {self.within_repo_path.to_path()}: HF config from path {hf_config_from_path} is different from HF config from submission {hf_config_from_submission}."
-            )
-
-        split_from_submission = self.lb_submission.split
-        split_from_path = self.within_repo_path.split
-        if split_from_submission != split_from_path:
-            # I'm not sure this should ever happen. So error if it does.
-            raise Exception(
-                f"For result {self.within_repo_path.to_path()}: split from path {split_from_path} is different from split from submission: {split_from_submission}."
-            )
-
-    def hf_config(self):
-        # use the one from submission if we have different ones
-        return self.lb_submission.suite_config.version
-
-    def split(self):
-        # we shouldn't even get here if the splits are different so doesn't matter which one we pick
-        return self.lb_submission.split
+    split_from_submission = lb_submission.split
+    split_from_path = within_repo_path.split
+    if split_from_submission != split_from_path:
+        # I'm not sure this should ever happen. So error if it does.
+        raise Exception(
+            f"For result {within_repo_path.to_path()}: split from path {split_from_path} is different from split from submission: {split_from_submission}."
+        )
 
 
 def convert_one_task_result(
@@ -163,24 +152,24 @@ def convert_task_results(
     return changed_something
 
 
-def convert_lb_submission_with_path(
-    lb_submission_with_path: LeaderboardSubmissionAndSubmissionPath,
+def convert_lb_submission(
+    lb_submission: LeaderboardSubmission,
     target_suite_config: SuiteConfig,
     target_tasks_by_name: Dict[str, Task],
 ) -> bool:
 
-    src_suite_config = lb_submission_with_path.lb_submission.suite_config
+    src_suite_config = lb_submission.suite_config
 
     # changes are made in place
     changed_something = convert_task_results(
-        task_results=lb_submission_with_path.lb_submission.results,
-        split=lb_submission_with_path.split(),
-        src_hf_config=lb_submission_with_path.hf_config(),
+        task_results=lb_submission.results,
+        split=lb_submission.split,
+        src_hf_config=src_suite_config.version,
         target_hf_config=target_suite_config.version,
         target_tasks_by_name=target_tasks_by_name,
     )
     if src_suite_config != target_suite_config:
-        lb_submission_with_path.lb_submission.suite_config = target_suite_config
+        lb_submission.suite_config = target_suite_config
         changed_something = True
 
     return changed_something
@@ -192,7 +181,8 @@ def convert_result_files(
     target_repo_id: str,
     target_suite_config: SuiteConfig,
 ):
-    target_split_to_task_name_to_task = {}
+    # organize once
+    target_split_to_task_name_to_task: Dict[str, Dict[str, Task]] = {}
     for split in target_suite_config.splits:
         target_split_to_task_name_to_task[split.name] = (
             target_suite_config.get_tasks_by_name(split.name)
@@ -211,38 +201,47 @@ def convert_result_files(
             local_dir=src_results_root_dir,
         )
 
+        all_updated_lb_submissions = []
+
         changed_anything = False
         for src_result_path_within_repo in src_result_paths:
             print(f"Looking at source path {src_result_path_within_repo}")
 
+            src_structured_path = WithinRepoPath.from_path(src_result_path_within_repo)
             src_result_local_path = os.path.join(
                 src_results_root_dir, src_result_path_within_repo
             )
             with open(src_result_local_path) as f_src:
                 lb_submission = LeaderboardSubmission.model_validate(json.load(f_src))
 
-            lb_submission_with_path = LeaderboardSubmissionAndSubmissionPath(
+            check_lb_submission_against_path(
                 lb_submission=lb_submission,
-                within_repo_path=WithinRepoPath.from_path(src_result_path_within_repo),
+                within_repo_path=src_structured_path,
             )
 
             # we can get target_tasks_by_name from target_suite_config,
             # but pass it in to avoid recomputing it over and over
-            changed_this_thing = convert_lb_submission_with_path(
-                lb_submission_with_path=lb_submission_with_path,
+            # lb_submission is updated in place
+            changed_this_thing = convert_lb_submission(
+                lb_submission=lb_submission,
                 target_suite_config=target_suite_config,
                 target_tasks_by_name=target_split_to_task_name_to_task[
-                    lb_submission_with_path.split()
+                    lb_submission.split
                 ],
             )
             changed_anything = changed_anything or changed_this_thing
 
             if changed_this_thing:
-                target_structured_path = (
-                    lb_submission_with_path.within_repo_path.with_different_hf_config(
-                        target_suite_config.version
-                    )
+                all_updated_lb_submissions.append(lb_submission)
+
+                target_structured_path = src_structured_path.with_different_hf_config(
+                    target_suite_config.version
                 )
+                check_lb_submission_against_path(
+                    lb_submission=lb_submission,
+                    within_repo_path=target_structured_path,
+                )
+
                 print(
                     f"Writing updated version of {src_result_path_within_repo} to local file under {target_structured_path.to_path()}"
                 )
@@ -263,9 +262,8 @@ def convert_result_files(
 
         if changed_anything:
             # Validate the config with the schema in HF
-            # readme = Readme.download_and_parse(repo_id)
             # check_submissions_against_readme(
-            #     lb_submissions=lb_submissions, readme=readme, repo_id=repo_id
+            #     lb_submissions=all_updated_lb_submissions, repo_id=target_repo_id
             # )
             print(f"Uploading converted results to {target_repo_id}...")
             # hf_api = HfApi()

@@ -128,8 +128,10 @@ def load_dataset_features(input_path: str | None = None) -> Features:
 
 
 def check_submissions_against_readme(
-    lb_submissions: LeaderboardSubmission, readme: Readme, repo_id: str
+    lb_submissions: LeaderboardSubmission, repo_id: str
 ):
+    readme = Readme.download_and_parse(repo_id)
+
     config_splits = defaultdict(
         list
     )  # Accumulate config names and splits being published
