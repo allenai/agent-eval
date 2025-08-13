@@ -4,6 +4,7 @@ Utility module for maintainers to generate HuggingFace Dataset schema from Pydan
 
 import datetime
 import types
+from collections import defaultdict
 from importlib import resources
 from typing import Any, Literal, Union, get_args, get_origin
 
