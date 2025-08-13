@@ -18,7 +18,7 @@ from agenteval.leaderboard.schema_generator import load_dataset_features
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
-from .convert import convert_results
+from .convert import convert_result_files
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission, Readme
 from .leaderboard.upload import (
@@ -535,11 +535,11 @@ def convert_result_command(
         f"Hello, in the convert command. {result_urls}, from {src_repo_id}, to {target_repo_id_to_use}, {target_config_path}"
     )
 
-    convert_results(
-        target_suite_config=target_suite_config,
-        target_repo_id=target_repo_id_to_use,
+    convert_result_files(
         src_repo_id=src_repo_id,
         src_result_paths=src_result_paths,
+        target_repo_id=target_repo_id_to_use,
+        target_suite_config=target_suite_config,
     )
 
 

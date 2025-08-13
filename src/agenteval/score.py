@@ -1,7 +1,7 @@
 """Scoring utilities for the NoraBench suite."""
 
 import logging
-from typing import Any
+from typing import Any, Set
 
 from inspect_ai.log import (
     EvalLog,
@@ -97,6 +97,9 @@ class TaskResult(BaseModel):
     model_costs: list[float | None] | None = None
     """List of model costs per sample. Computed from `model_usages`."""
 
+    def available_metrics(self) -> Set[str]:
+        return set([m.name for m in self.metrics])
+
 
 def get_metrics(log: EvalLog) -> list[Metric]:
     """Extract metrics from an evaluation log."""
@@ -172,9 +175,7 @@ def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
             errors.append(f"No metrics found for task {task_name}.")
             continue
         model_usages = get_model_usages(log)
-        model_costs: list[float | None] = [
-            compute_model_cost(usages) for usages in model_usages
-        ]
+        model_costs = [compute_model_cost(usages) for usages in model_usages]
         has_model_usages = any(len(usages) > 0 for usages in model_usages)
         results.append(
             TaskResult(
