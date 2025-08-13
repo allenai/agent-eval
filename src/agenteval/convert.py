@@ -66,7 +66,7 @@ class WithinRepoPath:
             filename=filename,
         )
 
-    def to_path(path: str, sep: str = "/"):
+    def to_path(self, sep: str = "/"):
         return sep.join([self.hf_config, self.split, self.filename])
 
     def with_different_hf_config(self, new_hf_config: str):
@@ -234,7 +234,7 @@ def convert_result_files(
 
         changed_anything = False
         for src_result_path_within_repo in src_result_paths:
-            logger.info(f"Looking at source path {src_result_path_within_repo}")
+            print(f"Looking at source path {src_result_path_within_repo}")
 
             src_result_local_path = os.path.join(
                 src_results_root_dir, src_result_path_within_repo
@@ -263,7 +263,7 @@ def convert_result_files(
                     target_structured_path = lb_submission_with_path.within_repo_path.with_different_hf_config(
                         target_suite_config.version
                     )
-                    logger.info(
+                    print(
                         f"Writing updated version of {src_result_path_within_repo} to local file under {target_structured_path.to_path()}"
                     )
                     target_results_inner_dir = os.path.join(
@@ -287,7 +287,7 @@ def convert_result_files(
             # check_submissions_against_readme(
             #     lb_submissions=lb_submissions, readme=readme, repo_id=repo_id
             # )
-            logger.info(f"Uploading converted results to {target_repo_id}...")
+            print(f"Uploading converted results to {target_repo_id}...")
             # hf_api = HfApi()
             # hf_api.upload_folder(
             #     folder_path=target_results_root_dir,

@@ -529,6 +529,7 @@ def convert_result_command(
 
     src_repo_id = paths_of_interest.repo_id
     src_result_paths = paths_of_interest.relative_paths
+    click.echo(f"{len(src_result_paths)} to convert.")
     target_suite_config = load_suite_config(target_config_path)
 
     # use the same repo if no target is provided
