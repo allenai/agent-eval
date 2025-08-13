@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import tempfile
 from dataclasses import dataclass
@@ -12,9 +11,6 @@ from .leaderboard.schema_generator import (
     load_dataset_features,
 )
 from .score import TaskResult
-
-logger = logging.getLogger(__name__)
-
 
 # src HF config -> target HF config -> split -> original name -> target name
 TASK_NAME_ALIASES = {
@@ -59,7 +55,7 @@ class WithinRepoPath:
 
     @staticmethod
     def from_path(path: str, sep: str = "/"):
-        hf_config, split, filename = path.split(sep)
+        [hf_config, split, filename] = path.split(sep)
         return WithinRepoPath(
             hf_config=hf_config,
             split=split,
@@ -89,7 +85,7 @@ class LeaderboardSubmissionAndSubmissionPath:
         hf_config_from_submission = self.lb_submission.suite_config.version
         hf_config_from_path = self.within_repo_path.hf_config
         if hf_config_from_submission != hf_config_from_path:
-            logger.warning(
+            print(
                 f"For result {self.within_repo_path.to_path()}: HF config from path {hf_config_from_path} is different from HF config from submission {hf_config_from_submission}."
             )
 
@@ -137,14 +133,13 @@ def convert_one_task_result(
         changed_something = True
 
     if final_task_name not in target_tasks_by_name:
-        # TODO: probably error here?
-        logger.warning(f"Unknown final task name {final_task_name}")
+        print(f"Unknown final task name {final_task_name}")
     else:
         expected_primary_metric_name = target_tasks_by_name[
             final_task_name
         ].primary_metric
         if expected_primary_metric_name not in result.available_metrics():
-            logger.warning(
+            print(
                 f"Expected {expected_primary_metric_name} as the primary metric for task {final_task_name}, but don't have it."
             )
 
@@ -158,19 +153,13 @@ def convert_task_results(
     target_suite_config: SuiteConfig,
     target_tasks_by_name: Dict[str, Task],
 ):
-    try:
-        src_tasks_by_name = src_suite_config.get_tasks_by_name(split)
-    except ValueError as exc:
-        logger.warning(
-            f"Issue getting tasks for split {split} from the source suite config."
-        )
-        # TODO: some error
-        return
+    # this in theory could throw an error, but if it does let it bubble up
+    src_tasks_by_name = src_suite_config.get_tasks_by_name(split)
 
     # changes happen in place
     changed_something = False
     for result in task_results:
-        # you can get convert_task_results from src_suite_config, but pass
+        # you can get src_tasks_by_name from src_suite_config, but pass
         # it in to avoid recomputing it again and again
         changed_something = changed_something or convert_one_task_result(
             result=result,
@@ -189,11 +178,11 @@ def convert_lb_submission_with_path(
     target_suite_config: SuiteConfig,
     target_tasks_by_name: Dict[str, Task],
 ) -> bool:
-    changed_something = False
+
+    src_suite_config = lb_submission_with_path.lb_submission.suite_config
 
     # changes are made in place
-    src_suite_config = lb_submission_with_path.lb_submission.suite_config
-    changed_something = changed_something or convert_task_results(
+    changed_something = convert_task_results(
         task_results=lb_submission_with_path.lb_submission.results,
         split=lb_submission_with_path.split(),
         src_suite_config=src_suite_config,
@@ -239,47 +228,50 @@ def convert_result_files(
             src_result_local_path = os.path.join(
                 src_results_root_dir, src_result_path_within_repo
             )
-
-            src_structured_path = WithinRepoPath.from_path(src_result_path_within_repo)
             with open(src_result_local_path) as f_src:
                 lb_submission = LeaderboardSubmission.model_validate(json.load(f_src))
-                lb_submission_with_path = LeaderboardSubmissionAndSubmissionPath(
-                    lb_submission=lb_submission,
-                    within_repo_path=src_structured_path,
-                )
 
-                # we can get target_tasks_by_name from target_suite_config,
-                # but pass it in to avoid recomputing it over and over
-                changed_this_thing = convert_lb_submission_with_path(
-                    lb_submission_with_path=lb_submission_with_path,
-                    target_suite_config=target_suite_config,
-                    target_tasks_by_name=target_split_to_task_name_to_task[
-                        lb_submission_with_path.split()
-                    ],
-                )
-                changed_anything = changed_anything or changed_this_thing
+            lb_submission_with_path = LeaderboardSubmissionAndSubmissionPath(
+                lb_submission=lb_submission,
+                within_repo_path=WithinRepoPath.from_path(src_result_path_within_repo),
+            )
 
-                if changed_this_thing:
-                    target_structured_path = lb_submission_with_path.within_repo_path.with_different_hf_config(
+            # we can get target_tasks_by_name from target_suite_config,
+            # but pass it in to avoid recomputing it over and over
+            changed_this_thing = convert_lb_submission_with_path(
+                lb_submission_with_path=lb_submission_with_path,
+                target_suite_config=target_suite_config,
+                target_tasks_by_name=target_split_to_task_name_to_task[
+                    lb_submission_with_path.split()
+                ],
+            )
+            changed_anything = changed_anything or changed_this_thing
+
+            if changed_this_thing:
+                # TODO: fix
+                lb_submission_with_path.check()
+                target_structured_path = (
+                    lb_submission_with_path.within_repo_path.with_different_hf_config(
                         target_suite_config.version
                     )
-                    print(
-                        f"Writing updated version of {src_result_path_within_repo} to local file under {target_structured_path.to_path()}"
-                    )
-                    target_results_inner_dir = os.path.join(
-                        target_results_root_dir,
-                        target_structured_path.hf_config,
-                        target_structured_path.split,
-                    )
-                    os.makedirs(target_results_inner_dir, exist_ok=True)
-                    with open(
-                        os.path.join(
-                            target_results_inner_dir, target_structured_path.filename
-                        ),
-                        "w",
-                        encoding="utf-8",
-                    ) as f_target:
-                        f_target.write(lb_submission.model_dump_json(indent=None))
+                )
+                print(
+                    f"Writing updated version of {src_result_path_within_repo} to local file under {target_structured_path.to_path()}"
+                )
+                target_results_inner_dir = os.path.join(
+                    target_results_root_dir,
+                    target_structured_path.hf_config,
+                    target_structured_path.split,
+                )
+                os.makedirs(target_results_inner_dir, exist_ok=True)
+                with open(
+                    os.path.join(
+                        target_results_inner_dir, target_structured_path.filename
+                    ),
+                    "w",
+                    encoding="utf-8",
+                ) as f_target:
+                    f_target.write(lb_submission.model_dump_json(indent=None))
 
         if changed_anything:
             # Validate the config with the schema in HF
