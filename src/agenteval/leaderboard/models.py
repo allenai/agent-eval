@@ -97,4 +97,5 @@ class Readme:
             path_in_repo="README.md",
             repo_id=repo_id,
             commit_message=comment,
+            repo_type="dataset",
         )
