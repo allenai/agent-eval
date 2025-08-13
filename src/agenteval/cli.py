@@ -476,7 +476,7 @@ cli.add_command(backfill_command)
 
 @click.command(name="convert", help="TODO")
 @click.argument("result_urls", nargs=-1, required=True, type=str)
-@click.option("--target-config", required=True, help="TODO")
+@click.option("--target-config-path", required=True, help="TODO")
 @click.option(
     "--source-repo-id",
     default="allenai/asta-bench-internal-results",
@@ -490,7 +490,7 @@ cli.add_command(backfill_command)
     help="TODO",
 )
 def convert_result_command(
-    target_config: str,
+    target_config_path: str,
     source_repo_id: str,
     target_repo_id: str,
     result_urls: tuple[str, ...],
@@ -498,6 +498,9 @@ def convert_result_command(
     click.echo(
         f"Hello, in the convert command. {result_urls}, {source_repo_id}, {target_repo_id}, {target_config}"
     )
+
+    target_suite_config = load_suite_config(target_config_path)
+
 
 
 cli.add_command(convert_result_command)
@@ -564,10 +567,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             local_dir=local_submissions_dir,
         )
 
+        lb_submissions = []
+
         # Create results files locally
-        config_splits = defaultdict(
-            list
-        )  # Accumulate config names and splits being published
         for (
             submission_url,
             submission_path,
@@ -623,6 +625,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 submission=submission,
             )
             lb_submission = compress_model_usages(lb_submission)
+            lb_submissions.append(lb_submission)
             os.makedirs(
                 os.path.join(local_results_dir, os.path.dirname(submission_path)),
                 exist_ok=True,
@@ -636,33 +639,10 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         # Validate the config with the schema in HF
         readme = Readme.download_and_parse(repo_id)
-        missing_configs = list(set(config_splits.keys()) - set(readme.configs.keys()))
-        if missing_configs:
-            click.echo(
-                f"Config name {missing_configs} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
-            )
-            sys.exit(1)
-        missing_splits = list(
-            set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
-            - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
-        )
-        if missing_splits:
-            click.echo(
-                f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
-            )
-            sys.exit(1)
-        local_features = load_dataset_features()
-        if local_features.arrow_schema != readme.features.arrow_schema:
-            click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
-            )
-            click.echo("Run 'update_readme.py sync-schema' to update it")
+        try:
+            readme.check_submissions_against_readme(lb_submissions=lb_submissions, repo_id=repo_id)
+        except Exception as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
         # Upload all results files in one shot

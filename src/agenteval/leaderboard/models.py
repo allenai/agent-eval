@@ -7,6 +7,7 @@ from datasets import Features
 from pydantic import BaseModel, Field
 
 from ..models import SubmissionMetadata, SuiteConfig, TaskResult
+from agenteval.leaderboard.schema_generator import load_dataset_features
 
 
 class LeaderboardSubmission(BaseModel):
@@ -98,3 +99,37 @@ class Readme:
             repo_id=repo_id,
             commit_message=comment,
         )
+
+    def check_submissions_against_readme(self, lb_submissions, repo_id):
+        config_splits = defaultdict(
+            list
+        )  # Accumulate config names and splits being published
+        for lb_submission in lb_submissions:
+            config_splits[lb_submission.suite_config.version].append(lb_submission.split)
+
+        missing_configs = list(set(config_splits.keys()) - set(self.configs.keys()))
+        if missing_configs:
+            exc_message = (
+                f"Config name {missing_configs} not present in hf://{repo_id}/README.md\n"   
+                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
+            )
+            raise Exception(exc_message)
+        missing_splits = list(
+            set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
+            - set(((c, s) for c in self.configs.keys() for s in self.configs[c]))
+        )
+        if missing_splits:
+            exc_message = (
+                f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md\n"
+                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
+            )
+            raise Exception(exc_message)
+        local_features = load_dataset_features()
+        if local_features.arrow_schema != self.features.arrow_schema:
+            exc_message = (
+                f"Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md\n"
+                "Run 'update_readme.py sync-schema' to update it"
+            )
+            raise Exception(exc_message)
+        
+        # if we made it here, no Exceptions were thrown, everythings okay
