@@ -234,7 +234,7 @@ def convert_result_files(
 
         changed_anything = False
         for src_result_path_within_repo in src_result_paths:
-            print(f"Looking at path {src_result_path_within_repo}")
+            print(f"Looking at source path {src_result_path_within_repo}")
 
             src_result_local_path = os.path.join(
                 src_results_root_dir, src_result_path_within_repo
@@ -257,13 +257,13 @@ def convert_result_files(
                         lb_submission_with_path.split()
                     ],
                 )
-                print(f"changed this something: {changed_this_thing}")
                 changed_anything = changed_anything or changed_this_thing
 
                 if changed_this_thing:
                     target_structured_path = lb_submission_with_path.within_repo_path.with_different_hf_config(
                         target_suite_config.version
                     )
+                    print(f"\tWriting updated version to local file under {target_structured_path.to_path()}")
                     target_results_inner_dir = os.path.join(
                         target_results_root_dir,
                         target_structured_path.hf_config,
@@ -279,7 +279,6 @@ def convert_result_files(
                     ) as f_target:
                         f_target.write(lb_submission.model_dump_json(indent=None))
 
-        print(f"changed anything: {changed_anything}")
         if changed_anything:
             # Validate the config with the schema in HF
             # readme = Readme.download_and_parse(repo_id)
