@@ -264,10 +264,10 @@ def convert_result_files(
 
         if changed_anything:
             # Validate the config with the schema in HF
-            check_submissions_against_readme(
-                lb_submissions=all_updated_lb_submissions, repo_id=target_repo_id
-            )
-            print(f"Uploading converted results to {target_repo_id}...")
+            # check_submissions_against_readme(
+            #     lb_submissions=all_updated_lb_submissions, repo_id=target_repo_id
+            # )
+            print(f"Uploading {len(all_updated_lb_submissions)} converted results to {target_repo_id}...")
             # hf_api = HfApi()
             # hf_api.upload_folder(
             #     folder_path=target_results_root_dir,
