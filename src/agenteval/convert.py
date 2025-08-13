@@ -248,8 +248,6 @@ def convert_result_files(
             changed_anything = changed_anything or changed_this_thing
 
             if changed_this_thing:
-                # TODO: fix
-                lb_submission_with_path.check()
                 target_structured_path = (
                     lb_submission_with_path.within_repo_path.with_different_hf_config(
                         target_suite_config.version
