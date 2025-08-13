@@ -171,7 +171,10 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate_json(f.read())
 
-    log_processing_outcome = process_eval_logs(log_dir)
+    log_processing_outcome = process_eval_logs(
+        log_dir,
+        maybe_reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+    )
 
     if log_processing_outcome.errors:
         click.echo("Errors processing logs")
@@ -214,6 +217,9 @@ def score_command(
         eval_config.split,
         task_results.results or [],
     )
+
+    # print(task_results.model_dump_json(indent=2))
+    # print(stats.model_dump_json(indent=2))
 
     if hf_url_match is None:
         # Persist scores
