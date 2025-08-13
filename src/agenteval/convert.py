@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from .config import SuiteConfig, Task
-from .leaderboard.models import LeaderboardSubmission
+from .leaderboard.models import LeaderboardSubmission, Readme
+from .leaderboard.schema_generator import (
+    check_submissions_against_readme,
+    load_dataset_features,
+)
 from .score import TaskResult
 
 logger = logging.getLogger(__name__)
@@ -216,7 +220,7 @@ def convert_result_files(
         )
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import HfApi, snapshot_download
 
         src_results_root_dir = os.path.join(temp_dir, "current")
         target_results_root_dir = os.path.join(temp_dir, "updated")
@@ -228,6 +232,7 @@ def convert_result_files(
             local_dir=src_results_root_dir,
         )
 
+        changed_anything = False
         for src_result_path_within_repo in src_result_paths:
             print(f"Looking at path {src_result_path_within_repo}")
 
@@ -252,5 +257,40 @@ def convert_result_files(
                         lb_submission_with_path.split()
                     ],
                 )
-
                 print(f"changed this something: {changed_this_thing}")
+                changed_anything = changed_anything or changed_this_thing
+
+                if changed_this_thing:
+                    target_structured_path = lb_submission_with_path.within_repo_path.with_different_hf_config(
+                        target_suite_config.version
+                    )
+                    target_results_inner_dir = os.path.join(
+                        target_results_root_dir,
+                        target_structured_path.hf_config,
+                        target_structured_path.split,
+                    )
+                    os.makedirs(target_results_inner_dir, exist_ok=True)
+                    with open(
+                        os.path.join(
+                            target_results_inner_dir, target_structured_path.filename
+                        ),
+                        "w",
+                        encoding="utf-8",
+                    ) as f_target:
+                        f_target.write(lb_submission.model_dump_json(indent=None))
+
+        print(f"changed anything: {changed_anything}")
+        if changed_anything:
+            # Validate the config with the schema in HF
+            # readme = Readme.download_and_parse(repo_id)
+            # check_submissions_against_readme(
+            #     lb_submissions=lb_submissions, readme=readme, repo_id=repo_id
+            # )
+            logger.info(f"Uploading converted results to {target_repo_id}...")
+            # hf_api = HfApi()
+            # hf_api.upload_folder(
+            #     folder_path=target_results_root_dir,
+            #     path_in_repo="",
+            #     repo_id=target_repo_id,
+            #     repo_type="dataset",
+            # )

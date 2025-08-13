@@ -14,7 +14,10 @@ from typing import List, Optional
 import click
 import datasets
 
-from agenteval.leaderboard.schema_generator import load_dataset_features
+from agenteval.leaderboard.schema_generator import (
+    check_submissions_against_readme,
+    load_dataset_features,
+)
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
@@ -531,16 +534,18 @@ def convert_result_command(
     # use the same repo if no target is provided
     target_repo_id_to_use = src_repo_id if target_repo_id is None else target_repo_id
 
-    click.echo(
-        f"Hello, in the convert command. {result_urls}, from {src_repo_id}, to {target_repo_id_to_use}, {target_config_path}"
-    )
+    try:
+        convert_result_files(
+            src_repo_id=src_repo_id,
+            src_result_paths=src_result_paths,
+            target_repo_id=target_repo_id_to_use,
+            target_suite_config=target_suite_config,
+        )
+    except Exception as exc:
+        click.echo(str(exc))
+        sys.exit(1)
 
-    convert_result_files(
-        src_repo_id=src_repo_id,
-        src_result_paths=src_result_paths,
-        target_repo_id=target_repo_id_to_use,
-        target_suite_config=target_suite_config,
-    )
+    click.echo("Done")
 
 
 cli.add_command(convert_result_command)
