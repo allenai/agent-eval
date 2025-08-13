@@ -6,8 +6,10 @@ import subprocess
 import sys
 import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import List, Optional
 
 import click
 import datasets
@@ -16,6 +18,7 @@ from agenteval.leaderboard.schema_generator import load_dataset_features
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
+from .convert import convert_results
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission, Readme
 from .leaderboard.upload import (
@@ -44,6 +47,33 @@ TOOL_MAPPING = {
     "css": "Custom with Standard Search",
     "c": "Fully Custom",
 }
+
+
+@dataclass
+class RepoPathsOfInterest:
+    repo_id: str
+    relative_paths: List[str]
+
+    @staticmethod
+    def from_urls(urls: List[str]):
+        repo_ids = set()
+        paths = []
+
+        for url in urls:
+            # validates submission_url format "hf://<repo_id>/<path>"
+            repo_id, path = parse_hf_url(url)
+            repo_ids.add(repo_id)
+            paths.append(path)
+
+        if len(repo_ids) > 1:
+            raise Exception("All URLs must reference the same repo")
+
+        repo_id_to_use = repo_ids.pop()
+
+        return RepoPathsOfInterest(
+            repo_id=repo_id_to_use,
+            relative_paths=paths,
+        )
 
 
 def parse_hf_url(url: str) -> tuple[str, str]:
@@ -478,29 +508,39 @@ cli.add_command(backfill_command)
 @click.argument("result_urls", nargs=-1, required=True, type=str)
 @click.option("--target-config-path", required=True, help="TODO")
 @click.option(
-    "--source-repo-id",
-    default="allenai/asta-bench-internal-results",
-    required=False,
-    help="TODO",
-)
-@click.option(
     "--target-repo-id",
-    default="allenai/asta-bench-internal-results",
+    default=None,
     required=False,
     help="TODO",
 )
 def convert_result_command(
     target_config_path: str,
-    source_repo_id: str,
-    target_repo_id: str,
+    target_repo_id: Optional[str],
     result_urls: tuple[str, ...],
 ):
-    click.echo(
-        f"Hello, in the convert command. {result_urls}, {source_repo_id}, {target_repo_id}, {target_config}"
-    )
+    try:
+        paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+    except Exception as exc:
+        click.echo(str(exc))
+        sys.exit(1)
 
+    src_repo_id = paths_of_interest.repo_id
+    src_result_paths = paths_of_interest.relative_paths
     target_suite_config = load_suite_config(target_config_path)
 
+    # use the same repo if no target is provided
+    target_repo_id_to_use = src_repo_id if target_repo_id is None else target_repo_id
+
+    click.echo(
+        f"Hello, in the convert command. {result_urls}, from {src_repo_id}, to {target_repo_id_to_use}, {target_config_path}"
+    )
+
+    convert_results(
+        target_suite_config=target_suite_config,
+        target_repo_id=target_repo_id_to_use,
+        src_repo_id=src_repo_id,
+        src_result_paths=src_result_paths,
+    )
 
 
 cli.add_command(convert_result_command)
@@ -530,22 +570,14 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         hf_api = HfApi()
 
-        submission_repo_ids = set()
-        submission_paths = []
-
-        # Validate URLs
-        for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(
-                submission_url
-            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
-            submission_repo_ids.add(submission_repo_id)
-            submission_paths.append(submission_path)
-
-        if len(submission_repo_ids) > 1:
-            click.echo("All submission URLs must reference the same repo")
+        try:
+            paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
+        except Exception as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
-        submission_repo_id = submission_repo_ids.pop()
+        submission_repo_id = paths_of_interest.repo_id
+        submission_paths = paths_of_interest.relative_paths
 
         eval_config_rel_paths = [
             f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
@@ -640,7 +672,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
         # Validate the config with the schema in HF
         readme = Readme.download_and_parse(repo_id)
         try:
-            readme.check_submissions_against_readme(lb_submissions=lb_submissions, repo_id=repo_id)
+            check_submissions_against_readme(
+                lb_submissions=lb_submissions, readme=readme, repo_id=repo_id
+            )
         except Exception as exc:
             click.echo(str(exc))
             sys.exit(1)
