@@ -534,6 +534,8 @@ def convert_result_command(
 
     # use the same repo if no target is provided
     target_repo_id_to_use = src_repo_id if target_repo_id is None else target_repo_id
+    click.echo(f"source repo: {src_repo_id}")
+    click.echo(f"target repo: {target_repo_id_to_use}")
 
     try:
         convert_result_files(
