@@ -141,13 +141,14 @@ def convert_task_results(
     changed_something = False
     for result in task_results:
         # changes happen in place
-        changed_something = changed_something or convert_one_task_result(
+        changed_this_thing = convert_one_task_result(
             result=result,
             split=split,
             src_hf_config=src_hf_config,
             target_hf_config=target_hf_config,
             target_tasks_by_name=target_tasks_by_name,
         )
+        changed_something = changed_something or changed_this_thing
 
     return changed_something
 
@@ -264,14 +265,14 @@ def convert_result_files(
 
         if changed_anything:
             # Validate the config with the schema in HF
-            # check_submissions_against_readme(
-            #     lb_submissions=all_updated_lb_submissions, repo_id=target_repo_id
-            # )
+            check_submissions_against_readme(
+                lb_submissions=all_updated_lb_submissions, repo_id=target_repo_id
+            )
             print(f"Uploading {len(all_updated_lb_submissions)} converted results to {target_repo_id}...")
-            # hf_api = HfApi()
-            # hf_api.upload_folder(
-            #     folder_path=target_results_root_dir,
-            #     path_in_repo="",
-            #     repo_id=target_repo_id,
-            #     repo_type="dataset",
-            # )
+            hf_api = HfApi()
+            hf_api.upload_folder(
+                folder_path=target_results_root_dir,
+                path_in_repo="",
+                repo_id=target_repo_id,
+                repo_type="dataset",
+            )
