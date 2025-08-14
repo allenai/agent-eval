@@ -218,47 +218,44 @@ def score_command(
         task_results.results or [],
     )
 
-    print(task_results.model_dump_json(indent=2))
-    print(stats.model_dump_json(indent=2))
+    if hf_url_match is None:
+        # Persist scores
+        scores_path = os.path.join(log_dir, SCORES_FILENAME)
+        atomic_write_file(scores_path, task_results.model_dump_json(indent=2))
+        click.echo(f"Wrote scores to {scores_path}")
 
-    # if hf_url_match is None:
-    #     # Persist scores
-    #     scores_path = os.path.join(log_dir, SCORES_FILENAME)
-    #     atomic_write_file(scores_path, task_results.model_dump_json(indent=2))
-    #     click.echo(f"Wrote scores to {scores_path}")
+        # Persist summary
+        summary_path = os.path.join(log_dir, SUMMARY_FILENAME)
+        atomic_write_file(
+            summary_path, json.dumps(stats.model_dump(mode="json"), indent=2)
+        )
+        click.echo(f"Wrote summary scores to {summary_path}")
 
-    #     # Persist summary
-    #     summary_path = os.path.join(log_dir, SUMMARY_FILENAME)
-    #     atomic_write_file(
-    #         summary_path, json.dumps(stats.model_dump(mode="json"), indent=2)
-    #     )
-    #     click.echo(f"Wrote summary scores to {summary_path}")
+        if temp_dir is not None:
+            temp_dir.__exit__(None, None, None)
+    else:
+        from huggingface_hub import HfApi
 
-    #     if temp_dir is not None:
-    #         temp_dir.__exit__(None, None, None)
-    # else:
-    #     from huggingface_hub import HfApi
+        hf_api = HfApi()
+        path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
+        hf_api.upload_file(
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_or_fileobj=BytesIO(
+                task_results.model_dump_json(indent=2).encode("utf-8")
+            ),
+            path_in_repo=path_in_repo,
+        )
+        click.echo(f"Uploaded scores to hf://{repo_id}/{path_in_repo}")
 
-    #     hf_api = HfApi()
-    #     path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SCORES_FILENAME}"
-    #     hf_api.upload_file(
-    #         repo_id=repo_id,
-    #         repo_type="dataset",
-    #         path_or_fileobj=BytesIO(
-    #             task_results.model_dump_json(indent=2).encode("utf-8")
-    #         ),
-    #         path_in_repo=path_in_repo,
-    #     )
-    #     click.echo(f"Uploaded scores to hf://{repo_id}/{path_in_repo}")
-
-    #     path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SUMMARY_FILENAME}"
-    #     hf_api.upload_file(
-    #         repo_id=repo_id,
-    #         repo_type="dataset",
-    #         path_or_fileobj=BytesIO(stats.model_dump_json(indent=2).encode("utf-8")),
-    #         path_in_repo=path_in_repo,
-    #     )
-    #     click.echo(f"Uploaded summary to hf://{repo_id}/{path_in_repo}")
+        path_in_repo = f"{SUMMARIES_PREFIX}/{submission_path}/{SUMMARY_FILENAME}"
+        hf_api.upload_file(
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_or_fileobj=BytesIO(stats.model_dump_json(indent=2).encode("utf-8")),
+            path_in_repo=path_in_repo,
+        )
+        click.echo(f"Uploaded summary to hf://{repo_id}/{path_in_repo}")
 
 
 cli.add_command(score_command)

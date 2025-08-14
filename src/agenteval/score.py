@@ -143,8 +143,6 @@ def get_normalized_task_name(
     else:
         normalized_name = fallback
 
-    # print(f"{log.eval.task} or {log.eval.task_registry_name} -> {normalized_name}")
-
     return normalized_name
 
 
