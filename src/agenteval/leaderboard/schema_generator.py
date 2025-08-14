@@ -128,6 +128,10 @@ def load_dataset_features(input_path: str | None = None) -> Features:
     return Features._from_yaml_list(yaml_values)
 
 
+def init_readme(repo_id: str):
+    return Readme(text_content="", configs={}, features=load_dataset_features())
+
+
 def check_submissions_against_readme(
     lb_submissions: LeaderboardSubmission, repo_id: str
 ):
