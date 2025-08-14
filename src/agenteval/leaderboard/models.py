@@ -47,7 +47,7 @@ class Readme:
             }
             configs.append(config_def)
         yaml_section = yaml.dump({"configs": configs})
-        return f"---\n{yaml_section.strip()}\n---{self.text_content.lstrip()}"
+        return f"---\n{yaml_section.strip()}\n---\n{self.text_content.lstrip()}"
 
     @staticmethod
     def download_and_parse(repo_id: str) -> "Readme":
@@ -97,4 +97,5 @@ class Readme:
             path_in_repo="README.md",
             repo_id=repo_id,
             commit_message=comment,
+            repo_type="dataset",
         )
