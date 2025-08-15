@@ -1,7 +1,7 @@
 """Scoring utilities for the NoraBench suite."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from inspect_ai.log import (
     EvalLog,
@@ -128,7 +128,7 @@ def get_model_usages(log: EvalLog) -> list[list[ModelUsageWithName]]:
 
 
 def get_normalized_task_name(
-    log: EvalLog, maybe_task_name_mapping: Optional[Dict[str, str]] = None
+    log: EvalLog, maybe_task_name_mapping: Optional[dict[str, str]] = None
 ) -> str:
     """
     Normalize task name from eval log.
@@ -154,7 +154,7 @@ class EvalLogProcessingResult(BaseModel):
 
 
 def process_eval_logs(
-    log_dir: str, maybe_reference_tasks: Optional[List[Task]] = None
+    log_dir: str, maybe_reference_tasks: Optional[list[Task]] = None
 ) -> EvalLogProcessingResult:
     """
     Process evaluation logs from a directory and return task results.
