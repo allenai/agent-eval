@@ -798,6 +798,11 @@ def validate_split(ctx, param, value):
     default=None,
     help="Number of first --group-agent groups to assign fixed colors. These groups will always get the same colors across plots. Remaining groups get colors dynamically.",
 )
+@click.option(
+    "--model-name-mapping-file",
+    default=None,
+    help='Path to JSON file containing unified model mappings. If not provided, default mappings are applied to clean up model names. Supports base mappings ("model_name": "display_name") and conditional mappings ("field:value": {"model": "override"}). Use \'none\' to disable all mappings and show raw model names.',
+)
 def view_command(
     repo_id,
     config,
@@ -820,8 +825,11 @@ def view_command(
     include_task,
     group_agent,
     group_agent_fixed_colors,
+    model_name_mapping_file,
 ):
     """View a specific config and split; show overview or tag detail."""
+    import json
+
     from .leaderboard.view import LeaderboardViewer
 
     # Check for conflicting options
@@ -835,17 +843,44 @@ def view_command(
         click.echo("Error: --include-task can only be used when --tag IS specified")
         sys.exit(1)
 
-    viewer = LeaderboardViewer(repo_id, config, split, is_internal=is_internal)
+    # Load and preprocess unified model mapping file
+    model_mapping = None
+    conditional_model_mappings = {}
 
-    df, plots = viewer.view(
+    if model_name_mapping_file:
+        if model_name_mapping_file.lower() == "none":
+            model_mapping = {}
+        else:
+            with open(model_name_mapping_file, "r") as f:
+                raw_mapping = json.load(f)
+
+            # Separate base and conditional mappings
+            model_mapping = {}
+            for key, value in raw_mapping.items():
+                if ":" in key and isinstance(value, dict):
+                    # Conditional mapping: "field:value": {"model": "override"}
+                    field, field_value = key.split(":", 1)
+                    conditional_model_mappings[(field, field_value)] = value
+                else:
+                    # Base mapping: "model": "override"
+                    model_mapping[key] = value
+
+    viewer = LeaderboardViewer(
+        repo_id,
+        config,
+        split,
+        is_internal=is_internal,
+        model_name_mapping=model_mapping,
+        conditional_model_mappings=conditional_model_mappings,
+    )
+
+    df, plots, pipeline_statistics = viewer.view(
         tag,
         with_plots=bool(save_dir),
         preserve_none_scores=preserve_none_scores,
         exclude_primary_metric=exclude_primary_metric,
         duplicate_handling=dedup,
-        exclude_agent_patterns=(
-            list(exclude_agent) if exclude_agent else None
-        ),
+        exclude_agent_patterns=(list(exclude_agent) if exclude_agent else None),
         include_tag_specs=(list(include_tag) if include_tag else None),
         include_task_specs=(list(include_task) if include_task else None),
         group_agent_specs=(list(group_agent) if group_agent else None),
@@ -858,6 +893,11 @@ def view_command(
         group_agent_fixed_colors=group_agent_fixed_colors,
     )
     click.echo(df.to_string(index=False))
+
+    # Print data pipeline statistics summary
+    click.echo(f"\n=== Data Pipeline Statistics ===")
+    click.echo(json.dumps(pipeline_statistics, indent=2))
+    click.echo(f"=================================\n")
 
     if save_dir:
         if not save_no_subdirs:
@@ -874,6 +914,12 @@ def view_command(
         jsonl_path = os.path.join(outdir, "data.jsonl")
         df.to_json(jsonl_path, orient="records", lines=True)
         click.echo(f"Saved data: {jsonl_path}")
+
+        # Save data pipeline statistics JSON file
+        stats_path = os.path.join(outdir, "data_pipeline_statistics.json")
+        with open(stats_path, "w") as f:
+            json.dump(pipeline_statistics, f, indent=2)
+        click.echo(f"Saved pipeline statistics: {stats_path}")
 
         for name, fig in plots.items():
             path = os.path.join(outdir, f"{name}.png")

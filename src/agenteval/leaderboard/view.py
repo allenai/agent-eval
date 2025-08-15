@@ -39,12 +39,20 @@ class LeaderboardViewer:
     """
 
     def __init__(
-        self, repo_id: str, config: str, split: str, is_internal: bool = False
+        self,
+        repo_id: str,
+        config: str,
+        split: str,
+        is_internal: bool = False,
+        model_name_mapping: dict[str, str] | None = None,
+        conditional_model_mappings: dict[tuple[str, str], dict[str, str]] | None = None,
     ):
         self._repo_id = repo_id
         self._config = config
         self._split = split
         self._internal = is_internal
+        self._model_name_mapping = model_name_mapping
+        self._conditional_model_mappings = conditional_model_mappings
 
         # build suite_config and mapping from tags to tasks from the first result
         # TODO: Verify the sort order
@@ -71,6 +79,8 @@ class LeaderboardViewer:
             suite_config=self._cfg,
             apply_pretty_names=apply_pretty_names,
             preserve_none_scores=preserve_none_scores,
+            model_name_mapping=self._model_name_mapping,
+            conditional_model_mappings=self._conditional_model_mappings,
         )
         return overview, self.tag_map
 
@@ -92,10 +102,15 @@ class LeaderboardViewer:
         scatter_subplot_spacing: float | None = None,
         scatter_x_log_scale: bool = False,
         group_agent_fixed_colors: int | None = None,
-    ) -> tuple[pd.DataFrame, dict[str, Figure]]:
+    ) -> tuple[pd.DataFrame, dict[str, Figure], dict[str, dict]]:
         """
         If tag is None, primary="Overall" and group=all tags.
         Otherwise primary=tag and group=tasks under that tag.
+
+        Returns:
+            - DataFrame: Final leaderboard data for display
+            - dict[str, Figure]: Plot figures keyed by plot type
+            - dict[str, dict]: Data pipeline statistics with agent/model counts and lists at each processing stage
         """
 
         # Parse pattern:name specifications into patterns and display names
@@ -122,10 +137,64 @@ class LeaderboardViewer:
 
             return patterns, display_map
 
+        def get_agent_stats(data):
+            """Helper function to calculate agent statistics"""
+            if data.empty:
+                return {
+                    "unique_agents_count": 0,
+                    "unique_agent_models_count": 0,
+                    "total_entries": 0,
+                }
+
+            # Use grouped_agent_name if available, otherwise agent_name
+            agent_col = (
+                "grouped_agent_name"
+                if "grouped_agent_name" in data.columns
+                else "agent_name"
+            )
+            unique_agents_count = len(data[agent_col].dropna().unique())
+            total_entries = len(data)
+
+            if "display_name" in data.columns:
+                unique_agent_models_count = len(data["display_name"].dropna().unique())
+            else:
+                unique_agent_models_count = 0
+
+            return {
+                "unique_agents_count": unique_agents_count,
+                "unique_agent_models_count": unique_agent_models_count,
+                "total_entries": total_entries,
+            }
+
+        # Dictionary to collect statistics for JSON output
+        statistics = {}
+
         # Load raw data for internal processing
         raw_data, tag_map = self._load(
             apply_pretty_names=False, preserve_none_scores=preserve_none_scores
         )
+
+        # Collect initial agent statistics from raw data
+        stats = get_agent_stats(raw_data)
+        statistics["raw_data"] = stats
+
+        # Drop agents that have NaN scores across all tasks in all tags (preprocessing step)
+        all_mapped_task_score_cols = []
+        for tag_tasks in tag_map.values():
+            for task in tag_tasks:
+                task_score_col = f"task/{task}/score"
+                if task_score_col in raw_data.columns:
+                    all_mapped_task_score_cols.append(task_score_col)
+
+        if all_mapped_task_score_cols:
+            raw_data = raw_data.dropna(
+                subset=all_mapped_task_score_cols, how="all"
+            ).reset_index(drop=True)
+
+        # Collect statistics after dropping agents with no task scores anywhere
+        if not raw_data.empty:
+            stats = get_agent_stats(raw_data)
+            statistics["after_dropping_all_nan_agents"] = stats
 
         # Filter out excluded agents (handles both simple patterns and agent:model patterns)
         if exclude_agent_patterns:
@@ -133,17 +202,25 @@ class LeaderboardViewer:
                 if ":" in pattern:
                     # Handle agent:model pattern
                     agent_pattern, model_pattern = pattern.split(":", 1)
-                    
+
                     # Create mask for rows to keep (those that don't match both patterns)
                     # Check if base_models field exists and contains the model pattern
                     mask = raw_data.apply(
-                        lambda row: not (
-                            re.search(agent_pattern, row["agent_name"], re.IGNORECASE) and
-                            any(re.search(model_pattern, model, re.IGNORECASE) 
-                                for model in (row.get("base_models", []) or [])
-                                if isinstance(model, str))
-                        ) if pd.notna(row["agent_name"]) else True,
-                        axis=1
+                        lambda row: (
+                            not (
+                                re.search(
+                                    agent_pattern, row["agent_name"], re.IGNORECASE
+                                )
+                                and any(
+                                    re.search(model_pattern, model, re.IGNORECASE)
+                                    for model in (row.get("base_models", []) or [])
+                                    if isinstance(model, str)
+                                )
+                            )
+                            if pd.notna(row["agent_name"])
+                            else True
+                        ),
+                        axis=1,
                     )
                 else:
                     # Handle simple agent name pattern
@@ -155,6 +232,11 @@ class LeaderboardViewer:
                         )
                     )
                 raw_data = raw_data[mask].reset_index(drop=True)
+
+        # Collect statistics after exclusions
+        if not raw_data.empty:
+            stats = get_agent_stats(raw_data)
+            statistics["after_exclusions"] = stats
 
         # Process agent grouping specs (after exclusion, before display name creation)
         agent_name_mapping = {}  # Maps original agent_name to display name
@@ -191,22 +273,33 @@ class LeaderboardViewer:
                     ),
                 )
                 for pattern in patterns
-            ]
+            ] if patterns else []
 
         # Create combined agent names with model information
         if not raw_data.empty:
 
+            # First create grouped_agent_name column (agent name after grouping, without models)
+            raw_data["grouped_agent_name"] = raw_data["agent_name"].apply(
+                lambda x: agent_name_mapping.get(x, x)
+            )
+
             def create_display_name(row):
-                agent_name = row["agent_name"]
-                # Use mapped name if available, otherwise original name
-                display_name = agent_name_mapping.get(agent_name, agent_name)
+                # Use the grouped agent name
+                display_name = row["grouped_agent_name"]
                 base_models = row["base_models"]
                 if base_models and len(base_models) > 0:
-                    models_str = ", ".join(base_models)
+                    if len(base_models) > 5:
+                        models_str = "mixture"
+                    else:
+                        models_str = ", ".join(base_models)
                     return f"{display_name} ({models_str})"
                 return display_name
 
             raw_data["display_name"] = raw_data.apply(create_display_name, axis=1)
+
+            # Collect agent statistics after exclusions and display name creation (includes grouping effects)
+            stats = get_agent_stats(raw_data)
+            statistics["after_grouping"] = stats
 
         # Handle duplicate agents based on specified strategy
         if not raw_data.empty:
@@ -228,11 +321,16 @@ class LeaderboardViewer:
                     "_1$", "", regex=True
                 )
 
+            # Collect agent statistics after deduplication
+            stats = get_agent_stats(raw_data)
+            statistics["after_deduplication"] = stats
+
         # Raw column names (will be converted to pretty names for final display)
         raw_cols = [
             "id",
             "agent_name",
             "display_name",
+            "grouped_agent_name",
             "agent_description",
             "username",
             "submit_time",
@@ -265,34 +363,36 @@ class LeaderboardViewer:
             patterns, pattern_display_map = parse_specs(include_tag_specs)
 
             filtered_group = []
-            for pattern in patterns:
-                for tag_name in group:
-                    if (
-                        re.search(pattern, tag_name, re.IGNORECASE)
-                        and tag_name not in filtered_group
-                    ):
-                        filtered_group.append(tag_name)
-                        # Map matched tag to display name if provided
-                        if pattern in pattern_display_map:
-                            item_display_map[tag_name] = pattern_display_map[pattern]
-            group = filtered_group
+            if patterns:
+                for pattern in patterns:
+                    for tag_name in group:
+                        if (
+                            re.search(pattern, tag_name, re.IGNORECASE)
+                            and tag_name not in filtered_group
+                        ):
+                            filtered_group.append(tag_name)
+                            # Map matched tag to display name if provided
+                            if pattern in pattern_display_map:
+                                item_display_map[tag_name] = pattern_display_map[pattern]
+                group = filtered_group
 
         # Filter and rename tasks (for tag-specific view)
         elif tag is not None and include_task_specs:
             patterns, pattern_display_map = parse_specs(include_task_specs)
 
             filtered_group = []
-            for pattern in patterns:
-                for task_name in group:
-                    if (
-                        re.search(pattern, task_name, re.IGNORECASE)
-                        and task_name not in filtered_group
-                    ):
-                        filtered_group.append(task_name)
-                        # Map matched task to display name if provided
-                        if pattern in pattern_display_map:
-                            item_display_map[task_name] = pattern_display_map[pattern]
-            group = filtered_group
+            if patterns:
+                for pattern in patterns:
+                    for task_name in group:
+                        if (
+                            re.search(pattern, task_name, re.IGNORECASE)
+                            and task_name not in filtered_group
+                        ):
+                            filtered_group.append(task_name)
+                            # Map matched task to display name if provided
+                            if pattern in pattern_display_map:
+                                item_display_map[task_name] = pattern_display_map[pattern]
+                group = filtered_group
 
         raw_data = raw_data.sort_values(primary, ascending=False)
 
@@ -377,6 +477,10 @@ class LeaderboardViewer:
         score_cols = [c for c in available_metrics if c.endswith("/score")]
         if score_cols:
             raw_df = raw_df.dropna(subset=score_cols, how="all")
+
+            # Collect final statistics after filtering out agents with no scores in selected view
+            stats = get_agent_stats(raw_df)
+            statistics["final"] = stats
 
         # Sort the dataframe by agent_name then base_models for consistent ordering across all plots
         if "agent_name" in raw_df.columns and "base_models" in raw_df.columns:
@@ -500,7 +604,7 @@ class LeaderboardViewer:
         pretty_cols = {c: _pretty_column_name(c) for c in display_df.columns}
         display_df = display_df.rename(columns=pretty_cols)
 
-        return display_df, plots
+        return display_df, plots, statistics
 
 
 def _agent_with_probably_incomplete_model_usage_info(agent_name):
@@ -520,6 +624,8 @@ def _get_dataframe(
     timezone: str = "US/Pacific",
     apply_pretty_names: bool = True,
     preserve_none_scores: bool = False,
+    model_name_mapping: dict[str, str] | None = None,
+    conditional_model_mappings: dict[tuple[str, str], dict[str, str]] | None = None,
 ) -> pd.DataFrame:
     """
     Load leaderboard results from the given dataset split and return a DataFrame.
@@ -569,8 +675,24 @@ def _get_dataframe(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
 
+        # Apply model mapping (conditional first, then base)
+        base_mapping = (
+            model_name_mapping
+            if model_name_mapping is not None
+            else LB_MODEL_NAME_MAPPING
+        )
+
+        # Check for conditional overrides for this submission
+        submission_overrides = {}
+        if conditional_model_mappings:
+            for (field, field_value), model_map in conditional_model_mappings.items():
+                if hasattr(sub, field) and str(getattr(sub, field)) == field_value:
+                    submission_overrides.update(model_map)
+
+        # Apply mappings efficiently
         model_names = [
-            LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
+            submission_overrides.get(name, base_mapping.get(name, name))
+            for name in sorted_raw_names
         ]
 
         # only format if submit_time present, else leave as None
@@ -1450,7 +1572,7 @@ def _plot_combined_scatter(
             use_log_scale=use_log_scale,
             label_transform=label_transform,
         )
-        
+
         subplot_handles_labels.append((handles, labels))
 
         # Set subplot title
@@ -1474,15 +1596,15 @@ def _plot_combined_scatter(
         for handle, label in zip(handles, labels):
             if label not in label_to_handle:
                 label_to_handle[label] = handle
-    
+
     # Build lists in dataframe order
     all_handles, all_labels = [], []
-    
+
     # Special entries first
     if FRONTIER_LABEL in label_to_handle:
         all_handles.append(label_to_handle[FRONTIER_LABEL])
         all_labels.append(FRONTIER_LABEL)
-    
+
     # Add all agents in dataframe order (both regular and no-cost)
     for agent in data[agent_col].unique():
         if agent in label_to_handle:
@@ -1492,7 +1614,7 @@ def _plot_combined_scatter(
         if no_cost_label in label_to_handle:
             all_handles.append(label_to_handle[no_cost_label])
             all_labels.append(no_cost_label)
-    
+
     # Now reorder to group by type: Frontier → Regular → (no cost)
     # while preserving dataframe order within each group
     if all_handles:
@@ -1561,28 +1683,26 @@ def _get_frontier_indices(
     return frontier_indices
 
 
-
-
 def _order_legend_entries(handles, labels):
     """Order legend entries: Efficiency Frontier → Regular → (no cost).
-    
+
     Preserves input order within each group.
-    
+
     Args:
         handles: List of legend handles
         labels: List of legend labels
-    
+
     Returns:
         Tuple of (ordered_handles, ordered_labels)
     """
     if not handles or not labels:
         return [], []
-    
+
     # Separate into three groups while preserving input order
     frontier_items = []
     regular_items = []
     no_cost_items = []
-    
+
     for handle, label in zip(handles, labels):
         if label == FRONTIER_LABEL:
             frontier_items.append((handle, label))
@@ -1590,14 +1710,14 @@ def _order_legend_entries(handles, labels):
             no_cost_items.append((handle, label))
         else:
             regular_items.append((handle, label))
-    
+
     # Combine in desired order
     ordered_items = frontier_items + regular_items + no_cost_items
-    
+
     if ordered_items:
         ordered_handles, ordered_labels = zip(*ordered_items)
         return list(ordered_handles), list(ordered_labels)
-    
+
     return [], []
 
 
