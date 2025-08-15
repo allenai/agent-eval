@@ -39,12 +39,14 @@ class LeaderboardViewer:
     """
 
     def __init__(
-        self, repo_id: str, config: str, split: str, is_internal: bool = False
+        self, repo_id: str, config: str, split: str, is_internal: bool = False,
+        model_name_mapping: dict[str, str] | None = None
     ):
         self._repo_id = repo_id
         self._config = config
         self._split = split
         self._internal = is_internal
+        self._model_name_mapping = model_name_mapping
 
         # build suite_config and mapping from tags to tasks from the first result
         # TODO: Verify the sort order
@@ -71,6 +73,7 @@ class LeaderboardViewer:
             suite_config=self._cfg,
             apply_pretty_names=apply_pretty_names,
             preserve_none_scores=preserve_none_scores,
+            model_name_mapping=self._model_name_mapping,
         )
         return overview, self.tag_map
 
@@ -520,6 +523,7 @@ def _get_dataframe(
     timezone: str = "US/Pacific",
     apply_pretty_names: bool = True,
     preserve_none_scores: bool = False,
+    model_name_mapping: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Load leaderboard results from the given dataset split and return a DataFrame.
@@ -569,8 +573,10 @@ def _get_dataframe(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
 
+        # Use custom mapping if provided, otherwise fall back to default
+        mapping = model_name_mapping if model_name_mapping is not None else LB_MODEL_NAME_MAPPING
         model_names = [
-            LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
+            mapping.get(name, name) for name in sorted_raw_names
         ]
 
         # only format if submit_time present, else leave as None

@@ -798,6 +798,11 @@ def validate_split(ctx, param, value):
     default=None,
     help="Number of first --group-agent groups to assign fixed colors. These groups will always get the same colors across plots. Remaining groups get colors dynamically.",
 )
+@click.option(
+    "--model-name-mapping-file",
+    default=None,
+    help="Path to JSON file containing custom model name mappings (format: {\"original_name\": \"display_name\"}). Use 'none' to disable all mappings. Overrides default mappings.",
+)
 def view_command(
     repo_id,
     config,
@@ -820,8 +825,10 @@ def view_command(
     include_task,
     group_agent,
     group_agent_fixed_colors,
+    model_name_mapping_file,
 ):
     """View a specific config and split; show overview or tag detail."""
+    import json
     from .leaderboard.view import LeaderboardViewer
 
     # Check for conflicting options
@@ -835,7 +842,20 @@ def view_command(
         click.echo("Error: --include-task can only be used when --tag IS specified")
         sys.exit(1)
 
-    viewer = LeaderboardViewer(repo_id, config, split, is_internal=is_internal)
+    # Load custom model name mapping if provided
+    custom_model_mapping = None
+    if model_name_mapping_file:
+        if model_name_mapping_file.lower() == 'none':
+            # Use empty dict to disable all mappings
+            custom_model_mapping = {}
+        else:
+            with open(model_name_mapping_file, 'r') as f:
+                custom_model_mapping = json.load(f)
+
+    viewer = LeaderboardViewer(
+        repo_id, config, split, is_internal=is_internal, 
+        model_name_mapping=custom_model_mapping
+    )
 
     df, plots = viewer.view(
         tag,
