@@ -12,6 +12,7 @@ from inspect_ai.log import (
 )
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
+from .config import Task
 from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
 
 logger = logging.getLogger(__name__)
@@ -126,14 +127,26 @@ def get_model_usages(log: EvalLog) -> list[list[ModelUsageWithName]]:
     return model_usages
 
 
-def get_normalized_task_name(log: EvalLog) -> str:
+def get_normalized_task_name(
+    log: EvalLog, maybe_task_name_mapping: dict[str, str] | None = None
+) -> str:
     """
     Normalize task name from eval log.
 
     Removes namespace from tasks that were run eg as inspect_evals/task_name
 
     """
-    return log.eval.task.split("/")[-1]
+    fallback = log.eval.task.split("/")[-1]
+
+    maybe_task_registry_name = log.eval.task_registry_name
+    if (maybe_task_name_mapping is not None) and (maybe_task_registry_name is not None):
+        normalized_name = maybe_task_name_mapping.get(
+            maybe_task_registry_name, fallback
+        )
+    else:
+        normalized_name = fallback
+
+    return normalized_name
 
 
 class EvalLogProcessingResult(BaseModel):
@@ -141,7 +154,9 @@ class EvalLogProcessingResult(BaseModel):
     errors: list[str]
 
 
-def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
+def process_eval_logs(
+    log_dir: str, maybe_reference_tasks: list[Task] | None = None
+) -> EvalLogProcessingResult:
     """
     Process evaluation logs from a directory and return task results.
 
@@ -151,12 +166,20 @@ def process_eval_logs(log_dir: str) -> EvalLogProcessingResult:
     Returns:
         A tuple containing a list of task results and whether there were errors
     """
+    # Some prep
+    if maybe_reference_tasks is not None:
+        maybe_task_name_mapping = {}
+        for task in maybe_reference_tasks:
+            maybe_task_name_mapping[task.path] = task.name
+    else:
+        maybe_task_name_mapping = None
+
     # Read evaluation logs
     logs = {}
     errors = []
     for loginfo in list_eval_logs(log_dir):
         log = read_eval_log(loginfo.name, header_only=True)
-        task_name = get_normalized_task_name(log)
+        task_name = get_normalized_task_name(log, maybe_task_name_mapping)
         if task_name in logs:
             raise ValueError(f"Task {task_name} already read.")
         logs[task_name] = log
