@@ -205,7 +205,10 @@ class LeaderboardViewer:
                 display_name = agent_name_mapping.get(agent_name, agent_name)
                 base_models = row["base_models"]
                 if base_models and len(base_models) > 0:
-                    models_str = ", ".join(base_models)
+                    if len(base_models) > 5:
+                        models_str = "mixture"
+                    else:
+                        models_str = ", ".join(base_models)
                     return f"{display_name} ({models_str})"
                 return display_name
 
