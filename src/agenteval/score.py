@@ -138,9 +138,10 @@ def get_normalized_task_name(
     """
     fallback = log.eval.task.split("/")[-1]
 
-    if maybe_task_name_mapping is not None:
+    maybe_task_registry_name = log.eval.task_registry_name
+    if (maybe_task_name_mapping is not None) and (maybe_task_registry_name is not None):
         normalized_name = maybe_task_name_mapping.get(
-            log.eval.task_registry_name, fallback
+            maybe_task_registry_name, fallback
         )
     else:
         normalized_name = fallback
