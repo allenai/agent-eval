@@ -29,4 +29,7 @@ CUSTOM_PRICING = {
     "Qwen3-8B-SciQA-SFT": CostPerToken(
         input_cost_per_token=1.8e-07, output_cost_per_token=7e-07
     ),
+    "akariasai/os_8b": CostPerToken(
+        input_cost_per_token=1.8e-07, output_cost_per_token=1.8e-07
+    ),
 }
