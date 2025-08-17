@@ -259,11 +259,16 @@ def score_command(
 cli.add_command(score_command)
 
 @click.command(name="repair", help="TODO.")
-@click.option("--name", type=str)
-def repair_command(name: str):
+@click.option("--name", type=str, help="TODO.")
+@click.option("--registry", type=str, multiple=True, help="TODO.")
+@click.option("--intervention", type=str, multiple=True, help="TODO.")
+def repair_command(name: str, registry: tuple, intervention: tuple):
+    """
+    # uv run astabench repair --name dog --intervention agenteval:say-hi --intervention astabench:say-hello --intervention astabenchprivate:say-hey --registry astabench:astabench.repairs --registry astabenchprivate:astabench.private_repairs
+    """
     print("in repair command")
     print(f"name arg: {name}")
-    repair(name)
+    repair(name, intervention_pointer_strs=intervention, registry_pointer_strs=registry)
 
 
 cli.add_command(repair_command)

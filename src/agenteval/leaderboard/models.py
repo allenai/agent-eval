@@ -4,9 +4,22 @@ from io import BytesIO
 
 import yaml
 from datasets import Features
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..models import SubmissionMetadata, SuiteConfig, TaskResult
+
+
+class InterventionInfo(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    registry: str
+    name: str
+
+    @staticmethod
+    def from_str(a_str: str):
+        sep = ":"
+        [registry, name] = a_str.split(sep)
+        return InterventionInfo(registry=registry, name=name)
 
 
 class LeaderboardSubmission(BaseModel):
