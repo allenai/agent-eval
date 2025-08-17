@@ -24,6 +24,7 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
+from .repairs import repair
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -256,6 +257,16 @@ def score_command(
 
 
 cli.add_command(score_command)
+
+@click.command(name="repair", help="TODO.")
+@click.option("--name", type=str)
+def repair_command(name: str):
+    print("in repair command")
+    print(f"name arg: {name}")
+    repair(name)
+
+
+cli.add_command(repair_command)
 
 
 @click.command(
