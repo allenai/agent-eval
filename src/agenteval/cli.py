@@ -24,7 +24,7 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
-from .repairs import edit_lb_submissions, LbSubmissionWithDetails
+from .interventions import edit_lb_submissions, LbSubmissionWithDetails
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -267,9 +267,6 @@ def edit_command(
     intervention: tuple,
     result_urls: tuple[str, ...],
 ):
-    """
-    # uv run astabench repair --name dog --intervention agenteval:say-hi --intervention astabench:say-hello --intervention astabenchprivate:say-hey --registry astabench:astabench.repairs --registry astabenchprivate:astabench.private_repairs
-    """
     if not result_urls:
         click.echo("At least one result URL is required.")
         sys.exit(1)
