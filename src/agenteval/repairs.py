@@ -1,14 +1,80 @@
+from dataclasses import dataclass
 from importlib import import_module
+from typing import Callable
 
 from pydantic import BaseModel
 
-from agenteval.leaderboard.models import InterventionInfo
+from agenteval.leaderboard.models import InterventionPointer, LeaderboardSubmission
 
 
-CHANGES = {"say-hi": lambda x: print(f"from agent-eval (inner): hi {x}")}
+EDIT_INTERVENTION_KIND = "edit"
+CONVERSION_INTERVENTION_KIND = "conversion"
 
 
-class RegistryEntry(BaseModel):
+@dataclass
+class WithinRepoPath:
+    hf_config: str
+    split: str
+    end: str
+
+    def submission_name(self) -> str:
+        suffix = ".json"
+        if self.end.endswith(suffix):
+            submission_name = self.end[:-len(suffix)]
+        else:
+            submission_name = self.end
+        return submission_name
+
+    @staticmethod
+    def from_path(path: str, sep: str = "/"):
+        [hf_config, split, end] = path.split(sep)
+        return WithinRepoPath(
+            hf_config=hf_config,
+            split=split,
+            end=end,
+        )
+
+    def to_path(self, sep: str = "/") -> str:
+        return sep.join([self.hf_config, self.split, self.end])
+
+
+class LbSubmissionWithDetails(BaseModel):
+    lb_submission: LeaderboardSubmission
+    submission_path: WithinRepoPath
+
+    @staticmethod
+    def mk(lb_submission: LeaderboardSubmission, submission_path: str):
+        return LbSubmissionWithDetails(
+            lb_submission=lb_submission,
+            submission_path=WithinRepoPath.from_path(submission_path),
+        )
+
+
+class Intervention:
+    def __init__(
+        self,
+        eligible: Callable[[LbSubmissionWithDetails], bool],
+        transform: Callable[[LeaderboardSubmission], bool]
+    ):
+        self._eligible = eligible
+        self._transform = transform
+
+    def eligible(self, submission_with_details: LbSubmissionWithDetails) -> bool:
+        return self._eligible(submission_with_details)
+
+    def transform(self, lb_submission: LeaderboardSubmission) -> bool:
+        self._transform(lb_submission)
+
+
+# intervention kind -> config name -> intervention name -> Intervention
+INTERVENTIONS: dict[str, dict[str, dict[str, Intervention]]] = {
+    EDIT_INTERVENTION_KIND: {},
+    CONVERSION_INTERVENTION_KIND: {},
+}
+
+
+@dataclass
+class RegistryPointer:
     registry: str
     name: str
 
@@ -16,31 +82,54 @@ class RegistryEntry(BaseModel):
     def from_str(a_str):
         sep = ":"
         [registry, name] = a_str.split(sep)
-        return RegistryEntry(registry=registry, name=name)
+        return RegistryPointer(registry=registry, name=name)
 
 
 class Registry:
     def __init__(self, registry_pointer_strs: list[str]):
-        self.registry = {"agenteval": CHANGES}
+        self.registry = {"agenteval": INTERVENTIONS}
 
-        registry_entries = [RegistryEntry.from_str(p) for p in registry_pointer_strs]
-        for entry in registry_entries:
-            assert entry.registry not in self.registry, "Multiple change registry entries with the same name."
-            self.registry[entry.registry] = import_module(entry.name).CHANGES
+        registry_pointers = [RegistryPointer.from_str(p) for p in registry_pointer_strs]
+        for pointer in registry_pointers:
+            assert pointer.registry not in self.registry, "Multiple registry entries with the same name."
+            self.registry[pointer.registry] = import_module(pointer.name).INTERVENTIONS
 
-    def find_change(self, change_pointer: InterventionInfo):
-        return self.registry.get(change_pointer.registry, {}).get(change_pointer.name)
+    def find_intervention(self, intervention_kind: str, config_name: str, pointer: InterventionPointer):
+        return self.registry.get(pointer.registry, {}).get(intervention_kind, {}).get(config_name, {}).get(pointer.name)
 
 
-
-def repair(name: str, intervention_pointer_strs: list[str], registry_pointer_strs: list[str]):
-    """
-    """
+def edit_lb_submissions(
+    lb_submissions_with_details: list[LbSubmissionWithDetails],
+    intervention_pointer_strs: list[str],
+    registry_pointer_strs: list[str],
+):
     registry = Registry(registry_pointer_strs)
-    intervention_pointers = [InterventionInfo.from_str(p) for p in intervention_pointer_strs]
-    for intervention_pointer in intervention_pointers:
-        maybe_change = registry.find_change(intervention_pointer)
-        if maybe_change is not None:
-            maybe_change(name)
-        else:
-            print(f"Unable to find change {intervention_pointer}.")
+    intervention_pointers = [InterventionPointer.from_str(p) for p in intervention_pointer_strs]
+
+    edited_any_lb_submissions = False
+    for lb_submission_with_details in lb_submissions_with_details:
+
+        edited_this_lb_submission = False
+        for intervention_pointer in intervention_pointers:
+
+            maybe_edit = registry.find_intervention(
+                intervention_kind="edit",
+                config_name=lb_submission_with_details.lb_submission.suite_config.version,
+                pointer=intervention_pointer,
+            )
+            if (maybe_edit is not None) :
+                if maybe_edit.eligible(lb_submission_with_details):
+                    applied_one_edit = maybe_edit.transform(lb_submission_with_details.lb_submission)
+                    edited_this_lb_submission = edited_this_lb_submission or applied_one_edit
+                else:
+                    print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
+
+            else:
+                print(f"Unable to find {intervention_pointer}.")
+
+        if edited_this_lb_submission:
+            lb_submission_with_details.lb_submission.interventions.add_edit(intervention_pointer)
+
+        edited_any_lb_submissions = edited_any_lb_submissions or edited_this_lb_submission
+
+    return edited_any_lb_submissions

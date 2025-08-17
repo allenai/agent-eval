@@ -24,7 +24,7 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
-from .repairs import repair
+from .repairs import edit_lb_submissions, LbSubmissionWithDetails
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -258,20 +258,71 @@ def score_command(
 
 cli.add_command(score_command)
 
-@click.command(name="repair", help="TODO.")
-@click.option("--name", type=str, help="TODO.")
+@click.command(name="edit", help="TODO.")
 @click.option("--registry", type=str, multiple=True, help="TODO.")
 @click.option("--intervention", type=str, multiple=True, help="TODO.")
-def repair_command(name: str, registry: tuple, intervention: tuple):
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+def edit_command(
+    registry: tuple,
+    intervention: tuple,
+    result_urls: tuple[str, ...],
+):
     """
     # uv run astabench repair --name dog --intervention agenteval:say-hi --intervention astabench:say-hello --intervention astabenchprivate:say-hey --registry astabench:astabench.repairs --registry astabenchprivate:astabench.private_repairs
     """
-    print("in repair command")
-    print(f"name arg: {name}")
-    repair(name, intervention_pointer_strs=intervention, registry_pointer_strs=registry)
+    if not result_urls:
+        click.echo("At least one result URL is required.")
+        sys.exit(1)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        local_current_results_dir = os.path.join(temp_dir, "current")
+        local_edited_results_dir = os.path.join(temp_dir, "edited")
+
+        hf_api = HfApi()
+
+        result_repo_ids = set()
+        result_paths = []
+
+        # Validate URLs
+        for result_url in result_urls:
+            result_repo_id, result_path = parse_hf_url(
+                result_url
+            )  # validates result_url format "hf://<repo_id>/<result path>"
+            result_repo_ids.add(result_repo_id)
+            result_paths.append(result_path)
+
+        if len(result_repo_ids) > 1:
+            click.echo("All result URLs must reference the same repo")
+            sys.exit(1)
+
+        result_repo_id = result_repo_ids.pop()
+
+        # Download all input files in one shot
+        snapshot_download(
+            repo_id=result_repo_id,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_current_results_dir,
+        )
+
+        all_lb_submissions_with_details = []
+        for result_path in result_paths:
+            local_current_result_path = os.path.join(local_current_results_dir, result_path)
+            with open(local_current_result_path) as f_current:
+                lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
+                lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
+                all_lb_submissions_with_details.append(lb_submission_with_details)
+
+        edit_lb_submissions(
+            lb_submissions_with_details=all_lb_submissions_with_details,
+            intervention_pointer_strs=list(intervention),
+            registry_pointer_strs=(list(registry)),
+        )
 
 
-cli.add_command(repair_command)
+cli.add_command(edit_command)
 
 
 @click.command(

@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import BytesIO
 
 import yaml
@@ -9,9 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..models import SubmissionMetadata, SuiteConfig, TaskResult
 
 
-class InterventionInfo(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class InterventionPointer(BaseModel):
     registry: str
     name: str
 
@@ -19,7 +18,29 @@ class InterventionInfo(BaseModel):
     def from_str(a_str: str):
         sep = ":"
         [registry, name] = a_str.split(sep)
-        return InterventionInfo(registry=registry, name=name)
+        return InterventionPointer(registry=registry, name=name)
+
+
+class AppliedIntervention(BaseModel):
+    pointer: InterventionPointer
+    applied: datetime
+
+
+class Interventions(BaseModel):
+    edits: list[AppliedIntervention] | None
+    conversions: list[AppliedIntervention] | None
+
+    def add_edit(self, pointer: InterventionPointer):
+        self.edits.append(AppliedIntervention(pointer=pointer, applied=datetime.now(timezone.utc)))
+
+    def has_edits(self):
+        return (self.edits is not None) and (len(self.edits) > 0)
+
+    def add_conversion(self, pointer: InterventionPointer):
+        self.conversions.append(AppliedIntervention(pointer=pointer, applied=datetime.now(timezone.utc)))
+
+    def has_conversions(self):
+        return (self.conversions is not None) and (len(self.conversions) > 0)
 
 
 class LeaderboardSubmission(BaseModel):
@@ -31,6 +52,14 @@ class LeaderboardSubmission(BaseModel):
 
     results: list[TaskResult] | None = None
     submission: SubmissionMetadata = Field(default_factory=SubmissionMetadata)
+
+    interventions: Interventions | None = None
+
+    def has_edits(self):
+        return (self.interventions is not None) and self.interventions.has_edits()
+
+    def has_conversions(self):
+        return (self.interventions is not None) and self.interventions.has_conversions()
 
 
 @dataclass
