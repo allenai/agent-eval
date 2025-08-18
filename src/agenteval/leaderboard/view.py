@@ -70,6 +70,7 @@ class LeaderboardViewer:
         self,
         apply_pretty_names: bool = True,
         preserve_none_scores: bool = False,
+        exclude_agent_patterns: list[str] | None = None,
     ):
         results = datasets.load_dataset(self._repo_id, name=self._config)
         overview = _get_dataframe(
@@ -81,6 +82,7 @@ class LeaderboardViewer:
             preserve_none_scores=preserve_none_scores,
             model_name_mapping=self._model_name_mapping,
             conditional_model_mappings=self._conditional_model_mappings,
+            exclude_agent_patterns=exclude_agent_patterns,
         )
         return overview, self.tag_map
 
@@ -171,7 +173,9 @@ class LeaderboardViewer:
 
         # Load raw data for internal processing
         raw_data, tag_map = self._load(
-            apply_pretty_names=False, preserve_none_scores=preserve_none_scores
+            apply_pretty_names=False, 
+            preserve_none_scores=preserve_none_scores,
+            exclude_agent_patterns=exclude_agent_patterns
         )
 
         # Collect initial agent statistics from raw data
@@ -196,47 +200,6 @@ class LeaderboardViewer:
             stats = get_agent_stats(raw_data)
             statistics["after_dropping_all_nan_agents"] = stats
 
-        # Filter out excluded agents (handles both simple patterns and agent:model patterns)
-        if exclude_agent_patterns:
-            for pattern in exclude_agent_patterns:
-                if ":" in pattern:
-                    # Handle agent:model pattern
-                    agent_pattern, model_pattern = pattern.split(":", 1)
-
-                    # Create mask for rows to keep (those that don't match both patterns)
-                    # Check if base_models field exists and contains the model pattern
-                    mask = raw_data.apply(
-                        lambda row: (
-                            not (
-                                re.search(
-                                    agent_pattern, row["agent_name"], re.IGNORECASE
-                                )
-                                and any(
-                                    re.search(model_pattern, model, re.IGNORECASE)
-                                    for model in (row.get("base_models", []) or [])
-                                    if isinstance(model, str)
-                                )
-                            )
-                            if pd.notna(row["agent_name"])
-                            else True
-                        ),
-                        axis=1,
-                    )
-                else:
-                    # Handle simple agent name pattern
-                    mask = raw_data["agent_name"].apply(
-                        lambda x: (
-                            not re.search(pattern, x, re.IGNORECASE)
-                            if pd.notna(x)
-                            else True
-                        )
-                    )
-                raw_data = raw_data[mask].reset_index(drop=True)
-
-        # Collect statistics after exclusions
-        if not raw_data.empty:
-            stats = get_agent_stats(raw_data)
-            statistics["after_exclusions"] = stats
 
         # Process agent grouping specs (after exclusion, before display name creation)
         agent_name_mapping = {}  # Maps original agent_name to display name
@@ -626,6 +589,7 @@ def _get_dataframe(
     preserve_none_scores: bool = False,
     model_name_mapping: dict[str, str] | None = None,
     conditional_model_mappings: dict[tuple[str, str], dict[str, str]] | None = None,
+    exclude_agent_patterns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
     Load leaderboard results from the given dataset split and return a DataFrame.
@@ -643,6 +607,31 @@ def _get_dataframe(
     for itm in ds:
         ev = LeaderboardSubmission.model_validate(itm)
         sub = ev.submission
+
+        # Check if this submission should be excluded
+        if exclude_agent_patterns:
+            should_exclude = False
+            for pattern in exclude_agent_patterns:
+                if ":" in pattern:
+                    field, value = pattern.split(":", 1)
+                    # Check if this is a metadata field pattern
+                    if hasattr(sub, field):
+                        # Handle metadata field pattern: field:value
+                        if str(getattr(sub, field)) == value:
+                            should_exclude = True
+                            break
+                    else:
+                        # Handle agent:model pattern - we'll need the processed base_models for this
+                        # For now, skip this check and handle it after model processing
+                        pass
+                else:
+                    # Handle simple agent name pattern
+                    if re.search(pattern, sub.agent_name or "", re.IGNORECASE):
+                        should_exclude = True
+                        break
+            
+            if should_exclude:
+                continue
 
         probably_incomplete_model_info = (
             _agent_with_probably_incomplete_model_usage_info(sub.agent_name)
@@ -694,6 +683,28 @@ def _get_dataframe(
             submission_overrides.get(name, base_mapping.get(name, name))
             for name in sorted_raw_names
         ]
+
+        # Check for agent:model exclusion patterns (now that we have processed model names)
+        if exclude_agent_patterns:
+            should_exclude_agent_model = False
+            for pattern in exclude_agent_patterns:
+                if ":" in pattern:
+                    field, value = pattern.split(":", 1)
+                    # Check if this is an agent:model pattern (field doesn't exist on submission)
+                    if not hasattr(sub, field):
+                        agent_pattern, model_pattern = field, value
+                        # Check if agent matches AND any model matches
+                        if re.search(agent_pattern, sub.agent_name or "", re.IGNORECASE):
+                            if any(
+                                re.search(model_pattern, model, re.IGNORECASE)
+                                for model in model_names
+                                if isinstance(model, str)
+                            ):
+                                should_exclude_agent_model = True
+                                break
+            
+            if should_exclude_agent_model:
+                continue
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
@@ -1260,7 +1271,7 @@ def _plot_single_scatter_subplot(
     show_xlabel: bool = True,
     use_log_scale: bool = False,
     label_transform: Callable[[str], str] | None = None,
-) -> tuple[list, list, set]:
+) -> tuple[list, list, list]:
     """Plot a single scatter subplot. Returns (handles, labels, frontier_agents) if collect_legend=True."""
     plot_data = data.dropna(subset=[y])
 
