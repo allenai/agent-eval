@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -56,6 +57,33 @@ def parse_hf_url(url: str) -> tuple[str, str]:
         sys.exit(1)
 
     return hf_url_match.group("repo_id"), hf_url_match.group("path")
+
+
+@dataclass
+class RepoPathsOfInterest:
+    repo_id: str
+    relative_paths: list[str]
+
+    @staticmethod
+    def from_urls(urls: list[str]):
+        repo_ids = set()
+        paths = []
+
+        for url in urls:
+            # validates submission_url format "hf://<repo_id>/<path>"
+            repo_id, path = parse_hf_url(url)
+            repo_ids.add(repo_id)
+            paths.append(path)
+
+        if len(repo_ids) > 1:
+            raise Exception("All URLs must reference the same repo")
+
+        repo_id_to_use = repo_ids.pop()
+
+        return RepoPathsOfInterest(
+            repo_id=repo_id_to_use,
+            relative_paths=list(set(paths)),
+        )
 
 
 def verify_git_reproducibility() -> None:
@@ -280,24 +308,9 @@ def edit_command(
         local_current_results_dir = os.path.join(temp_dir, "current")
         local_edited_results_dir = os.path.join(temp_dir, "edited")
 
-        hf_api = HfApi()
-
-        result_repo_ids = set()
-        result_paths = []
-
-        # Validate URLs
-        for result_url in result_urls:
-            result_repo_id, result_path = parse_hf_url(
-                result_url
-            )  # validates result_url format "hf://<repo_id>/<result path>"
-            result_repo_ids.add(result_repo_id)
-            result_paths.append(result_path)
-
-        if len(result_repo_ids) > 1:
-            click.echo("All result URLs must reference the same repo")
-            sys.exit(1)
-
-        result_repo_id = result_repo_ids.pop()
+        result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        result_repo_id = result_paths_of_interest.repo_id
+        result_paths = result_paths_of_interest.relative_paths
 
         # Download all input files in one shot
         snapshot_download(
@@ -320,6 +333,9 @@ def edit_command(
                 intervention_pointers=intervention_pointers,
                 registry=registry,
             )
+
+        hf_api = HfApi()
+
 
 
 cli.add_command(edit_command)
@@ -565,22 +581,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         hf_api = HfApi()
 
-        submission_repo_ids = set()
-        submission_paths = []
-
-        # Validate URLs
-        for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(
-                submission_url
-            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
-            submission_repo_ids.add(submission_repo_id)
-            submission_paths.append(submission_path)
-
-        if len(submission_repo_ids) > 1:
-            click.echo("All submission URLs must reference the same repo")
-            sys.exit(1)
-
-        submission_repo_id = submission_repo_ids.pop()
+        submission_paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
+        submission_repo_id = submission_paths_of_interest.repo_id
+        submission_paths = submission_paths_of_interest.relative_paths
 
         eval_config_rel_paths = [
             f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
