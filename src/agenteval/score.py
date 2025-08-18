@@ -96,6 +96,9 @@ class TaskResult(BaseModel):
 
     model_costs: list[float | None] | None = None
     """List of model costs per sample. Computed from `model_usages`."""
+ 
+    def available_metrics(self) -> set[str]:
+        return set([m.name for m in self.metrics])
 
 
 def get_metrics(log: EvalLog) -> list[Metric]:

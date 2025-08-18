@@ -5,25 +5,25 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
 from datetime import datetime, timezone
 from io import BytesIO
 
 import click
 import datasets
 
-from agenteval.leaderboard.schema_generator import load_dataset_features
+from agenteval.leaderboard.schema_generator import check_lb_submissions_against_readme, load_dataset_features
 
-from .cli_utils import AliasedChoice, generate_choice_help
+from .cli_utils import AliasedChoice, RepoPathsOfInterest, generate_choice_help
 from .config import load_suite_config
 from .io import atomic_write_file
-from .leaderboard.models import LeaderboardSubmission, Readme
+from .leaderboard.models import InterventionPointer, LeaderboardSubmission, Readme
 from .leaderboard.upload import (
     compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
+from .interventions import check_lb_submission_for_edit_eligibility, convert_lb_submission, edit_lb_submission, LbSubmissionWithDetails, Registry
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -258,6 +258,223 @@ def score_command(
 cli.add_command(score_command)
 
 
+@click.command(name="edit", help="TODO.")
+@click.option("--registry", type=str, multiple=True, help="TODO.")
+@click.option("--intervention", type=str, multiple=True, help="TODO.")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+def edit_command(
+    registry: tuple,
+    intervention: tuple,
+    result_urls: tuple[str, ...],
+):
+    if not result_urls:
+        click.echo("At least one result URL is required.")
+        sys.exit(1)
+
+    registry = Registry(list(registry))
+    intervention_pointers = [InterventionPointer.from_str(p) for p in list(intervention)]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        local_current_results_dir = os.path.join(temp_dir, "current")
+        local_edited_results_dir = os.path.join(temp_dir, "edited")
+
+        result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        result_repo_id = result_paths_of_interest.repo_id
+        result_paths = result_paths_of_interest.relative_paths
+
+        # Download all input files in one shot
+        snapshot_download(
+            repo_id=result_repo_id,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_current_results_dir,
+        )
+
+        all_edited_lb_submissions = []
+        for result_path in result_paths:
+            local_current_result_path = os.path.join(local_current_results_dir, result_path)
+            with open(local_current_result_path) as f_current:
+                lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
+                lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
+
+            # edits the lb submission in place
+            edited_this_submission = edit_lb_submission(
+                lb_submission_with_details=lb_submission_with_details,
+                intervention_pointers=intervention_pointers,
+                registry=registry,
+            )
+            if edited_this_submission:
+                all_edited_lb_submissions.append(lb_submission)
+
+                os.makedirs(
+                    os.path.join(local_edited_results_dir, os.path.dirname(result_path)),
+                    exist_ok=True,
+                )
+                with open(
+                    os.path.join(local_edited_results_dir, result_path),
+                    "w",
+                    encoding="utf-8",
+                ) as f_edited:
+                    f_edited.write(lb_submission.model_dump_json(indent=None))
+                print(lb_submission.model_dump_json(indent=2))
+
+        # Validate the config with the schema in HF
+        if len(all_edited_lb_submissions) > 0:
+            try:
+                check_lb_submissions_against_readme(all_edited_lb_submissions, result_repo_id)
+            except Exception as exc:
+                click.echo(str(exc))
+                sys.exit(1)
+
+           # Upload all results files in one shot
+            click.echo(f"Uploading {len(result_paths)} results to {result_repo_id}...")
+            # hf_api = HfApi()
+            # hf_api.upload_folder(
+            #     folder_path=local_edited_results_dir,
+            #     path_in_repo="",
+            #     repo_id=result_repo_id,
+            #     repo_type="dataset",
+            # )
+            click.echo("Done")
+
+
+cli.add_command(edit_command)
+
+
+@click.command(name="convert", help="TODO.")
+@click.option("--registry", type=str, multiple=True, help="TODO.")
+@click.option("--intervention", type=str, help="TODO.")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+def convert_command(
+    registry: tuple,
+    intervention: str,
+    result_urls: tuple[str, ...],
+):
+    if not result_urls:
+        click.echo("At least one result URL is required.")
+        sys.exit(1)
+
+    registry = Registry(list(registry))
+    intervention_pointer = InterventionPointer.from_str(intervention)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        local_current_config_results_dir = os.path.join(temp_dir, "current")
+        local_new_config_results_dir = os.path.join(temp_dir, "new")
+
+        result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        result_repo_id = result_paths_of_interest.repo_id
+        result_paths = result_paths_of_interest.relative_paths
+
+        # Download all input files in one shot
+        snapshot_download(
+            repo_id=result_repo_id,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_current_config_results_dir,
+        )
+
+        all_converted_lb_submissions = []
+        for current_config_result_path in result_paths:
+            local_current_config_result_path = os.path.join(local_current_config_results_dir, current_config_result_path)
+            with open(local_current_config_result_path) as f_current:
+                lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
+                lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, current_config_result_path)
+
+            # edits the lb submission in place
+            converted_this_submission = convert_lb_submission(
+                lb_submission_with_details=lb_submission_with_details,
+                intervention_pointer=intervention_pointer,
+                registry=registry,
+            )
+            if converted_this_submission:
+                all_converted_lb_submissions.append(lb_submission)
+                new_config_result_path = lb_submission_with_details.submission_path.with_different_hf_config(lb_submission.suite_config.version).to_path()
+
+                os.makedirs(
+                    os.path.join(local_new_config_results_dir, os.path.dirname(new_config_result_path)),
+                    exist_ok=True,
+                )
+                with open(
+                    os.path.join(local_new_config_results_dir, new_config_result_path),
+                    "w",
+                    encoding="utf-8",
+                ) as f_new:
+                    f_new.write(lb_submission.model_dump_json(indent=None))
+                
+                print(f"{current_config_result_path} -> {new_config_result_path}")
+                print(lb_submission.model_dump_json(indent=2))
+
+        # Validate the config with the schema in HF
+        if len(all_converted_lb_submissions) > 0:
+            try:
+                check_lb_submissions_against_readme(all_converted_lb_submissions, result_repo_id)
+            except Exception as exc:
+                click.echo(str(exc))
+                sys.exit(1)
+
+           # Upload all results files in one shot
+            click.echo(f"Uploading {len(result_paths)} results to {result_repo_id}...")
+            # hf_api = HfApi()
+            # hf_api.upload_folder(
+            #     folder_path=local_new_config_results_dir,
+            #     path_in_repo="",
+            #     repo_id=result_repo_id,
+            #     repo_type="dataset",
+            # )
+            click.echo("Done")
+
+
+cli.add_command(convert_command)
+
+
+@click.command(name="check", help="TODO.")
+@click.option("--registry", type=str, multiple=True, help="TODO.")
+@click.option("--intervention", type=str, multiple=True, help="TODO.")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+def check_command(
+    registry: tuple,
+    intervention: tuple,
+    result_urls: tuple[str, ...],
+):
+    if not result_urls:
+        click.echo("At least one result URL is required.")
+        sys.exit(1)
+
+    registry = Registry(list(registry))
+    intervention_pointers = [InterventionPointer.from_str(p) for p in list(intervention)]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        local_results_dir = os.path.join(temp_dir, "results")
+
+        result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        result_repo_id = result_paths_of_interest.repo_id
+        result_paths = result_paths_of_interest.relative_paths
+
+        # Download all input files in one shot
+        snapshot_download(
+            repo_id=result_repo_id,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_results_dir,
+        )
+
+        for result_path in result_paths:
+            local_result_path = os.path.join(local_results_dir, result_path)
+            with open(local_result_path) as f_current:
+                lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
+                lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
+                check_lb_submission_for_edit_eligibility(lb_submission_with_details, intervention_pointers, registry)
+
+
+cli.add_command(check_command)
+
+
 @click.command(
     name="publish",
     help="Upload Inspect logs to HuggingFace for official scoring",
@@ -474,6 +691,99 @@ def backfill_command(results_repo_id, submissions_repo_id, submission_path):
 cli.add_command(backfill_command)
 
 
+def publish_lb_results_helper(
+    repo_paths_of_interest: RepoPathsOfInterest,
+    local_new_results_dir: str,
+    temp_dir: str,
+    registry: Registry,
+    counter: int
+):
+    # The idea is, when you're about to publish a result file,
+    # look at whether there's already a result file under the same path,
+    # and take into account any interventions that were applied to
+    # that result file.
+    from huggingface_hub import HfApi, snapshot_download
+
+    # local_new_results_dir starting off has results we want to upload
+    # that may need still need to have edits applied first, and that
+    # also may indicate that corresponding results converted to different
+    # configs should also be uploaded
+    # local_existing_results_dir will have any existing corresponding
+    # result files under the same configs as files in local_new_results_dir
+    local_existing_results_dir = os.path.join(temp_dir, f"existingresults{counter}")
+
+    # download any existing result files that correspond to the new ones we want to
+    # upload, so we can see if any edits or conversions were applied to them,
+    # so we can apply the same things to the new result files
+    snapshot_download(
+        repo_id=repo_paths_of_interest.repo_id,
+        repo_type="dataset",
+        allow_patterns=repo_paths_of_interest.relative_paths,
+        local_dir=local_existing_results_dir,
+    )
+
+    # we'll update files in local_new_results_dir to have edited results
+    all_current_config_lb_submissions = apply_existing_edits_to_result_files(
+        repo_paths_of_interest=repo_paths_of_interest,
+        local_new_results_dir=local_new_results_dir,
+        local_existing_results_dir=local_existing_results_dir,
+        registry=registry,
+    )
+
+    # then we'll push them to the results repo
+    if len(all_current_config_lb_submissions) > 0:
+        try:
+            check_lb_submissions_against_readme(all_current_config_lb_submissions, repo_paths_of_interest.repo_id)
+        except Exception as exc:
+            click.echo(str(exc))
+            sys.exit(1)
+
+        # Upload all results files in one shot
+        click.echo(f"Uploading {len(repo_paths_of_interest.relative_paths)} results to {repo_paths_of_interest.repo_id}...")
+        # hf_api = HfApi()
+        # hf_api.upload_folder(
+        #     folder_path=local_new_results_dir,
+        #     path_in_repo="",
+        #     repo_id=repo_paths_of_interest.repo_id,
+        #     repo_type="dataset",
+        # )
+
+    # local_converted_results_dir is where we'll put corresponding
+    # result files under new configs when needed
+    local_converted_results_dir = os.path.join(temp_dir, f"convertedresults{counter}")
+
+    # We'll do conversions off edited results.
+    # Converted results will go under local_converted_results_dir, under new paths.
+    # We figure out if we need conversions based on the corresponding
+    # existing results that we already pulled.
+    new_config_paths_of_interest = apply_existing_conversions_to_result_files(
+        repo_paths_of_interest=repo_paths_of_interest,
+        local_new_results_dir=local_new_results_dir,
+        local_existing_results_dir=local_existing_results_dir,
+        local_converted_results_dir=local_converted_results_dir,
+        registry=registry,
+    )
+
+    # Call publish_lb_results() instead of writing converted results directly,
+    # because we want to make sure that we take into account any interventions
+    # applied to existing converted result files.
+    if len(new_config_paths_of_interest):
+        publish_lb_results_helper(
+            repo_paths_of_interest=RepoPathsOfInterest(
+                repo_id=repo_paths_of_interest.repo_id,
+                relative_paths=new_config_paths_of_interest
+            ),
+            local_new_results_dir=local_converted_results_dir,
+            temp_dir=temp_dir,
+            registry=registry,
+            counter=counter+1,
+        )
+    
+    else:
+        # If there are no conversions to do, we stop here.
+        click.echo("Done")
+
+
 @click.command(
     name="publish",
     help="Publish scored results in log_dir to HuggingFace leaderboard.",
@@ -498,22 +808,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         hf_api = HfApi()
 
-        submission_repo_ids = set()
-        submission_paths = []
-
-        # Validate URLs
-        for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(
-                submission_url
-            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
-            submission_repo_ids.add(submission_repo_id)
-            submission_paths.append(submission_path)
-
-        if len(submission_repo_ids) > 1:
-            click.echo("All submission URLs must reference the same repo")
-            sys.exit(1)
-
-        submission_repo_id = submission_repo_ids.pop()
+        submission_paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
+        submission_repo_id = submission_paths_of_interest.repo_id
+        submission_paths = submission_paths_of_interest.relative_paths
 
         eval_config_rel_paths = [
             f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
@@ -535,10 +832,8 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             local_dir=local_submissions_dir,
         )
 
+        all_result_paths = []
         # Create results files locally
-        config_splits = defaultdict(
-            list
-        )  # Accumulate config names and splits being published
         for (
             submission_url,
             submission_path,
@@ -579,7 +874,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             eval_config = EvalConfig.model_validate_json(
                 open(local_eval_config_path).read()
             )
-            config_splits[eval_config.suite_config.version].append(eval_config.split)
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
@@ -605,46 +899,21 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             ) as f:
                 f.write(lb_submission.model_dump_json(indent=None))
 
-        # Validate the config with the schema in HF
-        readme = Readme.download_and_parse(repo_id)
-        missing_configs = list(set(config_splits.keys()) - set(readme.configs.keys()))
-        if missing_configs:
-            click.echo(
-                f"Config name {missing_configs} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
-            )
-            sys.exit(1)
-        missing_splits = list(
-            set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
-            - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
-        )
-        if missing_splits:
-            click.echo(
-                f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
-            )
-            sys.exit(1)
-        local_features = load_dataset_features()
-        if local_features.arrow_schema != readme.features.arrow_schema:
-            click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
-            )
-            click.echo("Run 'update_readme.py sync-schema' to update it")
-            sys.exit(1)
+            all_result_paths.append(f"{submission_path}.json")
 
-        # Upload all results files in one shot
-        click.echo(f"Uploading {len(submission_paths)} results to {repo_id}...")
-        hf_api.upload_folder(
-            folder_path=local_results_dir,
-            path_in_repo="",
-            repo_id=repo_id,
-            repo_type="dataset",
+        # This will upload the results, taking into account any
+        # interventions that have been applied to exisitng result files
+        # under the same paths.
+        publish_lb_results_helper(
+            repo_paths_of_interest=RepoPathsOfInterest(
+                repo_id=repo_id,
+                relative_paths=all_result_paths,
+            ),
+            local_new_results_dir=local_results_dir,
+            temp_dir=temp_dir,
+            registry=registry,
+            counter=0,
         )
-        click.echo("Done")
 
 
 @click.group(name="lb", help="Leaderboard related commands")
