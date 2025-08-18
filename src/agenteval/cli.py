@@ -5,7 +5,6 @@ import re
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -14,7 +13,7 @@ import datasets
 
 from agenteval.leaderboard.schema_generator import check_lb_submissions_against_readme, load_dataset_features
 
-from .cli_utils import AliasedChoice, generate_choice_help
+from .cli_utils import AliasedChoice, RepoPathsOfInterest, generate_choice_help
 from .config import load_suite_config
 from .io import atomic_write_file
 from .leaderboard.models import InterventionPointer, LeaderboardSubmission, Readme
@@ -56,33 +55,6 @@ def parse_hf_url(url: str) -> tuple[str, str]:
         sys.exit(1)
 
     return hf_url_match.group("repo_id"), hf_url_match.group("path")
-
-
-@dataclass
-class RepoPathsOfInterest:
-    repo_id: str
-    relative_paths: list[str]
-
-    @staticmethod
-    def from_urls(urls: list[str]):
-        repo_ids = set()
-        paths = []
-
-        for url in urls:
-            # validates submission_url format "hf://<repo_id>/<path>"
-            repo_id, path = parse_hf_url(url)
-            repo_ids.add(repo_id)
-            paths.append(path)
-
-        if len(repo_ids) > 1:
-            raise Exception("All URLs must reference the same repo")
-
-        repo_id_to_use = repo_ids.pop()
-
-        return RepoPathsOfInterest(
-            repo_id=repo_id_to_use,
-            relative_paths=list(set(paths)),
-        )
 
 
 def verify_git_reproducibility() -> None:
@@ -349,7 +321,7 @@ def edit_command(
                 print(lb_submission.model_dump_json(indent=2))
 
         # Validate the config with the schema in HF
-        if len(all_edited_lb_submissions):
+        if len(all_edited_lb_submissions) > 0:
             try:
                 check_lb_submissions_against_readme(all_edited_lb_submissions, result_repo_id)
             except Exception as exc:
@@ -437,7 +409,7 @@ def convert_command(
                 print(lb_submission.model_dump_json(indent=2))
 
         # Validate the config with the schema in HF
-        if len(all_converted_lb_submissions):
+        if len(all_converted_lb_submissions) > 0:
             try:
                 check_lb_submissions_against_readme(all_converted_lb_submissions, result_repo_id)
             except Exception as exc:
@@ -719,6 +691,99 @@ def backfill_command(results_repo_id, submissions_repo_id, submission_path):
 cli.add_command(backfill_command)
 
 
+def publish_lb_results_helper(
+    repo_paths_of_interest: RepoPathsOfInterest,
+    local_new_results_dir: str,
+    temp_dir: str,
+    registry: Registry,
+    counter: int
+):
+    # The idea is, when you're about to publish a result file,
+    # look at whether there's already a result file under the same path,
+    # and take into account any interventions that were applied to
+    # that result file.
+    from huggingface_hub import HfApi, snapshot_download
+
+    # local_new_results_dir starting off has results we want to upload
+    # that may need still need to have edits applied first, and that
+    # also may indicate that corresponding results converted to different
+    # configs should also be uploaded
+    # local_existing_results_dir will have any existing corresponding
+    # result files under the same configs as files in local_new_results_dir
+    local_existing_results_dir = os.path.join(temp_dir, f"existingresults{counter}")
+
+    # download any existing result files that correspond to the new ones we want to
+    # upload, so we can see if any edits or conversions were applied to them,
+    # so we can apply the same things to the new result files
+    snapshot_download(
+        repo_id=repo_paths_of_interest.repo_id,
+        repo_type="dataset",
+        allow_patterns=repo_paths_of_interest.relative_paths,
+        local_dir=local_existing_results_dir,
+    )
+
+    # we'll update files in local_new_results_dir to have edited results
+    all_current_config_lb_submissions = apply_existing_edits_to_result_files(
+        repo_paths_of_interest=repo_paths_of_interest,
+        local_new_results_dir=local_new_results_dir,
+        local_existing_results_dir=local_existing_results_dir,
+        registry=registry,
+    )
+
+    # then we'll push them to the results repo
+    if len(all_current_config_lb_submissions) > 0:
+        try:
+            check_lb_submissions_against_readme(all_current_config_lb_submissions, repo_paths_of_interest.repo_id)
+        except Exception as exc:
+            click.echo(str(exc))
+            sys.exit(1)
+
+        # Upload all results files in one shot
+        click.echo(f"Uploading {len(repo_paths_of_interest.relative_paths)} results to {repo_paths_of_interest.repo_id}...")
+        # hf_api = HfApi()
+        # hf_api.upload_folder(
+        #     folder_path=local_new_results_dir,
+        #     path_in_repo="",
+        #     repo_id=repo_paths_of_interest.repo_id,
+        #     repo_type="dataset",
+        # )
+
+    # local_converted_results_dir is where we'll put corresponding
+    # result files under new configs when needed
+    local_converted_results_dir = os.path.join(temp_dir, f"convertedresults{counter}")
+
+    # We'll do conversions off edited results.
+    # Converted results will go under local_converted_results_dir, under new paths.
+    # We figure out if we need conversions based on the corresponding
+    # existing results that we already pulled.
+    new_config_paths_of_interest = apply_existing_conversions_to_result_files(
+        repo_paths_of_interest=repo_paths_of_interest,
+        local_new_results_dir=local_new_results_dir,
+        local_existing_results_dir=local_existing_results_dir,
+        local_converted_results_dir=local_converted_results_dir,
+        registry=registry,
+    )
+
+    # Call publish_lb_results() instead of writing converted results directly,
+    # because we want to make sure that we take into account any interventions
+    # applied to existing converted result files.
+    if len(new_config_paths_of_interest):
+        publish_lb_results_helper(
+            repo_paths_of_interest=RepoPathsOfInterest(
+                repo_id=repo_paths_of_interest.repo_id,
+                relative_paths=new_config_paths_of_interest
+            ),
+            local_new_results_dir=local_converted_results_dir,
+            temp_dir=temp_dir,
+            registry=registry,
+            counter=counter+1,
+        )
+    
+    else:
+        # If there are no conversions to do, we stop here.
+        click.echo("Done")
+
+
 @click.command(
     name="publish",
     help="Publish scored results in log_dir to HuggingFace leaderboard.",
@@ -767,7 +832,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             local_dir=local_submissions_dir,
         )
 
-        all_lb_submissions = []
+        all_result_paths = []
         # Create results files locally
         for (
             submission_url,
@@ -823,7 +888,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 submission=submission,
             )
             lb_submission = compress_model_usages(lb_submission)
-            all_lb_submissions.append(lb_submission)
             os.makedirs(
                 os.path.join(local_results_dir, os.path.dirname(submission_path)),
                 exist_ok=True,
@@ -835,22 +899,21 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             ) as f:
                 f.write(lb_submission.model_dump_json(indent=None))
 
-        # Validate the config with the schema in HF
-        try:
-            check_lb_submissions_against_readme(all_lb_submissions, repo_id)
-        except Exception as exc:
-            click.echo(str(exc))
-            sys.exit(1)
+            all_result_paths.append(f"{submission_path}.json")
 
-        # Upload all results files in one shot
-        click.echo(f"Uploading {len(submission_paths)} results to {repo_id}...")
-        hf_api.upload_folder(
-            folder_path=local_results_dir,
-            path_in_repo="",
-            repo_id=repo_id,
-            repo_type="dataset",
+        # This will upload the results, taking into account any
+        # interventions that have been applied to exisitng result files
+        # under the same paths.
+        publish_lb_results_helper(
+            repo_paths_of_interest=RepoPathsOfInterest(
+                repo_id=repo_id,
+                relative_paths=all_result_paths,
+            ),
+            local_new_results_dir=local_results_dir,
+            temp_dir=temp_dir,
+            registry=registry,
+            counter=0,
         )
-        click.echo("Done")
 
 
 @click.group(name="lb", help="Leaderboard related commands")

@@ -5,6 +5,7 @@ from typing import Callable
 from pydantic import BaseModel
 
 from agenteval.leaderboard.models import InterventionPointer, LeaderboardSubmission
+from agenteval.cli_utils import RepoPathsOfInterest
 
 
 EDIT_INTERVENTION_KIND = "edit"
@@ -174,3 +175,97 @@ def check_lb_submission_for_edit_eligibility(
                 print(f"{lb_submission_with_details.submission_path} is eligble for the {intervention_pointer} edit.")
         else:
             print(f"Unable to find edit {intervention_pointer}.")
+
+
+def apply_existing_edits_to_result_files(
+    repo_paths_of_interest: RepoPathsOfInterest,
+    local_new_results_dir: str,
+    local_existing_results_dir: str,
+    registry: Registry,
+):
+    all_current_config_lb_submissions = []
+    for current_config_result_path in repo_paths_of_interest.relative_paths:
+        local_current_config_new_result_path = os.path.join(local_new_results_dir, current_config_result_path)
+        with open(local_current_config_new_result_path) as f_current_config_new:
+            lb_submission_current_config_new = LeaderboardSubmission.model_validate(json.load(f_current_config_new))
+            lb_submission_with_details_current_config_new = LbSubmissionWithDetails.mk(lb_submission_current_config_new, current_config_result_path)
+
+        local_current_config_existing_result_path = os.path.join(local_existing_results_dir, current_config_result_path)
+        if os.path.isfile(local_current_config_existing_result_path):
+            with open(local_current_config_existing_result_path) as f_current_config_existing:
+                lb_submission_current_config_existing = LeaderboardSubmission.model_validate(json.load(f_current_config_existing))
+
+            if lb_submission_current_config_existing.has_edits():
+                edit_pointers = [e.pointer for e in lb_submission_current_config_existing.interventions.edits]
+
+                # edits the lb submission in place
+                edited_this_submission = edit_lb_submission(
+                    lb_submission_with_details=lb_submission_with_details_current_config_new,
+                    intervention_pointers=edit_pointers,
+                    registry=registry,
+                )
+                if edited_this_submission:
+                    with open(
+                        local_current_config_new_result_path,
+                        "w",
+                        encoding="utf-8",
+                    ) as f_current_config_new_post_edits:
+                        f_current_config_new_post_edits.write(lb_submission_current_config_new.model_dump_json(indent=None))
+                    print(lb_submission_current_config_new.model_dump_json(indent=2))
+
+        # whether we applied edits or not, we still want to upload all these new result files
+        all_current_config_lb_submissions.append(lb_submission_current_config_new)
+    
+    return all_current_config_lb_submissions
+
+
+def apply_existing_conversions_to_result_files(
+    repo_paths_of_interest: RepoPathsOfInterest,
+    local_new_results_dir: str,
+    local_existing_results_dir: str,
+    local_converted_results_dir: str,
+    registry=registry,
+):
+    new_config_paths_of_interest = []
+    for current_config_result_path in repo_paths_of_interest.relative_paths:
+        local_current_config_existing_result_path = os.path.join(local_existing_results_dir, current_config_result_path)
+        if os.path.isfile(local_current_config_existing_result_path):
+            with open(local_current_config_existing_result_path) as f_current_config_existing:
+                lb_submission_current_config_existing = LeaderboardSubmission.model_validate(json.load(f_current_config_existing))
+
+            if lb_submission_current_config_existing.has_conversions():
+                conversion_pointers = [c.pointer for c in lb_submission_current_config_existing.interventions.edits]
+
+                for conversion_pointer in conversion_pointers:
+                    # reopen every time. don't reuse lb_submission_new_with_edits instances
+                    # because they are converted to a different config in place
+                    local_current_config_new_result_path = os.path.join(local_new_results_dir, current_config_result_path)
+                    with open(local_current_config_new_result_path) as f_current_config_new_with_edits:
+                        lb_submission_new_with_edits = LeaderboardSubmission.model_validate(json.load(f_current_config_new_with_edits))
+                        lb_submission_with_details_new_with_edits = LbSubmissionWithDetails.mk(lb_submission_new_with_edits, current_config_result_path)
+
+                    # edits the lb submission in place
+                    converted_this_submission = convert_lb_submission(
+                        lb_submission_with_details=lb_submission_with_details_new_with_edits,
+                        intervention_pointer=conversion_pointer,
+                        registry=registry,
+                    )
+                    if converted_this_submission::
+                        new_config_result_path = lb_submission_with_details_new_with_edits.submission_path.with_different_hf_config(lb_submission_new_with_edits.suite_config.version).to_path()
+                        new_config_paths_of_interest.append(new_config_result_path)
+
+                        os.makedirs(
+                            os.path.join(local_converted_results_dir, os.path.dirname(new_config_result_path)),
+                            exist_ok=True,
+                        )
+                        with open(
+                            os.path.join(local_converted_results_dir, new_config_result_path),
+                            "w",
+                            encoding="utf-8",
+                        ) as f_new_config:
+                            f_new_config.write(lb_submission_new_with_edits.model_dump_json(indent=None))
+                
+                        print(f"{current_config_result_path} -> {new_config_result_path}")
+                        print(lb_submission_new_with_edits.model_dump_json(indent=2))
+
+    return new_config_paths_of_interest
