@@ -286,6 +286,7 @@ def score_command(
 
 cli.add_command(score_command)
 
+
 @click.command(name="edit", help="TODO.")
 @click.option("--registry", type=str, multiple=True, help="TODO.")
 @click.option("--intervention", type=str, multiple=True, help="TODO.")
@@ -320,22 +321,51 @@ def edit_command(
             local_dir=local_current_results_dir,
         )
 
-        all_lb_submissions_with_details = []
+        all_edited_lb_submissions = []
         for result_path in result_paths:
             local_current_result_path = os.path.join(local_current_results_dir, result_path)
             with open(local_current_result_path) as f_current:
                 lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
                 lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
-                all_lb_submissions_with_details.append(lb_submission_with_details)
 
-            edit_lb_submission(
+            # edits the lb submission in place
+            edited_this_submission = edit_lb_submission(
                 lb_submission_with_details=lb_submission_with_details,
                 intervention_pointers=intervention_pointers,
                 registry=registry,
             )
+            if edited_this_submission:
+                all_edited_lb_submissions.append(lb_submission)
 
-        hf_api = HfApi()
+                os.makedirs(
+                    os.path.join(local_edited_results_dir, os.path.dirname(result_path)),
+                    exist_ok=True,
+                )
+                with open(
+                    os.path.join(local_edited_results_dir, result_path),
+                    "w",
+                    encoding="utf-8",
+                ) as f_edited:
+                    f_edited.write(lb_submission.model_dump_json(indent=None))
 
+        # Validate the config with the schema in HF
+        if len(all_edited_lb_submissions):
+            try:
+                check_lb_submissions_against_readme(all_edited_lb_submissions, result_repo_id)
+            except Exception as exc:
+                click.echo(str(exc))
+                sys.exit(1)
+
+           # Upload all results files in one shot
+            click.echo(f"Uploading {len(result_paths)} results to {result_repo_id}...")
+            hf_api = HfApi()
+            hf_api.upload_folder(
+                folder_path=local_edited_results_dir,
+                path_in_repo="",
+                repo_id=result_repo_id,
+                repo_type="dataset",
+            )
+            click.echo("Done")
 
 
 cli.add_command(edit_command)
