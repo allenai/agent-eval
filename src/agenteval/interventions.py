@@ -37,6 +37,13 @@ class WithinRepoPath:
     def to_path(self, sep: str = "/") -> str:
         return sep.join([self.hf_config, self.split, self.end])
 
+    def with_different_hf_config(self, new_hf_config: str):
+        return WithinRepoPath(
+            hf_config=new_hf_config,
+            split=self.split,
+            end=self.end,
+        )
+
 
 class LbSubmissionWithDetails(BaseModel):
     lb_submission: LeaderboardSubmission
@@ -118,9 +125,35 @@ def edit_lb_submission(
                     lb_submission_with_details.lb_submission.add_edit(intervention_pointer)
                 edited_this_lb_submission = edited_this_lb_submission or applied_one_edit
             else:
-                print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
+                print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} edit.")
 
         else:
-            print(f"Unable to find intervention {intervention_pointer}.")
+            print(f"Unable to find edit {intervention_pointer}.")
 
     return edited_this_lb_submission
+
+
+def convert_lb_submission(
+    lb_submission_with_details: LbSubmissionWithDetails,
+    intervention_pointer: InterventionPointer,
+    registry: Registry,
+) -> bool:
+    converted_this_lb_submission = False
+    maybe_conversion = registry.find_intervention(
+        intervention_kind="conversion",
+        config_name=lb_submission_with_details.lb_submission.suite_config.version,
+        pointer=intervention_pointer,
+    )
+    if (maybe_conversion is not None) :
+        if maybe_conversion.eligible(lb_submission_with_details):
+            converted_this_lb_submission = maybe_conversion.transform(lb_submission_with_details.lb_submission)
+            if converted_this_lb_submission:
+                lb_submission_with_details.lb_submission.add_conversion(intervention_pointer)
+        else:
+            print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} conversion.")
+
+    else:
+        print(f"Unable to find conversion {intervention_pointer}.")
+
+    return converted_this_lb_submission
+
