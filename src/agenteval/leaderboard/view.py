@@ -1209,7 +1209,7 @@ def _plot_scatter(
         data, agent_col, agent_group_col, group_specs, group_fixed_colors
     )
 
-    handles, labels = _plot_single_scatter_subplot(
+    handles, labels, frontier_agents = _plot_single_scatter_subplot(
         ax,
         data,
         x,
@@ -1223,9 +1223,9 @@ def _plot_scatter(
         label_transform=label_transform,
     )
 
-    # Order legend entries: Efficiency Frontier → Regular → (no cost)
+    # Order legend entries: Efficiency Frontier → Frontier Agents → Regular → (no cost)
     # Preserves input order within each group (which is already dataframe order)
-    sorted_handles, sorted_labels = _order_legend_entries(handles, labels)
+    sorted_handles, sorted_labels = _order_legend_entries(handles, labels, frontier_agents)
 
     # Apply text wrapping if specified
     if legend_max_width is not None:
@@ -1260,8 +1260,8 @@ def _plot_single_scatter_subplot(
     show_xlabel: bool = True,
     use_log_scale: bool = False,
     label_transform: Callable[[str], str] | None = None,
-) -> tuple[list, list]:
-    """Plot a single scatter subplot. Returns (handles, labels) if collect_legend=True."""
+) -> tuple[list, list, set]:
+    """Plot a single scatter subplot. Returns (handles, labels, frontier_agents) if collect_legend=True."""
     plot_data = data.dropna(subset=[y])
 
     # Apply x-axis scaling BEFORE plotting any data
@@ -1278,11 +1278,18 @@ def _plot_single_scatter_subplot(
     no_cost_data = plot_data[~has_cost_data]
 
     handles, labels = [], []
+    frontier_agents = []
 
     # Plot agents with real cost data
     if not real_cost_data.empty:
         # Get frontier indices first for drawing the frontier line
         frontier_indices = _get_frontier_indices(real_cost_data, x, y)
+        
+        # Extract frontier agent names for legend ordering, sorted by cost (left to right on frontier)
+        if frontier_indices:
+            frontier_data = real_cost_data.loc[frontier_indices]
+            agent_costs = frontier_data.groupby(agent_col)[x].min().sort_values()
+            frontier_agents = list(agent_costs.index)  # Sorted by cost
 
         for agent in real_cost_data[agent_col].unique():
             agent_data = real_cost_data[real_cost_data[agent_col] == agent]
@@ -1459,7 +1466,7 @@ def _plot_single_scatter_subplot(
         visible_ticks = [t for t in all_ticks if xlim[0] <= t <= xlim[1]]
         ax.xaxis.set_major_locator(FixedLocator(visible_ticks))
 
-    return handles, labels
+    return handles, labels, frontier_agents
 
 
 def _plot_combined_scatter(
@@ -1551,6 +1558,8 @@ def _plot_combined_scatter(
     # Plot each subplot
     # First pass: collect all handles and labels from all subplots
     subplot_handles_labels = []
+    all_frontier_agents = set()
+    
     for idx, (y, x) in enumerate(scatter_pairs):
         ax = axes[idx]
 
@@ -1558,7 +1567,7 @@ def _plot_combined_scatter(
         is_bottom_subplot = idx == len(scatter_pairs) - 1
 
         # Plot subplot and collect legend info from all subplots
-        handles, labels = _plot_single_scatter_subplot(
+        handles, labels, frontier_agents = _plot_single_scatter_subplot(
             ax,
             data,
             x,
@@ -1574,6 +1583,14 @@ def _plot_combined_scatter(
         )
 
         subplot_handles_labels.append((handles, labels))
+        
+        # Handle frontier agents: preserve order for single subplot, merge for multiple
+        if len(scatter_pairs) == 1:
+            # Single subplot: preserve sorted order from the subplot
+            all_frontier_agents = frontier_agents
+        else:
+            # Multiple subplots: merge as set (current behavior)
+            all_frontier_agents.update(frontier_agents)
 
         # Set subplot title
         # Simply extract the name from the metric path (columns already renamed)
@@ -1615,10 +1632,10 @@ def _plot_combined_scatter(
             all_handles.append(label_to_handle[no_cost_label])
             all_labels.append(no_cost_label)
 
-    # Now reorder to group by type: Frontier → Regular → (no cost)
+    # Now reorder to group by type: Frontier → Frontier Agents → Regular → (no cost)
     # while preserving dataframe order within each group
     if all_handles:
-        sorted_handles, sorted_labels = _order_legend_entries(all_handles, all_labels)
+        sorted_handles, sorted_labels = _order_legend_entries(all_handles, all_labels, all_frontier_agents)
         # Convert to lists so we can append
         sorted_handles = list(sorted_handles)
         sorted_labels = list(sorted_labels)
@@ -1683,14 +1700,15 @@ def _get_frontier_indices(
     return frontier_indices
 
 
-def _order_legend_entries(handles, labels):
-    """Order legend entries: Efficiency Frontier → Regular → (no cost).
+def _order_legend_entries(handles, labels, frontier_agents=None):
+    """Order legend entries: Efficiency Frontier → Frontier Agents → Regular → (no cost).
 
     Preserves input order within each group.
 
     Args:
         handles: List of legend handles
         labels: List of legend labels
+        frontier_agents: Set of agent names that are on the efficiency frontier for this metric
 
     Returns:
         Tuple of (ordered_handles, ordered_labels)
@@ -1698,21 +1716,50 @@ def _order_legend_entries(handles, labels):
     if not handles or not labels:
         return [], []
 
-    # Separate into three groups while preserving input order
-    frontier_items = []
+    # Separate into groups while preserving input order
+    frontier_line_items = []
+    frontier_agent_items = []
     regular_items = []
     no_cost_items = []
 
+    # First pass: collect items into categories and build a map for frontier agents
+    frontier_agent_map = {}  # Maps agent name to (handle, label)
+    
     for handle, label in zip(handles, labels):
         if label == FRONTIER_LABEL:
-            frontier_items.append((handle, label))
+            frontier_line_items.append((handle, label))
         elif label.endswith(NO_COST_SUFFIX):
             no_cost_items.append((handle, label))
+        elif frontier_agents:
+            # Check if this label matches a frontier agent
+            matched_agent = None
+            for agent in frontier_agents:
+                if agent in label:
+                    matched_agent = agent
+                    break
+            
+            if matched_agent:
+                frontier_agent_map[matched_agent] = (handle, label)
+            else:
+                regular_items.append((handle, label))
         else:
             regular_items.append((handle, label))
+    
+    # Second pass: add frontier agents in the order specified by frontier_agents list
+    if frontier_agents:
+        for agent in frontier_agents:
+            if agent in frontier_agent_map:
+                frontier_agent_items.append(frontier_agent_map[agent])
 
-    # Combine in desired order
-    ordered_items = frontier_items + regular_items + no_cost_items
+    # Add divider if we have both frontier agents and regular agents
+    divider_items = []
+    if frontier_agent_items and regular_items:
+        import matplotlib.lines as mlines
+        divider_line = mlines.Line2D([], [], color='gray', linestyle='-', linewidth=1)
+        divider_items.append((divider_line, "───────────"))
+
+    # Combine in desired order: Frontier line → Frontier agents → Divider → Regular → No-cost
+    ordered_items = frontier_line_items + frontier_agent_items + divider_items + regular_items + no_cost_items
 
     if ordered_items:
         ordered_handles, ordered_labels = zip(*ordered_items)
