@@ -13,7 +13,7 @@ from io import BytesIO
 import click
 import datasets
 
-from agenteval.leaderboard.schema_generator import load_dataset_features
+from agenteval.leaderboard.schema_generator import check_lb_submissions_against_readme, load_dataset_features
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
@@ -605,10 +605,8 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             local_dir=local_submissions_dir,
         )
 
+        all_lb_submissions = []
         # Create results files locally
-        config_splits = defaultdict(
-            list
-        )  # Accumulate config names and splits being published
         for (
             submission_url,
             submission_path,
@@ -649,7 +647,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             eval_config = EvalConfig.model_validate_json(
                 open(local_eval_config_path).read()
             )
-            config_splits[eval_config.suite_config.version].append(eval_config.split)
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
@@ -664,6 +661,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 submission=submission,
             )
             lb_submission = compress_model_usages(lb_submission)
+            all_lb_submissions.append(lb_submission)
             os.makedirs(
                 os.path.join(local_results_dir, os.path.dirname(submission_path)),
                 exist_ok=True,
@@ -676,34 +674,10 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 f.write(lb_submission.model_dump_json(indent=None))
 
         # Validate the config with the schema in HF
-        readme = Readme.download_and_parse(repo_id)
-        missing_configs = list(set(config_splits.keys()) - set(readme.configs.keys()))
-        if missing_configs:
-            click.echo(
-                f"Config name {missing_configs} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
-            )
-            sys.exit(1)
-        missing_splits = list(
-            set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
-            - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
-        )
-        if missing_splits:
-            click.echo(
-                f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
-            )
-            sys.exit(1)
-        local_features = load_dataset_features()
-        if local_features.arrow_schema != readme.features.arrow_schema:
-            click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
-            )
-            click.echo("Run 'update_readme.py sync-schema' to update it")
+        try:
+            check_lb_submissions_against_readme(all_lb_submissions, repo_id)
+        except Exception as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
         # Upload all results files in one shot
