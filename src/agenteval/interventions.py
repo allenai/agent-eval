@@ -157,3 +157,20 @@ def convert_lb_submission(
 
     return converted_this_lb_submission
 
+
+def check_lb_submission_for_edit_eligibility(
+    lb_submission_with_details: LbSubmissionWithDetails,
+    intervention_pointers: list[InterventionPointer],
+    registry: Registry,
+) -> bool:
+    for intervention_pointer in intervention_pointers:
+        maybe_edit = registry.find_intervention(
+            intervention_kind="edit",
+            config_name=lb_submission_with_details.lb_submission.suite_config.version,
+            pointer=intervention_pointer,
+        )
+        if (maybe_edit is not None) :
+            if maybe_edit.eligible(lb_submission_with_details):
+                print(f"{lb_submission_with_details.submission_path} is eligble for the {intervention_pointer} edit.")
+        else:
+            print(f"Unable to find edit {intervention_pointer}.")

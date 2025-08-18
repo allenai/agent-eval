@@ -24,7 +24,7 @@ from .leaderboard.upload import (
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
-from .interventions import convert_lb_submission, edit_lb_submission, LbSubmissionWithDetails, Registry
+from .interventions import check_lb_submission_for_edit_eligibility, convert_lb_submission, edit_lb_submission, LbSubmissionWithDetails, Registry
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -457,6 +457,50 @@ def convert_command(
 
 
 cli.add_command(convert_command)
+
+
+@click.command(name="check", help="TODO.")
+@click.option("--registry", type=str, multiple=True, help="TODO.")
+@click.option("--intervention", type=str, multiple=True, help="TODO.")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+def check_command(
+    registry: tuple,
+    intervention: tuple,
+    result_urls: tuple[str, ...],
+):
+    if not result_urls:
+        click.echo("At least one result URL is required.")
+        sys.exit(1)
+
+    registry = Registry(list(registry))
+    intervention_pointers = [InterventionPointer.from_str(p) for p in list(intervention)]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        local_results_dir = os.path.join(temp_dir, "results")
+
+        result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        result_repo_id = result_paths_of_interest.repo_id
+        result_paths = result_paths_of_interest.relative_paths
+
+        # Download all input files in one shot
+        snapshot_download(
+            repo_id=result_repo_id,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_results_dir,
+        )
+
+        for result_path in result_paths:
+            local_result_path = os.path.join(local_results_dir, result_path)
+            with open(local_result_path) as f_current:
+                lb_submission = LeaderboardSubmission.model_validate(json.load(f_current))
+                lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
+                check_lb_submission_for_edit_eligibility(lb_submission_with_details, intervention_pointers, registry)
+
+
+cli.add_command(check_command)
 
 
 @click.command(
