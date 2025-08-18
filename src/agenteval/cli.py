@@ -17,14 +17,14 @@ from agenteval.leaderboard.schema_generator import load_dataset_features
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import load_suite_config
 from .io import atomic_write_file
-from .leaderboard.models import LeaderboardSubmission, Readme
+from .leaderboard.models import InterventionPointer, LeaderboardSubmission, Readme
 from .leaderboard.upload import (
     compress_model_usages,
     sanitize_path_component,
     upload_folder_to_hf,
 )
 from .models import EvalConfig, SubmissionMetadata, TaskResults
-from .interventions import edit_lb_submissions, LbSubmissionWithDetails
+from .interventions import edit_lb_submission, LbSubmissionWithDetails, Registry
 from .score import process_eval_logs
 from .summary import compute_summary_statistics
 
@@ -271,6 +271,9 @@ def edit_command(
         click.echo("At least one result URL is required.")
         sys.exit(1)
 
+    registry = Registry(list(registry))
+    intervention_pointers = [InterventionPointer.from_str(p) for p in list(intervention)]
+
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download
 
@@ -312,11 +315,11 @@ def edit_command(
                 lb_submission_with_details = LbSubmissionWithDetails.mk(lb_submission, result_path)
                 all_lb_submissions_with_details.append(lb_submission_with_details)
 
-        edit_lb_submissions(
-            lb_submissions_with_details=all_lb_submissions_with_details,
-            intervention_pointer_strs=list(intervention),
-            registry_pointer_strs=(list(registry)),
-        )
+            edit_lb_submission(
+                lb_submission_with_details=lb_submission_with_details,
+                intervention_pointers=intervention_pointers,
+                registry=registry,
+            )
 
 
 cli.add_command(edit_command)

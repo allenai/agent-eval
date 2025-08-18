@@ -98,38 +98,30 @@ class Registry:
         return self.registry.get(pointer.registry, {}).get(intervention_kind, {}).get(config_name, {}).get(pointer.name)
 
 
-def edit_lb_submissions(
-    lb_submissions_with_details: list[LbSubmissionWithDetails],
-    intervention_pointer_strs: list[str],
-    registry_pointer_strs: list[str],
-):
-    registry = Registry(registry_pointer_strs)
-    intervention_pointers = [InterventionPointer.from_str(p) for p in intervention_pointer_strs]
+def edit_lb_submission(
+    lb_submission_with_details: LbSubmissionWithDetails,
+    intervention_pointers: list[InterventionPointer],
+    registry: Registry,
+) -> bool:
+    edited_this_lb_submission = False
+    for intervention_pointer in intervention_pointers:
 
-    edited_any_lb_submissions = False
-    for lb_submission_with_details in lb_submissions_with_details:
-
-        edited_this_lb_submission = False
-        for intervention_pointer in intervention_pointers:
-
-            maybe_edit = registry.find_intervention(
-                intervention_kind="edit",
-                config_name=lb_submission_with_details.lb_submission.suite_config.version,
-                pointer=intervention_pointer,
-            )
-            if (maybe_edit is not None) :
-                if maybe_edit.eligible(lb_submission_with_details):
-                    applied_one_edit = maybe_edit.transform(lb_submission_with_details.lb_submission)
-                    edited_this_lb_submission = edited_this_lb_submission or applied_one_edit
-                else:
-                    print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
-
+        maybe_edit = registry.find_intervention(
+            intervention_kind="edit",
+            config_name=lb_submission_with_details.lb_submission.suite_config.version,
+            pointer=intervention_pointer,
+        )
+        if (maybe_edit is not None) :
+            if maybe_edit.eligible(lb_submission_with_details):
+                applied_one_edit = maybe_edit.transform(lb_submission_with_details.lb_submission)
+                edited_this_lb_submission = edited_this_lb_submission or applied_one_edit
             else:
-                print(f"Unable to find {intervention_pointer}.")
+                print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
 
-        if edited_this_lb_submission:
-            lb_submission_with_details.lb_submission.interventions.add_edit(intervention_pointer)
+        else:
+            print(f"Unable to find {intervention_pointer}.")
 
-        edited_any_lb_submissions = edited_any_lb_submissions or edited_this_lb_submission
+    if edited_this_lb_submission:
+        lb_submission_with_details.lb_submission.interventions.add_edit(intervention_pointer)
 
-    return edited_any_lb_submissions
+    return edited_this_lb_submission
