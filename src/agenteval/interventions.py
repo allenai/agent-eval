@@ -121,6 +121,6 @@ def edit_lb_submission(
                 print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
 
         else:
-            print(f"Unable to find {intervention_pointer}.")
+            print(f"Unable to find intervention {intervention_pointer}.")
 
     return edited_this_lb_submission
