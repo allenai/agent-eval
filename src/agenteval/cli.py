@@ -5,7 +5,6 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO

@@ -4,6 +4,7 @@ Utility module for maintainers to generate HuggingFace Dataset schema from Pydan
 
 import datetime
 import types
+from collections import defaultdict
 from importlib import resources
 from typing import Any, Literal, Union, get_args, get_origin
 
@@ -12,7 +13,7 @@ import yaml
 from datasets import Features
 from pydantic import BaseModel
 
-from .models import LeaderboardSubmission
+from .models import LeaderboardSubmission, Readme
 
 
 def _pa_type_for_annotation(anno) -> pa.DataType:
@@ -143,6 +144,7 @@ def check_lb_submissions_against_readme(
         message_for_exc = (
             f"Config name {missing_configs} not present in hf://{repo_id}/README.md"
             f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
+        )
         raise Exception(message_for_exc)
 
     missing_splits = list(

@@ -31,12 +31,16 @@ class Interventions(BaseModel):
     conversions: list[AppliedIntervention] | None
 
     def add_edit(self, pointer: InterventionPointer):
+        if self.edits is None:
+            self.edits = []
         self.edits.append(AppliedIntervention(pointer=pointer, applied=datetime.now(timezone.utc)))
 
     def has_edits(self):
         return (self.edits is not None) and (len(self.edits) > 0)
 
     def add_conversion(self, pointer: InterventionPointer):
+        if self.conversions is None:
+            self.conversions = []
         self.conversions.append(AppliedIntervention(pointer=pointer, applied=datetime.now(timezone.utc)))
 
     def has_conversions(self):
@@ -55,8 +59,18 @@ class LeaderboardSubmission(BaseModel):
 
     interventions: Interventions | None = None
 
+    def add_edit(self, pointer: InterventionPointer):
+        if self.interventions is None:
+            self.interventions = Interventions(edits=[], conversions=None)
+        self.interventions.add_edit(pointer)
+
     def has_edits(self):
         return (self.interventions is not None) and self.interventions.has_edits()
+
+    def add_conversion(self, pointer: InterventionPointer):
+        if self.interventions is None:
+            self.interventions = Interventions(edits=None, conversions=[])
+        self.interventions.add_conversion(pointer)
 
     def has_conversions(self):
         return (self.interventions is not None) and self.interventions.has_conversions()

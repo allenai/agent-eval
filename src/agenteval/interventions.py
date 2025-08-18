@@ -63,7 +63,7 @@ class Intervention:
         return self._eligible(submission_with_details)
 
     def transform(self, lb_submission: LeaderboardSubmission) -> bool:
-        self._transform(lb_submission)
+        return self._transform(lb_submission)
 
 
 # intervention kind -> config name -> intervention name -> Intervention
@@ -114,14 +114,13 @@ def edit_lb_submission(
         if (maybe_edit is not None) :
             if maybe_edit.eligible(lb_submission_with_details):
                 applied_one_edit = maybe_edit.transform(lb_submission_with_details.lb_submission)
+                if applied_one_edit:
+                    lb_submission_with_details.lb_submission.add_edit(intervention_pointer)
                 edited_this_lb_submission = edited_this_lb_submission or applied_one_edit
             else:
                 print(f"{lb_submission_with_details.submission_path} is not eligble for the {intervention_pointer} change.")
 
         else:
             print(f"Unable to find {intervention_pointer}.")
-
-    if edited_this_lb_submission:
-        lb_submission_with_details.lb_submission.interventions.add_edit(intervention_pointer)
 
     return edited_this_lb_submission
