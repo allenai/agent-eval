@@ -666,36 +666,36 @@ def copy_result_command(
             repo_type="dataset",
         )
 
-        if target_submissions_repo is not None:
-            try:
-                src_submission_paths_of_interest = RepoPathsOfInterest.from_urls(
-                    log_urls
-                )
-            except Exception as exc:
-                click.echo(str(exc))
-                sys.exit(1)
+        # if target_submissions_repo is not None:
+        #     try:
+        #         src_submission_paths_of_interest = RepoPathsOfInterest.from_urls(
+        #             log_urls
+        #         )
+        #     except Exception as exc:
+        #         click.echo(str(exc))
+        #         sys.exit(1)
 
-            src_submissions_repo = src_submission_paths_of_interest.repo_id
-            submission_paths = src_submission_paths_of_interest.relative_paths
+        #     src_submissions_repo = src_submission_paths_of_interest.repo_id
+        #     submission_paths = src_submission_paths_of_interest.relative_paths
 
-            # I think we can just use the same local dir.
-            local_submissions_dir = os.path.join(temp_dir, "submissions")
+        #     # I think we can just use the same local dir.
+        #     local_submissions_dir = os.path.join(temp_dir, "submissions")
 
-            snapshot_download(
-                repo_id=src_submissions_repo,
-                repo_type="dataset",
-                allow_patterns=[f"{p}/*" for p in submission_paths],
-                local_dir=local_submissions_dir,
-            )
-            print(
-                f"Uploading {len(submission_paths)} submissions to {target_submissions_repo}..."
-            )
-            hf_api.upload_folder(
-                folder_path=local_submissions_dir,
-                path_in_repo="",
-                repo_id=target_submissions_repo,
-                repo_type="dataset",
-            )
+        #     snapshot_download(
+        #         repo_id=src_submissions_repo,
+        #         repo_type="dataset",
+        #         allow_patterns=[f"{p}/*" for p in submission_paths],
+        #         local_dir=local_submissions_dir,
+        #     )
+        #     print(
+        #         f"Uploading {len(submission_paths)} submissions to {target_submissions_repo}..."
+        #     )
+        #     # hf_api.upload_folder(
+        #     #     folder_path=local_submissions_dir,
+        #     #     path_in_repo="",
+        #     #     repo_id=target_submissions_repo,
+        #     #     repo_type="dataset",
+        #     # )
 
     click.echo("Done")
 
