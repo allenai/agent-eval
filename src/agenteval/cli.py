@@ -173,7 +173,7 @@ def score_command(
 
     log_processing_outcome = process_eval_logs(
         log_dir,
-        maybe_reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+        reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
     )
 
     if log_processing_outcome.errors:

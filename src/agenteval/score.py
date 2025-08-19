@@ -127,9 +127,7 @@ def get_model_usages(log: EvalLog) -> list[list[ModelUsageWithName]]:
     return model_usages
 
 
-def get_normalized_task_name(
-    log: EvalLog, maybe_task_name_mapping: dict[str, str] | None = None
-) -> str:
+def get_normalized_task_name(log: EvalLog, task_name_mapping: dict[str, str]) -> str:
     """
     Normalize task name from eval log.
 
@@ -138,15 +136,18 @@ def get_normalized_task_name(
     """
     fallback = log.eval.task.split("/")[-1]
 
-    maybe_task_registry_name = log.eval.task_registry_name
-    if (maybe_task_name_mapping is not None) and (maybe_task_registry_name is not None):
-        normalized_name = maybe_task_name_mapping.get(
-            maybe_task_registry_name, fallback
+    task_registry_name = log.eval.task_registry_name
+    assert task_registry_name is not None, f"We expect a task registry name."
+    if task_registry_name not in task_name_mapping:
+        warning_msg = (
+            f"Task '{task_registry_name}' not found in the suite task "
+            f"paths {task_name_mapping.keys()}.  This could happen if you "
+            f"invoked with the path to a task file instead of the registry name.  "
+            f"Normalizing name to '{fallback}' as a fallback.",
         )
-    else:
-        normalized_name = fallback
-
-    return normalized_name
+        logger.warning(warning_msg)
+        return fallback
+    return task_name_mapping[task_registry_name]
 
 
 class EvalLogProcessingResult(BaseModel):
@@ -155,7 +156,7 @@ class EvalLogProcessingResult(BaseModel):
 
 
 def process_eval_logs(
-    log_dir: str, maybe_reference_tasks: list[Task] | None = None
+    log_dir: str, reference_tasks: list[Task]
 ) -> EvalLogProcessingResult:
     """
     Process evaluation logs from a directory and return task results.
@@ -167,19 +168,16 @@ def process_eval_logs(
         A tuple containing a list of task results and whether there were errors
     """
     # Some prep
-    if maybe_reference_tasks is not None:
-        maybe_task_name_mapping = {}
-        for task in maybe_reference_tasks:
-            maybe_task_name_mapping[task.path] = task.name
-    else:
-        maybe_task_name_mapping = None
+    task_name_mapping = {}
+    for task in reference_tasks:
+        task_name_mapping[task.path] = task.name
 
     # Read evaluation logs
     logs = {}
     errors = []
     for loginfo in list_eval_logs(log_dir):
         log = read_eval_log(loginfo.name, header_only=True)
-        task_name = get_normalized_task_name(log, maybe_task_name_mapping)
+        task_name = get_normalized_task_name(log, task_name_mapping)
         if task_name in logs:
             raise ValueError(f"Task {task_name} already read.")
         logs[task_name] = log
