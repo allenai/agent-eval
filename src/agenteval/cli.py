@@ -587,7 +587,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 open(local_submission_path).read()
             )
             if not submission_url.startswith("hf://datasets/"):
-                submission_url_to_use = submission_url.replace("hf://", "hf://datasets/", 1)
+                submission_url_to_use = submission_url.replace(
+                    "hf://", "hf://datasets/", 1
+                )
             else:
                 submission_url_to_use = submission_url
             submission.logs_url = submission_url_to_use
