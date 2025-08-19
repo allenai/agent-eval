@@ -143,7 +143,7 @@ def get_normalized_task_name(log: EvalLog, task_name_mapping: dict[str, str]) ->
             f"Task '{task_registry_name}' not found in the suite task "
             f"paths {task_name_mapping.keys()}.  This could happen if you "
             f"invoked with the path to a task file instead of the registry name.  "
-            f"Normalizing name to '{fallback}' as a fallback.",
+            f"Normalizing name to '{fallback}' as a fallback."
         )
         logger.warning(warning_msg)
         return fallback
