@@ -554,6 +554,154 @@ def convert_result_command(
 cli.add_command(convert_result_command)
 
 
+@click.command(name="copyresult", help="TODO")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+@click.option(
+    "--target-submissions-repo",
+    default=None,
+    required=False,
+    help="TODO",
+)
+@click.option(
+    "--target-results-repo",
+    default=None,
+    required=True,
+    help="TODO",
+)
+@click.option(
+    "--read-public-logs-field",
+    is_flag=True,
+    default=False,
+    help="TODO",
+)
+@click.option(
+    "--write-public-logs-field",
+    is_flag=True,
+    default=False,
+    help="TODO",
+)
+def copy_command(
+    target_submissions_repo: Optional[str],
+    target_results_repo: str,
+    read_public_logs_field: bool,
+    write_public_logs_field: bool,
+    result_urls: tuple[str, ...],
+):
+    try:
+        src_result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+    except Exception as exc:
+        click.echo(str(exc))
+        sys.exit(1)
+
+    src_results_repo = src_result_paths_of_interest.repo_id
+    result_paths = src_result_paths_of_interest.relative_paths
+    click.echo(f"{len(result_paths)} result files to copy.")
+
+    # use the same repo if no target is provided
+    click.echo(f"source results repo: {src_results_repo}")
+    click.echo(f"target results repo: {target_results_repo}")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        hf_api = HfApi()
+
+        local_src_results_dir = os.path.join(temp_dir, "sourceresults")
+        local_target_results_dir = os.path.join(temp_dir, "targetresults")
+
+        snapshot_download(
+            repo_id=src_results_repo,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_src_results_dir,
+        )
+
+        log_urls = []
+        lb_submissions = []
+
+        for result_path in result_paths:
+            local_src_result_path = os.path.join(local_src_results_dir, result_path)
+            with open(local_src_result_path) as f_src_result:
+                result = LeaderboardSubmission.model_validate(json.load(f_src_result))
+
+            current_logs_url = (
+                result.submission.logs_url_public
+                if read_public_logs_field
+                else result.submission.logs_url
+            )
+            log_urls.append(current_logs_url)
+
+            if target_submissions_repo is not None:
+                new_logs_url = f"hf://{target_submissions_repo}/{result_path}"
+                if write_public_logs_field:
+                    src_result.submission.logs_url_public = new_logs_url
+                    src_result.submission.logs_url = None
+                else:
+                    src_result.submission.logs_url_public = None
+                    src_result.submission.logs_url = new_logs_url
+
+            lb_submissions.append(result)
+
+            os.makedirs(
+                os.path.join(local_target_results_dir, os.path.dirname(result_path)),
+                exist_ok=True,
+            )
+            with open(
+                os.path.join(local_target_results_dir, result_path),
+                "w",
+                encoding="utf-8",
+            ) as f_target_result:
+                f_target_result.write(result.model_dump_json(indent=None))
+
+        # Validate the config with the schema in HF
+        check_submissions_against_readme(
+            lb_submissions=lb_submissions, repo_id=target_results_repo
+        )
+        print(f"Uploading {len(lb_submissions)} results to {target_results_repo}...")
+        hf_api.upload_folder(
+            folder_path=local_target_results_dir,
+            path_in_repo="",
+            repo_id=target_results_repo,
+            repo_type="dataset",
+        )
+
+        if target_submissions_repo is not None:
+            try:
+                src_submission_paths_of_interest = RepoPathsOfInterest.from_urls(
+                    log_urls
+                )
+            except Exception as exc:
+                click.echo(str(exc))
+                sys.exit(1)
+
+            src_submissions_repo = src_submission_paths_of_interest.repo_id
+            submission_paths = src_submission_paths_of_interest.relative_paths
+
+            # I think we can just use the same local dir.
+            local_submissions_dir = os.path.join(temp_dir, "submissions")
+
+            snapshot_download(
+                repo_id=src_submissions_repo,
+                repo_type="dataset",
+                allow_patterns=[f"{p}/*" for p in submission_paths],
+                local_dir=local_submissions_dir,
+            )
+            print(
+                f"Uploading {len(submission_paths)} submissions to {target_submissions_repo}..."
+            )
+            hf_api.upload_folder(
+                folder_path=local_submissions_dir,
+                path_in_repo="",
+                repo_id=target_submissions_repo,
+                repo_type="dataset",
+            )
+
+    click.echo("Done")
+
+
+cli.add_command(convert_result_command)
+
+
 @click.command(
     name="publish",
     help="Publish scored results in log_dir to HuggingFace leaderboard.",
