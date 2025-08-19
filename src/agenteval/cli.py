@@ -580,7 +580,7 @@ cli.add_command(convert_result_command)
     default=False,
     help="TODO",
 )
-def copy_command(
+def copy_result_command(
     target_submissions_repo: Optional[str],
     target_results_repo: str,
     read_public_logs_field: bool,
@@ -630,15 +630,16 @@ def copy_command(
                 else result.submission.logs_url
             )
             log_urls.append(current_logs_url)
+            _, src_submission_path = parse_hf_url(current_logs_url)
 
             if target_submissions_repo is not None:
-                new_logs_url = f"hf://{target_submissions_repo}/{result_path}"
+                new_logs_url = f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
                 if write_public_logs_field:
-                    src_result.submission.logs_url_public = new_logs_url
-                    src_result.submission.logs_url = None
+                    result.submission.logs_url_public = new_logs_url
+                    result.submission.logs_url = None
                 else:
-                    src_result.submission.logs_url_public = None
-                    src_result.submission.logs_url = new_logs_url
+                    result.submission.logs_url_public = None
+                    result.submission.logs_url = new_logs_url
 
             lb_submissions.append(result)
 
@@ -699,7 +700,7 @@ def copy_command(
     click.echo("Done")
 
 
-cli.add_command(convert_result_command)
+cli.add_command(copy_result_command)
 
 
 @click.command(
