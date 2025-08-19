@@ -171,7 +171,10 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate_json(f.read())
 
-    log_processing_outcome = process_eval_logs(log_dir)
+    log_processing_outcome = process_eval_logs(
+        log_dir,
+        reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+    )
 
     if log_processing_outcome.errors:
         click.echo("Errors processing logs")
