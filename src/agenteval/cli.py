@@ -589,7 +589,13 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
-            submission.logs_url = submission_url.replace("hf://", "hf://datasets/", 1)
+            if not submission_url.startswith("hf://datasets/"):
+                submission_url_to_use = submission_url.replace(
+                    "hf://", "hf://datasets/", 1
+                )
+            else:
+                submission_url_to_use = submission_url
+            submission.logs_url = submission_url_to_use
             lb_submission = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,
