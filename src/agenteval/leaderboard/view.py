@@ -346,11 +346,11 @@ def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None
         if gh.rate_limiting[0] > 0:
             repo = gh.get_repo(repo_name)
             if gh.rate_limiting[0] > 0:
-                commit = r.get_commit(commit_hash)
-                return c.commit.committer.date
+                commit = repo.get_commit(commit_hash)
+                return commit.commit.committer.date
         return None
     except Exception as exc:
-        logger.warning(f"Unable to get date for commit {commit_hash} in {repo_name}.")
+        logger.warning(f"Unable to get date for commit {commit_hash} in {repo_name} ({exc}).")
         return None
 
 
