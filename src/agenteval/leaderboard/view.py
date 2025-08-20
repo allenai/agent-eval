@@ -4,7 +4,6 @@ View and plot leaderboard results.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
