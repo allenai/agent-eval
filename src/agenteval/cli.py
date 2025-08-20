@@ -131,7 +131,9 @@ def verify_git_reproducibility() -> None:
 
 
 def check_using_local_litellm_model_cost_map():
-    assert os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") == "True", f"Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to \"True\" before scoring."
+    assert (
+        os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") == "True"
+    ), f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
 
 
 @click.group()
