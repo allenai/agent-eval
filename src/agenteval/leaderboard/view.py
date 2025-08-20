@@ -340,13 +340,18 @@ class GitRevisionWithDate:
         return self.revision.source_url()
 
 
+
 def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None:
     # test wrong repo
     # test wrong commit
     try:
-        repo = gh.get_repo(repo_name)
-        commit = r.get_commit(commit_hash)
-        return c.commit.committer.date
+        # check rate limiting because otherwise we'll wait for a while
+        if gh.rate_limiting[0] > 0:
+            repo = gh.get_repo(repo_name)
+            if gh.rate_limiting[0] > 0:
+                commit = r.get_commit(commit_hash)
+                return c.commit.committer.date
+        return None
     except Exception as exc:
         logger.warning(f"Unable to get date for commit {commit_hash} in {repo_name}.")
         return None
@@ -372,7 +377,6 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
         for revision in complete_git_revisions:
             origin = revision.origin
             commit = revision.commit
-            print(origin)
 
             # Convert SSH URLs to HTTPS URLs
             if origin.startswith("git@"):
@@ -390,10 +394,9 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
                 revs_of_interest.add(
                     GitRevision(normalized_origin=origin, commit=commit)
                 )
-                # print(f"source_url: {source_url}")
 
         revs_with_dates: list[GitRevisionWithDate] = []
-        if len(revs_of_interest) > 0:
+        if len(revs_of_interest) > 1:
             for rev in revs_of_interest:
                 maybe_repo = git_origin_to_repo(rev.normalized_origin)
                 if maybe_repo is not None:
@@ -408,7 +411,7 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
         if len(revs_with_dates) > 0:
             source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
         elif len(revs_of_interest) > 0:
-            source_url = thingies.pop().source_url()
+            source_url = revs_of_interest.pop().source_url()
 
     # https://github.com/allenai/asta-bench.git
     # git@github.com:allenai/asta-bench.git
