@@ -12,7 +12,6 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from github import Github
 from inspect_ai.log import EvalRevision
 from matplotlib.figure import Figure
 
@@ -331,40 +330,7 @@ class GitRevision:
         return f"{self.normalized_origin}/tree/{self.commit}"
 
 
-@dataclass
-class GitRevisionWithDate:
-    revision: GitRevision
-    date: datetime
-
-    def source_url(self) -> str:
-        return self.revision.source_url()
-
-
-def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None:
-    try:
-        # check rate limiting because otherwise we'll wait for a while
-        if gh.rate_limiting[0] > 0:
-            repo = gh.get_repo(repo_name)
-            if gh.rate_limiting[0] > 0:
-                commit = repo.get_commit(commit_hash)
-                return commit.commit.committer.date
-        return None
-    except Exception as exc:
-        logger.warning(
-            f"Unable to get date for commit {commit_hash} in {repo_name} ({exc})."
-        )
-        return None
-
-
-def git_origin_to_repo(origin) -> str | None:
-    looking_for = "://github.com/"
-    if looking_for in origin:
-        repo = origin[origin.index(looking_for) + len(looking_for) :]
-        return repo
-    return None
-
-
-def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str | None:
+def construct_reproducibility_url(task_revisions: list[EvalRevision]) -> str | None:
     source_url = None
 
     complete_git_revisions = [
@@ -392,22 +358,7 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
                     GitRevision(normalized_origin=origin, commit=commit)
                 )
 
-        revs_with_dates: list[GitRevisionWithDate] = []
-        if len(revs_of_interest) > 1:
-            for rev in revs_of_interest:
-                maybe_repo = git_origin_to_repo(rev.normalized_origin)
-                if maybe_repo is not None:
-                    maybe_date = get_date_for_commit(
-                        repo_name=maybe_repo, commit_hash=rev.commit, gh=gh
-                    )
-                    if maybe_date is not None:
-                        revs_with_dates.append(
-                            GitRevisionWithDate(revision=rev, date=maybe_date)
-                        )
-
-        if len(revs_with_dates) > 0:
-            source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
-        elif len(revs_of_interest) > 0:
+        if len(revs_of_interest) > 0:
             # Try to be somewhat consistent about what gets picked...
             source_url = sorted(list(revs_of_interest), key=lambda r: r.commit)[
                 -1
@@ -428,8 +379,6 @@ def _get_dataframe(
     """
     Load leaderboard results from the given dataset split and return a DataFrame.
     """
-    gh = Github()
-
     ds = eval_results.get(split)
     if not ds:
         cols = ["agent_name", "agent_description", "username", "submit_time"]
@@ -538,7 +487,7 @@ def _get_dataframe(
                 for tr in ev.results
                 if tr.eval_spec and tr.eval_spec.revision
             ]
-            source_url = construct_reproducibility_url(task_revisions, gh=gh)
+            source_url = construct_reproducibility_url(task_revisions)
 
         rows.append(
             {
