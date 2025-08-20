@@ -340,7 +340,6 @@ class GitRevisionWithDate:
         return self.revision.source_url()
 
 
-
 def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None:
     try:
         # check rate limiting because otherwise we'll wait for a while
@@ -410,7 +409,9 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
             source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
         elif len(revs_of_interest) > 0:
             # Try to be somewhat consistent about what gets picked...
-            source_url = sorted(revs_of_interest, key=lambda r: r.commit)[-1].source_url()
+            source_url = sorted(revs_of_interest, key=lambda r: r.commit)[
+                -1
+            ].source_url()
 
     return source_url
 
