@@ -3,6 +3,7 @@ View and plot leaderboard results.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,7 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from inspect_ai.log import EvalRevision
 from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
@@ -318,6 +320,52 @@ def _agent_with_probably_incomplete_model_usage_info(agent_name):
     return any([is_elicit, is_scispace, is_you_dot_com])
 
 
+@dataclass(frozen=True)
+class GitRevision:
+    normalized_origin: str
+    commit: str
+
+    def source_url(self) -> str:
+        return f"{self.normalized_origin}/tree/{self.commit}"
+
+
+def construct_reproducibility_url(task_revisions: list[EvalRevision]) -> str | None:
+    source_url = None
+
+    complete_git_revisions = [
+        r for r in task_revisions if r.type == "git" and r.origin and r.commit
+    ]
+    if len(complete_git_revisions) > 0:
+
+        revs_of_interest: set[GitRevision] = set([])
+        for revision in complete_git_revisions:
+            origin = revision.origin
+            commit = revision.commit
+
+            # Convert SSH URLs to HTTPS URLs
+            if origin.startswith("git@"):
+                # Convert git@github.com:user/repo.git to https://github.com/user/repo
+                origin = origin.replace(":", "/", 1).replace("git@", "https://")
+
+            # Remove .git suffix if present
+            if origin.endswith(".git"):
+                origin = origin[:-4]
+
+            # Only create URL if it looks like a valid HTTP(S) URL
+            if origin.startswith(("http://", "https://")):
+                revs_of_interest.add(
+                    GitRevision(normalized_origin=origin, commit=commit)
+                )
+
+        if len(revs_of_interest) > 0:
+            # Try to be somewhat consistent about what gets picked...
+            source_url = sorted(list(revs_of_interest), key=lambda r: r.commit)[
+                -1
+            ].source_url()
+
+    return source_url
+
+
 def _get_dataframe(
     eval_results: datasets.DatasetDict,
     split: str,
@@ -438,33 +486,7 @@ def _get_dataframe(
                 for tr in ev.results
                 if tr.eval_spec and tr.eval_spec.revision
             ]
-            if task_revisions and all(
-                rev == task_revisions[0] for rev in task_revisions
-            ):
-                revision = task_revisions[0]
-
-                # Only handle git revisions with complete info
-                if (
-                    revision
-                    and revision.type == "git"
-                    and revision.origin
-                    and revision.commit
-                ):
-                    origin = revision.origin
-                    commit = revision.commit
-
-                    # Convert SSH URLs to HTTPS URLs
-                    if origin.startswith("git@"):
-                        # Convert git@github.com:user/repo.git to https://github.com/user/repo
-                        origin = origin.replace("git@", "https://").replace(":", "/", 1)
-
-                    # Remove .git suffix if present
-                    if origin.endswith(".git"):
-                        origin = origin[:-4]
-
-                    # Only create URL if it looks like a valid HTTP(S) URL
-                    if origin.startswith(("http://", "https://")):
-                        source_url = f"{origin}/tree/{commit}"
+            source_url = construct_reproducibility_url(task_revisions)
 
         rows.append(
             {
