@@ -342,8 +342,6 @@ class GitRevisionWithDate:
 
 
 def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None:
-    # test wrong repo
-    # test wrong commit
     try:
         # check rate limiting because otherwise we'll wait for a while
         if gh.rate_limiting[0] > 0:
@@ -412,9 +410,6 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
             source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
         elif len(revs_of_interest) > 0:
             source_url = revs_of_interest.pop().source_url()
-
-    # https://github.com/allenai/asta-bench.git
-    # git@github.com:allenai/asta-bench.git
 
     return source_url
 
