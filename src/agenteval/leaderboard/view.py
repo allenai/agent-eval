@@ -350,7 +350,9 @@ def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None
                 return commit.commit.committer.date
         return None
     except Exception as exc:
-        logger.warning(f"Unable to get date for commit {commit_hash} in {repo_name} ({exc}).")
+        logger.warning(
+            f"Unable to get date for commit {commit_hash} in {repo_name} ({exc})."
+        )
         return None
 
 
