@@ -130,6 +130,10 @@ def verify_git_reproducibility() -> None:
         )
 
 
+def check_using_local_litellm_model_cost_map():
+    assert os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") == "True", f"Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to \"True\" before scoring."
+
+
 @click.group()
 def cli():
     pass
@@ -146,6 +150,10 @@ def cli():
 def score_command(
     log_dir: str,
 ):
+    # so that we know what model costs we're using to score
+    # more details in https://github.com/allenai/astabench-issues/issues/391
+    check_using_local_litellm_model_cost_map()
+
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
     temp_dir: tempfile.TemporaryDirectory | None = None
     if hf_url_match is not None:
