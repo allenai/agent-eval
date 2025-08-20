@@ -379,8 +379,6 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
             if origin.startswith("git@"):
                 # Convert git@github.com:user/repo.git to https://github.com/user/repo
                 origin = origin.replace(":", "/", 1).replace("git@", "https://")
-                # git@github.com:allenai/asta-bench.git
-                # no: https///github.com:allenai/asta-bench
 
             # Remove .git suffix if present
             if origin.endswith(".git"):
