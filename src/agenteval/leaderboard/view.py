@@ -409,7 +409,8 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
         if len(revs_with_dates) > 0:
             source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
         elif len(revs_of_interest) > 0:
-            source_url = revs_of_interest.pop().source_url()
+            # Try to be somewhat consistent about what gets picked...
+            source_url = sorted(revs_of_interest, key=lambda r: r.commit)[-1].source_url()
 
     return source_url
 
