@@ -3,6 +3,8 @@ View and plot leaderboard results.
 """
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -10,6 +12,8 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from github import Github
+from inspect_ai.log import EvalRevision
 from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
@@ -318,6 +322,100 @@ def _agent_with_probably_incomplete_model_usage_info(agent_name):
     return any([is_elicit, is_scispace, is_you_dot_com])
 
 
+@dataclass(frozen=True)
+class GitRevision:
+    normalized_origin: str
+    commit: str
+
+    def source_url(self) -> str:
+        return f"{self.normalized_origin}/tree/{self.commit}"
+
+
+@dataclass
+class GitRevisionWithDate:
+    revision: GitRevision
+    date: datetime
+
+    def source_url(self) -> str:
+        return self.revision.source_url()
+
+
+def get_date_for_commit(repo_name: str, commit_hash: str, gh) -> datetime | None:
+    # test wrong repo
+    # test wrong commit
+    try:
+        repo = gh.get_repo(repo_name)
+        commit = r.get_commit(commit_hash)
+        return c.commit.committer.date
+    except Exception as exc:
+        logger.warning(f"Unable to get date for commit {commit_hash} in {repo_name}.")
+        return None
+
+
+def git_origin_to_repo(origin) -> str | None:
+    looking_for = "://github.com/"
+    if looking_for in origin:
+        repo = origin[origin.index(looking_for) + len(looking_for) :]
+        return repo
+    return None
+
+
+def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str | None:
+    source_url = None
+
+    complete_git_revisions = [
+        r for r in task_revisions if r.type == "git" and r.origin and r.commit
+    ]
+    if len(complete_git_revisions) > 0:
+
+        revs_of_interest: list[GitRevision] = set([])
+        for revision in complete_git_revisions:
+            origin = revision.origin
+            commit = revision.commit
+            print(origin)
+
+            # Convert SSH URLs to HTTPS URLs
+            if origin.startswith("git@"):
+                # Convert git@github.com:user/repo.git to https://github.com/user/repo
+                origin = origin.replace(":", "/", 1).replace("git@", "https://")
+                # git@github.com:allenai/asta-bench.git
+                # no: https///github.com:allenai/asta-bench
+
+            # Remove .git suffix if present
+            if origin.endswith(".git"):
+                origin = origin[:-4]
+
+            # Only create URL if it looks like a valid HTTP(S) URL
+            if origin.startswith(("http://", "https://")):
+                revs_of_interest.add(
+                    GitRevision(normalized_origin=origin, commit=commit)
+                )
+                # print(f"source_url: {source_url}")
+
+        revs_with_dates: list[GitRevisionWithDate] = []
+        if len(revs_of_interest) > 0:
+            for rev in revs_of_interest:
+                maybe_repo = git_origin_to_repo(rev.normalized_origin)
+                if maybe_repo is not None:
+                    maybe_date = get_date_for_commit(
+                        repo_name=maybe_repo, commit_hash=rev.commit, gh=gh
+                    )
+                    if maybe_date is not None:
+                        revs_with_dates.append(
+                            GitRevisionWithDate(revision=rev, date=maybe_date)
+                        )
+
+        if len(revs_with_dates) > 0:
+            source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
+        elif len(revs_of_interest) > 0:
+            source_url = thingies.pop().source_url()
+
+    # https://github.com/allenai/asta-bench.git
+    # git@github.com:allenai/asta-bench.git
+
+    return source_url
+
+
 def _get_dataframe(
     eval_results: datasets.DatasetDict,
     split: str,
@@ -330,6 +428,8 @@ def _get_dataframe(
     """
     Load leaderboard results from the given dataset split and return a DataFrame.
     """
+    gh = Github()
+
     ds = eval_results.get(split)
     if not ds:
         cols = ["agent_name", "agent_description", "username", "submit_time"]
@@ -438,33 +538,7 @@ def _get_dataframe(
                 for tr in ev.results
                 if tr.eval_spec and tr.eval_spec.revision
             ]
-            if task_revisions and all(
-                rev == task_revisions[0] for rev in task_revisions
-            ):
-                revision = task_revisions[0]
-
-                # Only handle git revisions with complete info
-                if (
-                    revision
-                    and revision.type == "git"
-                    and revision.origin
-                    and revision.commit
-                ):
-                    origin = revision.origin
-                    commit = revision.commit
-
-                    # Convert SSH URLs to HTTPS URLs
-                    if origin.startswith("git@"):
-                        # Convert git@github.com:user/repo.git to https://github.com/user/repo
-                        origin = origin.replace("git@", "https://").replace(":", "/", 1)
-
-                    # Remove .git suffix if present
-                    if origin.endswith(".git"):
-                        origin = origin[:-4]
-
-                    # Only create URL if it looks like a valid HTTP(S) URL
-                    if origin.startswith(("http://", "https://")):
-                        source_url = f"{origin}/tree/{commit}"
+            source_url = construct_reproducibility_url(task_revisions, gh=gh)
 
         rows.append(
             {
