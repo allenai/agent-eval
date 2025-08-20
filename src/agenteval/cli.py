@@ -132,7 +132,9 @@ def verify_git_reproducibility() -> None:
 
 def check_using_local_litellm_model_cost_map():
     if os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") != "True":
-        raise click.ClickException(f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.')
+        raise click.ClickException(
+            f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
+        )
 
 
 @click.group()
