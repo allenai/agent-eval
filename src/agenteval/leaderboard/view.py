@@ -372,7 +372,7 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
     ]
     if len(complete_git_revisions) > 0:
 
-        revs_of_interest: list[GitRevision] = set([])
+        revs_of_interest: set[GitRevision] = set([])
         for revision in complete_git_revisions:
             origin = revision.origin
             commit = revision.commit
@@ -409,7 +409,7 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision], gh) -> str
             source_url = sorted(revs_with_dates, key=lambda r: r.date)[-1].source_url()
         elif len(revs_of_interest) > 0:
             # Try to be somewhat consistent about what gets picked...
-            source_url = sorted(revs_of_interest, key=lambda r: r.commit)[
+            source_url = sorted(list(revs_of_interest), key=lambda r: r.commit)[
                 -1
             ].source_url()
 
