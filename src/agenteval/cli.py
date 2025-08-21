@@ -160,9 +160,7 @@ def prep_litellm_cost_map():
     desired_model_costs_keys = set(desired_model_costs.keys())
     in_current_not_in_desired = current_model_cost_keys - desired_model_costs_keys
     if len(in_current_not_in_desired) > 0:
-        raise click.ClickException(
-            f"Info for {in_current_not_in_desired} is available but not from the specified cost map!"
-        )
+        click.echo(f"WARNING: Info for {in_current_not_in_desired} is available but not from the specified cost map!")
 
     register_model(model_cost=desired_model_costs)
 
