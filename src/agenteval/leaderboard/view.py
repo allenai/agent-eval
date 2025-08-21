@@ -18,6 +18,7 @@ from .. import compute_summary_statistics
 from ..config import SuiteConfig
 from .model_name_mapping import LB_MODEL_NAME_MAPPING
 from .models import LeaderboardSubmission
+from .score import EvalSpec
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +367,75 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision]) -> str | N
     return source_url
 
 
+def unversion_pretty_model_name(pretty_model_name: str) -> str:
+    # pretty just means a value in our LB_MODEL_NAME_MAPPING map
+    return pretty_model_name[:pretty_model_name.index("(")].strip()
+
+
+def format_model_names_for_one_results(raw_names: set[str], eval_specs: list[EvalSpec]) -> dict[str, set[str]]:
+    # default is to look at the mapping, falling back to the raw name
+    to_return = {raw_name: {LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)} for raw_name in raw_names}
+
+    # we may want to make futher adjustments based on model args
+    eval_specs_that_might_affect_model_names: List[EvalSpec] = []
+
+    for spec in eval_specs:
+        # reasoning_effort is the only one that affects stuff for now
+        if (spec.model_args is not None) and ("reasoning_effort" in spec.model_args):
+            eval_specs_that_might_affect_model_names.append(spec)
+
+    if len(eval_specs_that_might_affect_model_names) > 0:
+        for spec in eval_specs_that_might_affect_model_names:
+            eval_spec_model_name = spec.model_name
+            model_args = spec.model_args
+
+            eval_spec_name_aliases = {eval_spec_model_name}
+            if eval_spec_model_name in LB_MODEL_NAME_MAPPING:
+                pretty_eval_spec_model_name = LB_MODEL_NAME_MAPPING[eval_spec_model_name]
+                eval_spec_name_aliases.add(pretty_eval_spec_model_name)
+                eval_spec_name_aliases.add(unversion_pretty_model_name(pretty_eval_spec_model_name))
+
+            for raw_name in raw_names:
+
+                raw_name_aliases = {raw_name}
+                if raw_name in LB_MODEL_NAME_MAPPING:
+                    pretty_raw_name = LB_MODEL_NAME_MAPPING[raw_name]
+                    raw_name_aliases.add(pretty_raw_name)
+                    raw_name_aliases.add(unversion_pretty_model_name(pretty_raw_name))
+
+                if len(eval_spec_name_aliases.intersection(raw_name_aliases)):
+
+
+
+
+        eval_spec_name
+        transformed_eval_spec_name
+
+        raw_name
+        transformed_raw_name
+        eval_spec_model_names_to_model_args = {s.model: s.model_args for s in eval_specs_with_non_empty_model_args}
+        for eval_spec_model_name, model_args in eval_spec_model_names_to_model_args.items():
+            eval_spec_model_name_in_raw_names = eval_spec_model_name in raw_names
+            eval_spec_model_name_in_raw_names 
+
+        
+
+
+
+def format_model_names(raw_name_to_eval_specs: dict[str, list[str]]) -> dict[str, str]:
+    # sometimes what's in the result's EvalSpec can affect what we want to
+    # show for a given model
+    to_return = {}
+
+    for raw_name, eval_specs in raw_model_name_to_eval_specs.items():
+        if all([(s.model_args is None) or len(s.model_args == 0)]):
+            to_return[raw_name] = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
+        else:
+
+    model_args = eval_spec.
+    pass
+
+
 def _get_dataframe(
     eval_results: datasets.DatasetDict,
     split: str,
@@ -397,6 +467,7 @@ def _get_dataframe(
         )
 
         model_token_counts: dict[str, int] = {}
+        raw_model_name_to_eval_specs = {}
         if ev.results:
             for task_result in ev.results:
 
@@ -417,6 +488,10 @@ def _get_dataframe(
                                 model_token_counts[model_name] += total_tokens
                             else:
                                 model_token_counts[model_name] = total_tokens
+
+                            if model_name not in raw_model_name_to_eval_specs:
+                                raw_model_name_to_eval_specs[model_name] = []
+                            raw_model_name_to_eval_specs[model_name].append(task_result.eval_spec)
 
         # Sort by cumulative token count (descending - most used first)
         sorted_raw_names = sorted(
