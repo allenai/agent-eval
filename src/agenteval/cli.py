@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import json
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -13,7 +13,8 @@ from io import BytesIO
 import click
 import datasets
 import httpx
-from litellm import model_cost as litellm_model_cost, register_model
+from litellm import model_cost as litellm_model_cost
+from litellm import register_model
 
 from agenteval.leaderboard.schema_generator import load_dataset_features
 
@@ -148,7 +149,8 @@ def prep_litellm_cost_map():
     # This snippet is mostly lifted from
     # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
     response = httpx.get(
-        "https://raw.githubusercontent.com/BerriAI/litellm/eb66daeef740947c0326826817cf68fb56a8b931/litellm/model_prices_and_context_window_backup.json", timeout=5
+        "https://raw.githubusercontent.com/BerriAI/litellm/eb66daeef740947c0326826817cf68fb56a8b931/litellm/model_prices_and_context_window_backup.json",
+        timeout=5,
     )
     response.raise_for_status()
     desired_model_costs = response.json()
@@ -158,7 +160,9 @@ def prep_litellm_cost_map():
     desired_model_costs_keys = set(desired_model_costs.keys())
     in_current_not_in_desired = current_model_cost_keys - desired_model_costs_keys
     if len(in_current_not_in_desired) > 0:
-        raise click.ClickException(f"Info for {in_current_not_in_desired} is available but not from the specified cost map!")
+        raise click.ClickException(
+            f"Info for {in_current_not_in_desired} is available but not from the specified cost map!"
+        )
 
     register_model(model_cost=desired_model_costs)
 
