@@ -169,6 +169,7 @@ def prep_litellm_cost_map():
     h = hashlib.sha256()
     h.update(json.dumps(litellm_model_cost, sort_keys=True).encode())
     model_cost_hash = h.hexdigest()
+    click.echo(f"litellm version: {litellm.__version__}")
     click.echo(f"Model costs hash {model_cost_hash}.")
 
 
