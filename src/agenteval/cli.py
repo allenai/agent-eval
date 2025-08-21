@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -169,8 +170,15 @@ def prep_litellm_cost_map():
     h = hashlib.sha256()
     h.update(json.dumps(litellm_model_cost, sort_keys=True).encode())
     model_cost_hash = h.hexdigest()
-    click.echo(f"litellm version: {litellm.__version__}")
+    # This is mostly informational... I think it's the case that having
+    # a different hash here doesn't necessarily mean computed cost info
+    # is incompatible.
     click.echo(f"Model costs hash {model_cost_hash}.")
+
+    # Between this and the version of the file we pass to register_model()
+    # I think we can reconstruct the model costs used.
+    litellm_version = importlib.metadata.version("litellm")
+    click.echo(f"litellm version: {litellm_version}")
 
 
 @click.group()
