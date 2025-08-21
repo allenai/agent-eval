@@ -12,7 +12,7 @@ dependencies = [
   "click",
   "inspect-ai>=0.3.104",
   # pin litellm so that we know what model costs we're using
-  # see https://github.com/allenai/astabench-issues/issues/391 before changing
+  # see the Development.md doc before changing
   "litellm==1.68.0",
   "pydantic>=2.0.0",
   # For leaderboard
