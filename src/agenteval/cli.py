@@ -554,6 +554,49 @@ def convert_result_command(
 cli.add_command(convert_result_command)
 
 
+@dataclass
+class WithinRepoPathComponents:
+    hf_config: str
+    split: str
+    submission_name: str
+
+    def to_within_repo_result_path(self):
+        return f"{self.hf_config}/{self.split}/{self.submission_name}.json"
+
+    def to_within_repo_submission_dir(self):
+        return f"{self.hf_config}/{self.split}/{self.submission_name}"
+
+    def to_within_repo_submission_summary_dir(self):
+        return f"summaries/{self.hf_config}/{self.split}/{self.submission_name}"
+
+    def to_within_repo_submission_eval_config(self):
+        return f"{self.to_within_repo_submission_dir()}/{EVAL_CONFIG_FILENAME}"
+
+    def to_within_repo_submission_submission_metadata(self):
+        return f"{self.to_within_repo_submission_dir()}/{SUBMISSION_METADATA_FILENAME}"
+
+    def to_within_repo_submission_scores(self):
+        return f"{self.to_within_repo_submission_summary_dir()}/{SCORES_FILENAME}"
+
+    def within_repo_patterns(self):
+        return [
+            self.to_within_repo_submission_eval_config(),
+            self.to_within_repo_submission_submission_metadata(),
+            self.to_within_repo_submission_scores(),
+            f"{self.to_within_repo_submission_dir}/*.eval",
+        ]
+
+    @staticmethod
+    def from_within_repo_result_path(result_path):
+        [hf_config, split, filename] = result_path.split("/")
+        suffix = ".json"
+        assert filename.endswith(suffix)
+        submission_name = filename[: -len(suffix)]
+        return WithinRepoPathComponents(
+            hf_config=hf_config, split=split, submission_name=submission_name
+        )
+
+
 @click.command(name="copyresult", help="TODO")
 @click.argument("result_urls", nargs=-1, required=True, type=str)
 @click.option(
@@ -633,7 +676,9 @@ def copy_result_command(
             _, src_submission_path = parse_hf_url(current_logs_url)
 
             if target_submissions_repo is not None:
-                new_logs_url = f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
+                new_logs_url = (
+                    f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
+                )
                 if write_public_logs_field:
                     result.submission.logs_url_public = new_logs_url
                     result.submission.logs_url = None
