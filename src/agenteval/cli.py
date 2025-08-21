@@ -803,6 +803,12 @@ def validate_split(ctx, param, value):
     default=None,
     help='Path to JSON file containing unified model mappings. If not provided, default mappings are applied to clean up model names. Supports base mappings ("model_name": "display_name") and conditional mappings ("field:value": {"model": "override"}). Use \'none\' to disable all mappings and show raw model names.',
 )
+@click.option(
+    "--save-format",
+    type=click.Choice(["png", "pdf"]),
+    default="png",
+    help="Format for saving plots (default: png)",
+)
 def view_command(
     repo_id,
     config,
@@ -826,6 +832,7 @@ def view_command(
     group_agent,
     group_agent_fixed_colors,
     model_name_mapping_file,
+    save_format,
 ):
     """View a specific config and split; show overview or tag detail."""
     import json
@@ -922,10 +929,14 @@ def view_command(
         click.echo(f"Saved pipeline statistics: {stats_path}")
 
         for name, fig in plots.items():
-            path = os.path.join(outdir, f"{name}.png")
+            ext = save_format
+            path = os.path.join(outdir, f"{name}.{ext}")
             if "scatter" in name and scatter_figure_width is not None:
                 # When custom width is specified (likely for publication), use higher DPI
-                fig.savefig(path, bbox_inches="tight", dpi=300)
+                if ext == "png":
+                    fig.savefig(path, bbox_inches="tight", dpi=300)
+                else:
+                    fig.savefig(path, bbox_inches="tight")
             else:
                 fig.savefig(path, bbox_inches="tight")
             click.echo(f"Saved plot: {path}")

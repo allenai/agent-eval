@@ -53,5 +53,8 @@
   "llama-3.1-opscholar-8b": "llama-3.1-opscholar-8b",
   "logs_url:hf://datasets/datasets/allenai/asta-bench-internal-submissions/1.0.0-dev1/test/pclark425_Asta_DataVoyager_2025-08-14T21-31-12": {
     "gpt-5": "gpt-5†:effort=minimal"
+  },
+  "logs_url:hf://datasets/allenai/asta-bench-internal-submissions/1.0.0-dev1/test/pclark425_Asta_DataVoyager_2025-08-14T21-31-12": {
+    "gpt-5": "gpt-5†:effort=minimal"
   }
 }
