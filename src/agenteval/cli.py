@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -11,6 +13,9 @@ from io import BytesIO
 
 import click
 import datasets
+import httpx
+from litellm import model_cost as litellm_model_cost
+from litellm import register_model
 
 from agenteval.leaderboard.schema_generator import load_dataset_features
 
@@ -130,11 +135,49 @@ def verify_git_reproducibility() -> None:
         )
 
 
-def check_using_local_litellm_model_cost_map():
+def prep_litellm_cost_map():
     if os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") != "True":
         raise click.ClickException(
             f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
         )
+
+    current_model_cost_keys = set(litellm_model_cost.keys())
+
+    # Can't you just point register_model() at a URL?
+    # Yes, but it won't actually use the url if LITELLM_LOCAL_MODEL_COST_MAP
+    # is set, and that should be set (so we can avoid pulling costs on the fly).
+    # So we'll load the cost file we want ourselves from the URL, and pass its info in as a dict.
+    # This snippet is mostly lifted from
+    # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
+    # See the Development.md before changing.
+    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/eb66daeef740947c0326826817cf68fb56a8b931/litellm/model_prices_and_context_window_backup.json"
+    response = httpx.get(desired_model_costs_url, timeout=5)
+    response.raise_for_status()
+    desired_model_costs = response.json()
+
+    # try to check that we aren't getting info that's not also in or overridden by
+    # the cost file we're pointing at
+    desired_model_costs_keys = set(desired_model_costs.keys())
+    in_current_not_in_desired = current_model_cost_keys - desired_model_costs_keys
+    if len(in_current_not_in_desired) > 0:
+        click.echo(
+            f"WARNING: Info for {in_current_not_in_desired} is available but not from the specified cost map!"
+        )
+
+    register_model(model_cost=desired_model_costs)
+
+    h = hashlib.sha256()
+    h.update(json.dumps(litellm_model_cost, sort_keys=True).encode())
+    model_cost_hash = h.hexdigest()
+    # This is mostly informational... I think it's the case that having
+    # a different hash here doesn't necessarily mean computed cost info
+    # is incompatible.
+    click.echo(f"Model costs hash {model_cost_hash}.")
+
+    # Between this and the version of the file we pass to register_model()
+    # I think we can reconstruct the model costs used.
+    litellm_version = importlib.metadata.version("litellm")
+    click.echo(f"litellm version: {litellm_version}")
 
 
 @click.group()
@@ -154,8 +197,8 @@ def score_command(
     log_dir: str,
 ):
     # so that we know what model costs we're using to score
-    # more details in https://github.com/allenai/astabench-issues/issues/391
-    check_using_local_litellm_model_cost_map()
+    # more details in the Development.md
+    prep_litellm_cost_map()
 
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
     temp_dir: tempfile.TemporaryDirectory | None = None

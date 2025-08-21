@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval"
-version = "0.1.39"
+version = "0.1.40"
 description = "Agent evaluation toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,8 +12,8 @@ dependencies = [
   "click",
   "inspect-ai>=0.3.104",
   # pin litellm so that we know what model costs we're using
-  # see https://github.com/allenai/astabench-issues/issues/391 before changing
-  "litellm==1.75.8",
+  # see the Development.md doc before changing
+  "litellm==1.67.4.post1",
   "pydantic>=2.0.0",
   # For leaderboard
   "huggingface_hub",
