@@ -396,7 +396,7 @@ def format_model_names_for_one_result(
     if (
         (eval_spec is not None)
         and (eval_spec.model_args is not None)
-        and (isinstance(eval_spec.model_args), dict)
+        and (isinstance(eval_spec.model_args, dict))
         and ("reasoning_effort" in eval_spec.model_args)
     ):
         consider_eval_spec = True
