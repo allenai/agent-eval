@@ -390,8 +390,8 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 
 def format_model_names_for_one_result(
     raw_names: set[str], eval_spec: EvalSpec | None
-) -> set[str]:
-    to_return: set[str] = set()
+) -> dict[str, str]:
+    to_return: dict[str, str] = {}
 
     if (
         (eval_spec is not None)
@@ -421,9 +421,18 @@ def format_model_names_for_one_result(
                 )
 
         to_use = safe_name_option if other_name_option is None else other_name_option
-        to_return.add(to_use)
+        to_return[raw_name] = to_use
 
     return to_return
+
+
+def merge_in_formatted_names_from_one_result(
+    so_far: dict[str, set[str]], from_one_result: dict[str, str]
+):
+    for k, v in from_one_result.items():
+        if k not in so_far:
+            so_far[k] = set()
+        so_far[k].add(v)
 
 
 def _get_dataframe(
@@ -458,7 +467,7 @@ def _get_dataframe(
 
         model_token_counts: dict[str, int] = {}
         # formatted model names
-        model_names: set[str] = set()
+        raw_names_to_formatted_names: dict[str, set[str]] = {}
 
         if ev.results:
             for task_result in ev.results:
@@ -484,8 +493,9 @@ def _get_dataframe(
 
                             models_in_this_task.add(model_name)
 
-                model_names = model_names.union(
-                    format_model_names_for_one_result(
+                merge_in_formatted_names_from_one_result(
+                    so_far=raw_names_to_formatted_names,
+                    from_one_result=format_model_names_for_one_result(
                         raw_names=models_in_this_task,
                         eval_spec=task_result.eval_spec,
                     ),
@@ -495,6 +505,16 @@ def _get_dataframe(
         sorted_raw_names = sorted(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
+
+        # use a list because order matter here
+        model_names = []
+        for raw_name in sorted_raw_names:
+            # we might have mapped the same raw name to different formatted names
+            # e.g. if reasoning effort wasn't at the default for a result
+            formatted_names = raw_names_to_formatted_names[raw_name]
+            # in case two raw names map to the same formatted name
+            if formatted_name not in model_names:
+                model_names.append(formatted_name)
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
@@ -566,7 +586,7 @@ def _get_dataframe(
                 "submit_time": date,
                 "openness": sub.openness,
                 "tool_usage": sub.tool_usage,
-                "base_models": list(model_names),
+                "base_models": model_names,
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
                 "source_url": source_url,
