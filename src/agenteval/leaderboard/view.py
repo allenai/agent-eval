@@ -391,7 +391,13 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 def format_model_names_for_one_result(
     raw_names: set[str], eval_spec: EvalSpec | None
 ) -> dict[str, str]:
-    to_return: dict[str, str] = {}
+    raw_name_to_formatted_name: dict[str, str] = {}
+
+    # if we end up finding multiple different model names
+    # from model usages that seem to correspond to the same
+    # model we have model args for, it might suggest we did
+    # something wrong, so also keep track of that
+    by_model_args_influence_name: dict[str, set[str]] = {}
 
     if (
         (eval_spec is not None)
@@ -406,7 +412,7 @@ def format_model_names_for_one_result(
         spec_model_name_aliases = None
 
     for raw_name in raw_names:
-        safe_name_option = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
+        map_option = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
         other_name_option = None
 
         if consider_eval_spec:
@@ -421,23 +427,33 @@ def format_model_names_for_one_result(
             if looks_like_same_model:
                 reasoning_effort = eval_spec.model_args["reasoning_effort"]
                 other_name_option = adjust_model_name_for_reasoning_effort(
-                    model_name=safe_name_option,
+                    model_name=map_option,
                     effort=reasoning_effort,
                 )
+                if other_name_option not in model_args_influenced_to_raw:
+                    model_args_influenced_to_raw[other_name_option] = set()
+                model_args_influenced_to_raw[other_name_option].add(raw_name)
 
-        to_use = safe_name_option if other_name_option is None else other_name_option
-        to_return[raw_name] = to_use
+        name_to_use = map_option if other_name_option is None else other_name_option
+        raw_name_to_formatted_name[raw_name] = name_to_use
 
-    return to_return
+    for model_args_influenced, raw_names in model_args_influenced_to_raw.items():
+        # Suggests we might have done something wrong in figuring out which
+        # model usages are relevant to the model args affecting the model name
+        # we want to show.
+        if len(raw_names) > 1:
+            raise ValueError(f"Issue figuring out how model args affect models used.")
+
+    return raw_name_to_formatted_name
 
 
 def merge_in_formatted_names_from_one_result(
     so_far: dict[str, set[str]], from_one_result: dict[str, str]
 ):
-    for k, v in from_one_result.items():
-        if k not in so_far:
-            so_far[k] = set()
-        so_far[k].add(v)
+    for raw_name, formatted_name in from_one_result.items():
+        if raw_name not in so_far:
+            so_far[raw_name] = set()
+        so_far[raw_name].add(formatted_name)
 
 
 def _get_dataframe(
@@ -465,6 +481,9 @@ def _get_dataframe(
     for itm in ds:
         ev = LeaderboardSubmission.model_validate(itm)
         sub = ev.submission
+
+        # There are some cases where we would drop this submission.
+        use_submission = True
 
         probably_incomplete_model_info = (
             _agent_with_probably_incomplete_model_usage_info(sub.agent_name)
@@ -498,13 +517,22 @@ def _get_dataframe(
 
                             models_in_this_task.add(model_name)
 
-                merge_in_formatted_names_from_one_result(
-                    so_far=raw_names_to_formatted_names,
-                    from_one_result=format_model_names_for_one_result(
-                        raw_names=models_in_this_task,
-                        eval_spec=task_result.eval_spec,
-                    ),
-                )
+                try:
+                    formatted_model_names_for_one_result = (
+                        format_model_names_for_one_result(
+                            raw_names=models_in_this_task,
+                            eval_spec=task_result.eval_spec,
+                        )
+                    )
+                    merge_in_formatted_names_from_one_result(
+                        so_far=raw_names_to_formatted_names,
+                        from_one_result=formatted_model_names_for_one_result,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        f"Dropping submission {sub} because of issues figuring out model details."
+                    )
+                    use_submission = False
 
         # Sort by cumulative token count (descending - most used first)
         sorted_raw_names = sorted(
@@ -583,21 +611,24 @@ def _get_dataframe(
             ]
             source_url = construct_reproducibility_url(task_revisions)
 
-        rows.append(
-            {
-                "id": sub.submit_time,
-                "agent_name": sub.agent_name,
-                "agent_description": sub.agent_description or "",
-                "username": sub.username or "",
-                "submit_time": date,
-                "openness": sub.openness,
-                "tool_usage": sub.tool_usage,
-                "base_models": model_names,
-                **flat,
-                "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
-                "source_url": source_url,
-            }
-        )
+        if use_submission:
+            rows.append(
+                {
+                    "id": sub.submit_time,
+                    "agent_name": sub.agent_name,
+                    "agent_description": sub.agent_description or "",
+                    "username": sub.username or "",
+                    "submit_time": date,
+                    "openness": sub.openness,
+                    "tool_usage": sub.tool_usage,
+                    "base_models": model_names,
+                    **flat,
+                    "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
+                    "source_url": source_url,
+                }
+            )
+        else:
+            logger.warning(f"Dropped submission {sub} from results.")
 
     df = pd.DataFrame(rows)
 
