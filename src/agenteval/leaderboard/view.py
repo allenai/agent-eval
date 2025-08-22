@@ -530,7 +530,7 @@ def _get_dataframe(
                     )
                 except ValueError as exc:
                     logger.warning(
-                        f"Dropping submission {sub} because of issues figuring out model details."
+                        f"Dropping submission {sub} because of issues figuring out model details. {exc}"
                     )
                     use_submission = False
 
