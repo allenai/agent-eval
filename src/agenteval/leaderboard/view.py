@@ -377,8 +377,12 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
         # pretty just means a value in our LB_MODEL_NAME_MAPPING map
         pretty_name = LB_MODEL_NAME_MAPPING[raw_name]
         aliases.add(pretty_name)
-        # pretty name without the version
-        aliases.add(pretty_name[: pretty_name.index("(")].strip())
+        # pretty name without the date
+        open_paren_index = pretty_name.index("(")
+        name_date = pretty_name[open_paren_index:].strip()
+        if name_date == "(unpinned)":
+            dateless_pretty_name = pretty_name[: open_paren_index].strip()
+            aliases.add(dateless_pretty_name)
     return {a.lower() for a in aliases}
 
 
