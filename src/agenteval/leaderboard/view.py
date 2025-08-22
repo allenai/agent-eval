@@ -380,7 +380,7 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 
         # if the pretty name suggests it's unpinned
         # include the pretty version without the date part
-        open_paren_index = pretty_name.index("(")
+        open_paren_index = pretty_name.rindex("(")
         name_date = pretty_name[open_paren_index:].strip()
         if name_date == "(unpinned)":
             dateless_pretty_name = pretty_name[:open_paren_index].strip()
