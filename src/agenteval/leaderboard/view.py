@@ -396,6 +396,7 @@ def format_model_names_for_one_result(
     if (
         (eval_spec is not None)
         and (eval_spec.model_args is not None)
+        and (isinstance(eval_spec.model_args), dict)
         and ("reasoning_effort" in eval_spec.model_args)
     ):
         consider_eval_spec = True
@@ -412,6 +413,7 @@ def format_model_names_for_one_result(
             # make mypy happy
             assert eval_spec is not None
             assert spec_model_name_aliases is not None
+            assert isinstance(eval_spec.model_args, dict)
             raw_name_aliases = get_model_name_aliases(raw_name)
             looks_like_same_model = (
                 len(raw_name_aliases.intersection(spec_model_name_aliases)) > 0
