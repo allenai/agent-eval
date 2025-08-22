@@ -503,7 +503,7 @@ def _get_dataframe(
                     task_result.model_usages = None
                     task_result.model_costs = None
 
-                models_in_this_task = set([])
+                models_in_this_task = set()
                 if task_result.model_usages:
                     for usage_list in task_result.model_usages:
                         for model_usage in usage_list:
