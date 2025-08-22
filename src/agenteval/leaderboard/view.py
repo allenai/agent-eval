@@ -513,8 +513,9 @@ def _get_dataframe(
             # e.g. if reasoning effort wasn't at the default for a result
             formatted_names = raw_names_to_formatted_names[raw_name]
             # in case two raw names map to the same formatted name
-            if formatted_name not in model_names:
-                model_names.append(formatted_name)
+            for formatted_name in formatted_names:
+                if formatted_name not in model_names:
+                    model_names.append(formatted_name)
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
