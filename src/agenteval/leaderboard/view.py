@@ -371,110 +371,62 @@ def adjust_model_name_for_reasoning_effort(model_name: str, effort: str) -> str:
     return f"{model_name} (reasoning_effort={effort})"
 
 
-def unversion_pretty_model_name(pretty_model_name: str) -> str:
-    # pretty just means a value in our LB_MODEL_NAME_MAPPING map
-    return pretty_model_name[:pretty_model_name.index("(")].strip()
-
-
 def get_model_name_aliases(raw_name: str) -> set[str]:
     aliases = {raw_name}
     if raw_name in LB_MODEL_NAME_MAPPING:
+        # pretty just means a value in our LB_MODEL_NAME_MAPPING map
         pretty_name = LB_MODEL_NAME_MAPPING[raw_name]
         aliases.add(pretty_name)
-        aliases.add(unversion_pretty_model_name(pretty_name))
+        # pretty name without the version
+        aliases.add(pretty_name[: pretty_name.index("(")].strip())
     return aliases
 
 
-def format_model_names_for_one_result(raw_names: set[str], eval_spec: EvalSpec) -> dict[str, set[str]]:
-# for each result,
-#    we might have eval spec model name and model args
-#    and we might have multiple model names for model names used
+def format_model_names_for_one_result(
+    raw_names: set[str], eval_spec: EvalSpec
+) -> dict[str, tuple[str, str | None]]:
+    to_return: dict[str, tuple[str, str | None]] = {}
 
-#    for each model name from model usages:
-#        if it might be the eval spec model arg and we have reasnoing effort in model args:
-#            usage name -> maybe transformed -> add reasoning effort
-#         else:
-#            usage name -> maybe transformed
-    
-    to_return = {}
-    if (eval_spec.model_args is not None) and ("reasoning_effort" in eval_spec.model_args):
+    if (eval_spec.model_args is not None) and (
+        "reasoning_effort" in eval_spec.model_args
+    ):
         consider_eval_spec = True
         spec_model_name_aliases = get_model_name_aliases(eval_spec.model_name)
     else:
         consider_eval_spec = False
         spec_model_name_aliases = None
-        
+
     for raw_name in raw_names:
+        safe_name_option = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
+        other_name_option = None
+
         if consider_eval_spec:
             raw_name_aliases = get_model_name_aliases(raw_name)
             if len(spec_model_name_aliases.intersection(raw_name_aliases)):
+                reasoning_effort = eval_spec.model_args["reasoning_effort"]
+                other_name_option = adjust_model_name_for_reasoning_effort(
+                    model_name=safe_name_option,
+                    effort=reasoning_effort,
+                )
 
+        to_return[raw_name] = (safe_name_option, other_name_option)
+
+    return to_return
+
+
+def merge_model_names_for_result(
+    so_far: dict[str, str], new_name_options: dict[str, tuple[str, str | None]]
+):
+    for raw_name, name_options in new_name_options.items():
+        safe_name, maybe_other_name = name_options
+        preferred_name = safe_name if maybe_other_name is None else maybe_other_name
+        if raw_name in so_far:
+            # suggests that we got something wrong... fallback to the safe option
+            # which should always be the same for a given raw name
+            if preferred_name != so_far[raw_name]:
+                so_far[raw_name] = safe_name
         else:
-            to_return = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
-
-
-def format_model_names_for_one_results(raw_names: set[str], eval_specs: list[EvalSpec]) -> dict[str, set[str]]:
-    # default is to look at the mapping, falling back to the raw name
-    to_return = {raw_name: {LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)} for raw_name in raw_names}
-
-    # we may want to make futher adjustments based on model args
-    eval_specs_that_might_affect_model_names: List[EvalSpec] = []
-
-    for spec in eval_specs:
-        # reasoning_effort is the only one that affects stuff for now
-        if (spec.model_args is not None) and ("reasoning_effort" in spec.model_args):
-            eval_specs_that_might_affect_model_names.append(spec)
-
-    if len(eval_specs_that_might_affect_model_names) > 0:
-        for spec in eval_specs_that_might_affect_model_names:
-            eval_spec_model_name = spec.model_name
-            model_args = spec.model_args
-
-            eval_spec_name_aliases = {eval_spec_model_name}
-            if eval_spec_model_name in LB_MODEL_NAME_MAPPING:
-                pretty_eval_spec_model_name = LB_MODEL_NAME_MAPPING[eval_spec_model_name]
-                eval_spec_name_aliases.add(pretty_eval_spec_model_name)
-                eval_spec_name_aliases.add(unversion_pretty_model_name(pretty_eval_spec_model_name))
-
-            for raw_name in raw_names:
-
-                raw_name_aliases = {raw_name}
-                if raw_name in LB_MODEL_NAME_MAPPING:
-                    pretty_raw_name = LB_MODEL_NAME_MAPPING[raw_name]
-                    raw_name_aliases.add(pretty_raw_name)
-                    raw_name_aliases.add(unversion_pretty_model_name(pretty_raw_name))
-
-                if len(eval_spec_name_aliases.intersection(raw_name_aliases)):
-
-
-
-
-        eval_spec_name
-        transformed_eval_spec_name
-
-        raw_name
-        transformed_raw_name
-        eval_spec_model_names_to_model_args = {s.model: s.model_args for s in eval_specs_with_non_empty_model_args}
-        for eval_spec_model_name, model_args in eval_spec_model_names_to_model_args.items():
-            eval_spec_model_name_in_raw_names = eval_spec_model_name in raw_names
-            eval_spec_model_name_in_raw_names 
-
-        
-
-
-
-def format_model_names(raw_name_to_eval_specs: dict[str, list[str]]) -> dict[str, str]:
-    # sometimes what's in the result's EvalSpec can affect what we want to
-    # show for a given model
-    to_return = {}
-
-    for raw_name, eval_specs in raw_model_name_to_eval_specs.items():
-        if all([(s.model_args is None) or len(s.model_args == 0)]):
-            to_return[raw_name] = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
-        else:
-
-    model_args = eval_spec.
-    pass
+            so_far[raw_name] = preferred_name
 
 
 def _get_dataframe(
@@ -508,7 +460,8 @@ def _get_dataframe(
         )
 
         model_token_counts: dict[str, int] = {}
-        raw_model_name_to_eval_specs = {}
+        model_name_mapping: dict[str, str] = {}
+
         if ev.results:
             for task_result in ev.results:
 
@@ -519,6 +472,7 @@ def _get_dataframe(
                     task_result.model_usages = None
                     task_result.model_costs = None
 
+                models_in_this_task = set([])
                 if task_result.model_usages:
                     for usage_list in task_result.model_usages:
                         for model_usage in usage_list:
@@ -530,18 +484,22 @@ def _get_dataframe(
                             else:
                                 model_token_counts[model_name] = total_tokens
 
-                            if model_name not in raw_model_name_to_eval_specs:
-                                raw_model_name_to_eval_specs[model_name] = []
-                            raw_model_name_to_eval_specs[model_name].append(task_result.eval_spec)
+                            models_in_this_task.add(model_name)
+
+                merge_model_names_for_result(
+                    so_far=model_name_mapping,
+                    new_name_options=format_model_names_for_one_result(
+                        raw_names=models_in_this_task,
+                        eval_spec=task_result.eval_spec,
+                    ),
+                )
 
         # Sort by cumulative token count (descending - most used first)
         sorted_raw_names = sorted(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
 
-        model_names = [
-            LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
-        ]
+        model_names = [model_name_mapping[name] for name in sorted_raw_names]
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
