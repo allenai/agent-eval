@@ -409,6 +409,9 @@ def format_model_names_for_one_result(
         other_name_option = None
 
         if consider_eval_spec:
+            # make mypy happy
+            assert eval_spec is not None
+            assert spec_model_name_aliases is not None
             raw_name_aliases = get_model_name_aliases(raw_name)
             looks_like_same_model = (
                 len(raw_name_aliases.intersection(spec_model_name_aliases)) > 0
