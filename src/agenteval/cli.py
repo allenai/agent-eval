@@ -46,7 +46,7 @@ OPENNESS_MAPPING = {
 }
 TOOL_MAPPING = {
     "s": "Standard",
-    "css": "Custom interface",
+    "ci": "Custom interface",
     "c": "Fully custom",
 }
 
