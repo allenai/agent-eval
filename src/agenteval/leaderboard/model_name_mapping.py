@@ -86,4 +86,5 @@ LB_MODEL_NAME_MAPPING = {
     "openai/gpt-4o": "GPT-4o (unpinned)",
     "gpt-3.5-turbo-0125": "GPT-3.5 Turbo (2025-01)",
     "openai/gpt-5": "GPT-5 (unpinned)",
+    "gpt-5": "GPT-5 (unpinned)",
 }
