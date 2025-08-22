@@ -367,9 +367,50 @@ def construct_reproducibility_url(task_revisions: list[EvalRevision]) -> str | N
     return source_url
 
 
+def adjust_model_name_for_reasoning_effort(model_name: str, effort: str) -> str:
+    return f"{model_name} (reasoning_effort={effort})"
+
+
 def unversion_pretty_model_name(pretty_model_name: str) -> str:
     # pretty just means a value in our LB_MODEL_NAME_MAPPING map
     return pretty_model_name[:pretty_model_name.index("(")].strip()
+
+
+def get_model_name_aliases(raw_name: str) -> set[str]:
+    aliases = {raw_name}
+    if raw_name in LB_MODEL_NAME_MAPPING:
+        pretty_name = LB_MODEL_NAME_MAPPING[raw_name]
+        aliases.add(pretty_name)
+        aliases.add(unversion_pretty_model_name(pretty_name))
+    return aliases
+
+
+def format_model_names_for_one_result(raw_names: set[str], eval_spec: EvalSpec) -> dict[str, set[str]]:
+# for each result,
+#    we might have eval spec model name and model args
+#    and we might have multiple model names for model names used
+
+#    for each model name from model usages:
+#        if it might be the eval spec model arg and we have reasnoing effort in model args:
+#            usage name -> maybe transformed -> add reasoning effort
+#         else:
+#            usage name -> maybe transformed
+    
+    to_return = {}
+    if (eval_spec.model_args is not None) and ("reasoning_effort" in eval_spec.model_args):
+        consider_eval_spec = True
+        spec_model_name_aliases = get_model_name_aliases(eval_spec.model_name)
+    else:
+        consider_eval_spec = False
+        spec_model_name_aliases = None
+        
+    for raw_name in raw_names:
+        if consider_eval_spec:
+            raw_name_aliases = get_model_name_aliases(raw_name)
+            if len(spec_model_name_aliases.intersection(raw_name_aliases)):
+
+        else:
+            to_return = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
 
 
 def format_model_names_for_one_results(raw_names: set[str], eval_specs: list[EvalSpec]) -> dict[str, set[str]]:
