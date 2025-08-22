@@ -39,15 +39,15 @@ SUMMARY_FILENAME = "summary_stats.json"
 SUBMISSION_METADATA_FILENAME = "submission.json"
 SUMMARIES_PREFIX = "summaries"
 OPENNESS_MAPPING = {
-    "c": "Closed",
-    "api": "API Available",
-    "os": "Open Source",
-    "ow": "Open Source + Open Weights",
+    "c": " Closed source & UI only",
+    "api": "Closed source & API available",
+    "os": "Open source & closed weights",
+    "ow": "Open source & open weights",
 }
 TOOL_MAPPING = {
     "s": "Standard",
-    "css": "Custom with Standard Search",
-    "c": "Fully Custom",
+    "css": "Custom interface",
+    "c": "Fully custom",
 }
 
 
