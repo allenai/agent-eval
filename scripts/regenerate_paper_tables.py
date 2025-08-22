@@ -87,7 +87,7 @@ def extract_table_with_structure(lines: List[str], start_idx: int) -> Dict:
                 result["category"] = "code"
             elif "discoverybench" in caption_lower or "data analysis" in caption_lower:
                 result["category"] = "data"
-            elif "e2e-bench" in caption_lower or "end-to-end" in caption_lower:
+            elif "\\catendtoend" in caption_lower or "end-to-end" in caption_lower:
                 result["category"] = "discovery"
             elif "\\catlit" in caption_text and "\\evaltables" in caption_text:
                 result["category"] = "lit_table"
@@ -385,6 +385,24 @@ def is_known_confirmed_change(entry: dict, new_row: str, diffs: list[str]) -> bo
         m = re.match(r"Model: (.*) vs (.*), \\modelGPTFourOUnpinned", diffs[1])
         if m and m.group(1) == m.group(2):
             return True
+
+    if (
+        entry["agent"] == "\\agentFaker"
+        and entry["model"] == "\\modelGPTFourPointOneUnpinned"
+    ):
+        return True
+
+    if entry["agent"] == "\\agentAutoAsta" and entry["model"] in (
+        "\\modelClaudeSonnetFourShort",
+        "\\modelGPTFourPointOneUnpinned",
+    ):
+        return True
+
+    if (
+        entry["agent"] == "\\agentCodeScientist"
+        and entry["model"] == "\\modelClaudeSonnetThreeSevenShort"
+    ):
+        return True
 
     return False
 
