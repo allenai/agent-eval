@@ -16,9 +16,9 @@ from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
 from ..config import SuiteConfig
+from ..score import EvalSpec
 from .model_name_mapping import LB_MODEL_NAME_MAPPING
 from .models import LeaderboardSubmission
-from .score import EvalSpec
 
 logger = logging.getLogger(__name__)
 
@@ -379,7 +379,7 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
         aliases.add(pretty_name)
         # pretty name without the version
         aliases.add(pretty_name[: pretty_name.index("(")].strip())
-    return aliases
+    return {a.lower() for a in aliases}
 
 
 def format_model_names_for_one_result(
@@ -391,7 +391,7 @@ def format_model_names_for_one_result(
         "reasoning_effort" in eval_spec.model_args
     ):
         consider_eval_spec = True
-        spec_model_name_aliases = get_model_name_aliases(eval_spec.model_name)
+        spec_model_name_aliases = get_model_name_aliases(eval_spec.model)
     else:
         consider_eval_spec = False
         spec_model_name_aliases = None
@@ -402,7 +402,10 @@ def format_model_names_for_one_result(
 
         if consider_eval_spec:
             raw_name_aliases = get_model_name_aliases(raw_name)
-            if len(spec_model_name_aliases.intersection(raw_name_aliases)):
+            looks_like_same_model = (
+                len(raw_name_aliases.intersection(spec_model_name_aliases)) > 0
+            )
+            if looks_like_same_model:
                 reasoning_effort = eval_spec.model_args["reasoning_effort"]
                 other_name_option = adjust_model_name_for_reasoning_effort(
                     model_name=safe_name_option,
