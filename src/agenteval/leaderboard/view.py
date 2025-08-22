@@ -385,7 +385,7 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 def format_model_names_for_one_result(
     raw_names: set[str], eval_spec: EvalSpec
 ) -> set[str]:
-    to_return: set[str] = {}
+    to_return: set[str] = set()
 
     if (eval_spec.model_args is not None) and (
         "reasoning_effort" in eval_spec.model_args
@@ -415,7 +415,7 @@ def format_model_names_for_one_result(
         to_use = safe_name_option if other_name_option is None else other_name_option
         to_return.add(to_use)
 
-    return to_use
+    return to_return
 
 
 def _get_dataframe(
@@ -450,7 +450,7 @@ def _get_dataframe(
 
         model_token_counts: dict[str, int] = {}
         # formatted model names
-        model_names: set[str] = {}
+        model_names: set[str] = set()
 
         if ev.results:
             for task_result in ev.results:
