@@ -384,8 +384,8 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 
 def format_model_names_for_one_result(
     raw_names: set[str], eval_spec: EvalSpec
-) -> dict[str, tuple[str, str | None]]:
-    to_return: dict[str, tuple[str, str | None]] = {}
+) -> set[str]:
+    to_return: set[str] = {}
 
     if (eval_spec.model_args is not None) and (
         "reasoning_effort" in eval_spec.model_args
@@ -412,24 +412,10 @@ def format_model_names_for_one_result(
                     effort=reasoning_effort,
                 )
 
-        to_return[raw_name] = (safe_name_option, other_name_option)
+        to_use = safe_name_option if other_name_option is None else other_name_option
+        to_return.add(to_use)
 
-    return to_return
-
-
-def merge_model_names_for_result(
-    so_far: dict[str, str], new_name_options: dict[str, tuple[str, str | None]]
-):
-    for raw_name, name_options in new_name_options.items():
-        safe_name, maybe_other_name = name_options
-        preferred_name = safe_name if maybe_other_name is None else maybe_other_name
-        if raw_name in so_far:
-            # suggests that we got something wrong... fallback to the safe option
-            # which should always be the same for a given raw name
-            if preferred_name != so_far[raw_name]:
-                so_far[raw_name] = safe_name
-        else:
-            so_far[raw_name] = preferred_name
+    return to_use
 
 
 def _get_dataframe(
@@ -463,7 +449,8 @@ def _get_dataframe(
         )
 
         model_token_counts: dict[str, int] = {}
-        model_name_mapping: dict[str, str] = {}
+        # formatted model names
+        model_names: set[str] = {}
 
         if ev.results:
             for task_result in ev.results:
@@ -489,9 +476,8 @@ def _get_dataframe(
 
                             models_in_this_task.add(model_name)
 
-                merge_model_names_for_result(
-                    so_far=model_name_mapping,
-                    new_name_options=format_model_names_for_one_result(
+                model_names = model_names.union(
+                    format_model_names_for_one_result(
                         raw_names=models_in_this_task,
                         eval_spec=task_result.eval_spec,
                     ),
@@ -501,8 +487,6 @@ def _get_dataframe(
         sorted_raw_names = sorted(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
-
-        model_names = [model_name_mapping[name] for name in sorted_raw_names]
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
@@ -574,7 +558,7 @@ def _get_dataframe(
                 "submit_time": date,
                 "openness": sub.openness,
                 "tool_usage": sub.tool_usage,
-                "base_models": model_names,
+                "base_models": list(model_names),
                 **flat,
                 "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
                 "source_url": source_url,
