@@ -389,12 +389,14 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
 
 
 def format_model_names_for_one_result(
-    raw_names: set[str], eval_spec: EvalSpec
+    raw_names: set[str], eval_spec: EvalSpec | None
 ) -> set[str]:
     to_return: set[str] = set()
 
-    if (eval_spec.model_args is not None) and (
-        "reasoning_effort" in eval_spec.model_args
+    if (
+        (eval_spec is not None)
+        and (eval_spec.model_args is not None)
+        and ("reasoning_effort" in eval_spec.model_args)
     ):
         consider_eval_spec = True
         spec_model_name_aliases = get_model_name_aliases(eval_spec.model)
