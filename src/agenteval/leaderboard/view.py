@@ -430,14 +430,14 @@ def format_model_names_for_one_result(
                     model_name=map_option,
                     effort=reasoning_effort,
                 )
-                if other_name_option not in model_args_influenced_to_raw:
-                    model_args_influenced_to_raw[other_name_option] = set()
-                model_args_influenced_to_raw[other_name_option].add(raw_name)
+                if other_name_option not in by_model_args_influence_name:
+                    by_model_args_influence_name[other_name_option] = set()
+                by_model_args_influence_name[other_name_option].add(raw_name)
 
         name_to_use = map_option if other_name_option is None else other_name_option
         raw_name_to_formatted_name[raw_name] = name_to_use
 
-    for model_args_influenced, raw_names in model_args_influenced_to_raw.items():
+    for model_args_influenced, raw_names in by_model_args_influence_name.items():
         # Suggests we might have done something wrong in figuring out which
         # model usages are relevant to the model args affecting the model name
         # we want to show.
