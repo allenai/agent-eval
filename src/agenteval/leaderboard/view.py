@@ -381,7 +381,7 @@ def get_model_name_aliases(raw_name: str) -> set[str]:
         open_paren_index = pretty_name.index("(")
         name_date = pretty_name[open_paren_index:].strip()
         if name_date == "(unpinned)":
-            dateless_pretty_name = pretty_name[: open_paren_index].strip()
+            dateless_pretty_name = pretty_name[:open_paren_index].strip()
             aliases.add(dateless_pretty_name)
     return {a.lower() for a in aliases}
 
