@@ -1116,7 +1116,7 @@ class WithinRepoPathComponents:
     help="TODO",
 )
 def copy_command(
-    target_submissions_repo: Optional[str],
+    target_submissions_repo: str | None,
     target_results_repo: str,
     read_public_logs_field: bool,
     write_public_logs_field: bool,
@@ -1219,8 +1219,6 @@ def copy_command(
             paths_to_pull = []
             for submission_path in submission_paths:
                 paths_to_pull.extend(WithinRepoPathComponents.from_within_repo_submission_path(submission_path).within_repo_submission_patterns())
-            print(f"paths to pull")
-            print(paths_to_pull)
 
             snapshot_download(
                 repo_id=src_submissions_repo,
