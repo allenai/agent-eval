@@ -9,6 +9,7 @@ import sys
 import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from io import BytesIO
 
 import click
@@ -49,6 +50,33 @@ TOOL_MAPPING = {
     "css": "Custom with Standard Search",
     "c": "Fully Custom",
 }
+
+
+@dataclass
+class RepoPathsOfInterest:
+    repo_id: str
+    relative_paths: list[str]
+
+    @staticmethod
+    def from_urls(urls: list[str]):
+        repo_ids = set()
+        paths = []
+
+        for url in urls:
+            # validates submission_url format "hf://<repo_id>/<path>"
+            repo_id, path = parse_hf_url(url)
+            repo_ids.add(repo_id)
+            paths.append(path)
+
+        if len(repo_ids) > 1:
+            raise Exception("All URLs must reference the same repo")
+
+        repo_id_to_use = repo_ids.pop()
+
+        return RepoPathsOfInterest(
+            repo_id=repo_id_to_use,
+            relative_paths=paths,
+        )
 
 
 def parse_hf_url(url: str) -> tuple[str, str]:
