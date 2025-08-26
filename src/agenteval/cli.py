@@ -1164,19 +1164,20 @@ def copy_command(
                 if read_public_logs_field
                 else result.submission.logs_url
             )
-            log_urls.append(current_logs_url)
-            _, src_submission_path = parse_hf_url(current_logs_url)
+            if current_logs_url is not None:
+                log_urls.append(current_logs_url)
+                _, src_submission_path = parse_hf_url(current_logs_url)
 
-            if target_submissions_repo is not None:
-                new_logs_url = (
-                    f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
-                )
-                if write_public_logs_field:
-                    result.submission.logs_url_public = new_logs_url
-                    result.submission.logs_url = None
-                else:
-                    result.submission.logs_url_public = None
-                    result.submission.logs_url = new_logs_url
+                if target_submissions_repo is not None:
+                    new_logs_url = (
+                        f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
+                    )
+                    if write_public_logs_field:
+                        result.submission.logs_url_public = new_logs_url
+                        result.submission.logs_url = None
+                    else:
+                        result.submission.logs_url_public = None
+                        result.submission.logs_url = new_logs_url
 
             lb_submissions.append(result)
 
