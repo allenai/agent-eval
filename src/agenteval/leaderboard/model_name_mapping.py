@@ -15,6 +15,8 @@ LB_MODEL_NAME_MAPPING = {
     "gpt-4.1-nano-2025-04-14": "GPT-4.1 Nano (2025-04)",
     "gpt-4o-2024-11-20": "GPT-4o (2024-11)",
     "codex-mini-latest": "Codex Mini (unpinned)",
+    "gpt-5-2025-08-07": "GPT-5 (2025-08)",
+    "gpt-5-mini-2025-08-07": "GPT-5 Mini (2025-08)",
     # Anthropic models
     "claude-opus-4-20250514": "Claude Opus 4 (2025-05)",
     "claude-sonnet-4-20250514": "Claude Sonnet 4 (2025-05)",
@@ -83,4 +85,6 @@ LB_MODEL_NAME_MAPPING = {
     "gemini/gemini-2.5-pro": "Gemini 2.5 Pro (unpinned)",
     "openai/gpt-4o": "GPT-4o (unpinned)",
     "gpt-3.5-turbo-0125": "GPT-3.5 Turbo (2025-01)",
+    "openai/gpt-5": "GPT-5 (unpinned)",
+    "gpt-5": "GPT-5 (unpinned)",
 }

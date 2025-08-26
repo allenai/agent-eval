@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -12,6 +14,9 @@ from typing import List, Optional
 
 import click
 import datasets
+import httpx
+from litellm import model_cost as litellm_model_cost
+from litellm import register_model
 
 from agenteval.leaderboard.schema_generator import (
     check_submissions_against_readme,
@@ -162,6 +167,51 @@ def verify_git_reproducibility() -> None:
         )
 
 
+def prep_litellm_cost_map():
+    if os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") != "True":
+        raise click.ClickException(
+            f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
+        )
+
+    current_model_cost_keys = set(litellm_model_cost.keys())
+
+    # Can't you just point register_model() at a URL?
+    # Yes, but it won't actually use the url if LITELLM_LOCAL_MODEL_COST_MAP
+    # is set, and that should be set (so we can avoid pulling costs on the fly).
+    # So we'll load the cost file we want ourselves from the URL, and pass its info in as a dict.
+    # This snippet is mostly lifted from
+    # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
+    # See the Development.md before changing.
+    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/eb66daeef740947c0326826817cf68fb56a8b931/litellm/model_prices_and_context_window_backup.json"
+    response = httpx.get(desired_model_costs_url, timeout=5)
+    response.raise_for_status()
+    desired_model_costs = response.json()
+
+    # try to check that we aren't getting info that's not also in or overridden by
+    # the cost file we're pointing at
+    desired_model_costs_keys = set(desired_model_costs.keys())
+    in_current_not_in_desired = current_model_cost_keys - desired_model_costs_keys
+    if len(in_current_not_in_desired) > 0:
+        click.echo(
+            f"WARNING: Info for {in_current_not_in_desired} is available but not from the specified cost map!"
+        )
+
+    register_model(model_cost=desired_model_costs)
+
+    h = hashlib.sha256()
+    h.update(json.dumps(litellm_model_cost, sort_keys=True).encode())
+    model_cost_hash = h.hexdigest()
+    # This is mostly informational... I think it's the case that having
+    # a different hash here doesn't necessarily mean computed cost info
+    # is incompatible.
+    click.echo(f"Model costs hash {model_cost_hash}.")
+
+    # Between this and the version of the file we pass to register_model()
+    # I think we can reconstruct the model costs used.
+    litellm_version = importlib.metadata.version("litellm")
+    click.echo(f"litellm version: {litellm_version}")
+
+
 @click.group()
 def cli():
     pass
@@ -178,6 +228,10 @@ def cli():
 def score_command(
     log_dir: str,
 ):
+    # so that we know what model costs we're using to score
+    # more details in the Development.md
+    prep_litellm_cost_map()
+
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
     temp_dir: tempfile.TemporaryDirectory | None = None
     if hf_url_match is not None:
@@ -203,7 +257,10 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate_json(f.read())
 
-    log_processing_outcome = process_eval_logs(log_dir)
+    log_processing_outcome = process_eval_logs(
+        log_dir,
+        reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+    )
 
     if log_processing_outcome.errors:
         click.echo("Errors processing logs")
@@ -864,7 +921,13 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
-            submission.logs_url = submission_url.replace("hf://", "hf://datasets/", 1)
+            if not submission_url.startswith("hf://datasets/"):
+                submission_url_to_use = submission_url.replace(
+                    "hf://", "hf://datasets/", 1
+                )
+            else:
+                submission_url_to_use = submission_url
+            submission.logs_url = submission_url_to_use
             lb_submission = LeaderboardSubmission(
                 suite_config=eval_config.suite_config,
                 split=eval_config.split,

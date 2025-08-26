@@ -44,3 +44,10 @@ When a new config version is defined (e.g. v1.1.0), you need to update the HF sc
 python scripts/update_readme.py add-config --config-name <config_name> --split <split1> --split <split2> ...
 ```
 The script will enforce that all config versions use the same data model for leaderboard submissions.
+
+
+# Bumping litellm
+
+We do a couple of things in an effort to compute costs for things in a consistent way. One of these things is putting limits on the litellm version used (more details [here](https://github.com/allenai/astabench-issues/issues/391)).
+
+If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `desired_model_costs_url`. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.

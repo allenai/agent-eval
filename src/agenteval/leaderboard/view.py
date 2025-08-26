@@ -3,6 +3,7 @@ View and plot leaderboard results.
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -10,10 +11,12 @@ import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from inspect_ai.log import EvalRevision
 from matplotlib.figure import Figure
 
 from .. import compute_summary_statistics
 from ..config import SuiteConfig
+from ..score import EvalSpec
 from .model_name_mapping import LB_MODEL_NAME_MAPPING
 from .models import LeaderboardSubmission
 
@@ -318,6 +321,141 @@ def _agent_with_probably_incomplete_model_usage_info(agent_name):
     return any([is_elicit, is_scispace, is_you_dot_com])
 
 
+@dataclass(frozen=True)
+class GitRevision:
+    normalized_origin: str
+    commit: str
+
+    def source_url(self) -> str:
+        return f"{self.normalized_origin}/tree/{self.commit}"
+
+
+def construct_reproducibility_url(task_revisions: list[EvalRevision]) -> str | None:
+    source_url = None
+
+    complete_git_revisions = [
+        r for r in task_revisions if r.type == "git" and r.origin and r.commit
+    ]
+    if len(complete_git_revisions) > 0:
+
+        revs_of_interest: set[GitRevision] = set([])
+        for revision in complete_git_revisions:
+            origin = revision.origin
+            commit = revision.commit
+
+            # Convert SSH URLs to HTTPS URLs
+            if origin.startswith("git@"):
+                # Convert git@github.com:user/repo.git to https://github.com/user/repo
+                origin = origin.replace(":", "/", 1).replace("git@", "https://")
+
+            # Remove .git suffix if present
+            if origin.endswith(".git"):
+                origin = origin[:-4]
+
+            # Only create URL if it looks like a valid HTTP(S) URL
+            if origin.startswith(("http://", "https://")):
+                revs_of_interest.add(
+                    GitRevision(normalized_origin=origin, commit=commit)
+                )
+
+        if len(revs_of_interest) > 0:
+            # Try to be somewhat consistent about what gets picked...
+            source_url = sorted(list(revs_of_interest), key=lambda r: r.commit)[
+                -1
+            ].source_url()
+
+    return source_url
+
+
+def adjust_model_name_for_reasoning_effort(model_name: str, effort: str) -> str:
+    return f"{model_name} (reasoning_effort={effort})"
+
+
+def get_model_name_aliases(raw_name: str) -> set[str]:
+    aliases = {raw_name}
+    if raw_name in LB_MODEL_NAME_MAPPING:
+        # pretty just means a value in our LB_MODEL_NAME_MAPPING map
+        pretty_name = LB_MODEL_NAME_MAPPING[raw_name]
+        aliases.add(pretty_name)
+
+        # if the pretty name suggests it's unpinned
+        # include the pretty version without the date part
+        open_paren_index = pretty_name.rindex("(")
+        name_date = pretty_name[open_paren_index:].strip()
+        if name_date == "(unpinned)":
+            dateless_pretty_name = pretty_name[:open_paren_index].strip()
+            aliases.add(dateless_pretty_name)
+    return {a.lower() for a in aliases}
+
+
+def format_model_names_for_one_result(
+    raw_names: set[str], eval_spec: EvalSpec | None
+) -> dict[str, str]:
+    raw_name_to_formatted_name: dict[str, str] = {}
+
+    # if we end up finding multiple different model names
+    # from model usages that seem to correspond to the same
+    # model we have model args for, it might suggest we did
+    # something wrong, so also keep track of that
+    by_model_args_influence_name: dict[str, set[str]] = {}
+
+    if (
+        (eval_spec is not None)
+        and (eval_spec.model_args is not None)
+        and (isinstance(eval_spec.model_args, dict))
+        and ("reasoning_effort" in eval_spec.model_args)
+    ):
+        consider_eval_spec = True
+        spec_model_name_aliases = get_model_name_aliases(eval_spec.model)
+    else:
+        consider_eval_spec = False
+        spec_model_name_aliases = None
+
+    for raw_name in raw_names:
+        map_option = LB_MODEL_NAME_MAPPING.get(raw_name, raw_name)
+        other_name_option = None
+
+        if consider_eval_spec:
+            # make mypy happy
+            assert eval_spec is not None
+            assert spec_model_name_aliases is not None
+            assert isinstance(eval_spec.model_args, dict)
+            raw_name_aliases = get_model_name_aliases(raw_name)
+            looks_like_same_model = (
+                len(raw_name_aliases.intersection(spec_model_name_aliases)) > 0
+            )
+            if looks_like_same_model:
+                reasoning_effort = eval_spec.model_args["reasoning_effort"]
+                other_name_option = adjust_model_name_for_reasoning_effort(
+                    model_name=map_option,
+                    effort=reasoning_effort,
+                )
+                if other_name_option not in by_model_args_influence_name:
+                    by_model_args_influence_name[other_name_option] = set()
+                by_model_args_influence_name[other_name_option].add(raw_name)
+
+        name_to_use = map_option if other_name_option is None else other_name_option
+        raw_name_to_formatted_name[raw_name] = name_to_use
+
+    for model_args_influenced, raw_names in by_model_args_influence_name.items():
+        # Suggests we might have done something wrong in figuring out which
+        # model usages are relevant to the model args affecting the model name
+        # we want to show.
+        if len(raw_names) > 1:
+            raise ValueError(f"Issue figuring out how model args affect models used.")
+
+    return raw_name_to_formatted_name
+
+
+def merge_in_formatted_names_from_one_result(
+    so_far: dict[str, set[str]], from_one_result: dict[str, str]
+):
+    for raw_name, formatted_name in from_one_result.items():
+        if raw_name not in so_far:
+            so_far[raw_name] = set()
+        so_far[raw_name].add(formatted_name)
+
+
 def _get_dataframe(
     eval_results: datasets.DatasetDict,
     split: str,
@@ -344,11 +482,17 @@ def _get_dataframe(
         ev = LeaderboardSubmission.model_validate(itm)
         sub = ev.submission
 
+        # There are some cases where we would drop this submission.
+        use_submission = True
+
         probably_incomplete_model_info = (
             _agent_with_probably_incomplete_model_usage_info(sub.agent_name)
         )
 
         model_token_counts: dict[str, int] = {}
+        # formatted model names
+        raw_names_to_formatted_names: dict[str, set[str]] = {}
+
         if ev.results:
             for task_result in ev.results:
 
@@ -359,6 +503,7 @@ def _get_dataframe(
                     task_result.model_usages = None
                     task_result.model_costs = None
 
+                models_in_this_task = set()
                 if task_result.model_usages:
                     for usage_list in task_result.model_usages:
                         for model_usage in usage_list:
@@ -370,14 +515,40 @@ def _get_dataframe(
                             else:
                                 model_token_counts[model_name] = total_tokens
 
+                            models_in_this_task.add(model_name)
+
+                try:
+                    formatted_model_names_for_one_result = (
+                        format_model_names_for_one_result(
+                            raw_names=models_in_this_task,
+                            eval_spec=task_result.eval_spec,
+                        )
+                    )
+                    merge_in_formatted_names_from_one_result(
+                        so_far=raw_names_to_formatted_names,
+                        from_one_result=formatted_model_names_for_one_result,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        f"Dropping submission {sub} because of issues figuring out model details. {exc}"
+                    )
+                    use_submission = False
+
         # Sort by cumulative token count (descending - most used first)
         sorted_raw_names = sorted(
             model_token_counts.keys(), key=lambda x: model_token_counts[x], reverse=True
         )
 
-        model_names = [
-            LB_MODEL_NAME_MAPPING.get(name, name) for name in sorted_raw_names
-        ]
+        # use a list because order matter here
+        model_names = []
+        for raw_name in sorted_raw_names:
+            # we might have mapped the same raw name to different formatted names
+            # e.g. if reasoning effort wasn't at the default for a result
+            formatted_names = raw_names_to_formatted_names[raw_name]
+            # in case two raw names map to the same formatted name
+            for formatted_name in formatted_names:
+                if formatted_name not in model_names:
+                    model_names.append(formatted_name)
 
         # only format if submit_time present, else leave as None
         ts = sub.submit_time
@@ -438,49 +609,26 @@ def _get_dataframe(
                 for tr in ev.results
                 if tr.eval_spec and tr.eval_spec.revision
             ]
-            if task_revisions and all(
-                rev == task_revisions[0] for rev in task_revisions
-            ):
-                revision = task_revisions[0]
+            source_url = construct_reproducibility_url(task_revisions)
 
-                # Only handle git revisions with complete info
-                if (
-                    revision
-                    and revision.type == "git"
-                    and revision.origin
-                    and revision.commit
-                ):
-                    origin = revision.origin
-                    commit = revision.commit
-
-                    # Convert SSH URLs to HTTPS URLs
-                    if origin.startswith("git@"):
-                        # Convert git@github.com:user/repo.git to https://github.com/user/repo
-                        origin = origin.replace("git@", "https://").replace(":", "/", 1)
-
-                    # Remove .git suffix if present
-                    if origin.endswith(".git"):
-                        origin = origin[:-4]
-
-                    # Only create URL if it looks like a valid HTTP(S) URL
-                    if origin.startswith(("http://", "https://")):
-                        source_url = f"{origin}/tree/{commit}"
-
-        rows.append(
-            {
-                "id": sub.submit_time,
-                "agent_name": sub.agent_name,
-                "agent_description": sub.agent_description or "",
-                "username": sub.username or "",
-                "submit_time": date,
-                "openness": sub.openness,
-                "tool_usage": sub.tool_usage,
-                "base_models": model_names,
-                **flat,
-                "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
-                "source_url": source_url,
-            }
-        )
+        if use_submission:
+            rows.append(
+                {
+                    "id": sub.submit_time,
+                    "agent_name": sub.agent_name,
+                    "agent_description": sub.agent_description or "",
+                    "username": sub.username or "",
+                    "submit_time": date,
+                    "openness": sub.openness,
+                    "tool_usage": sub.tool_usage,
+                    "base_models": model_names,
+                    **flat,
+                    "logs_url": sub.logs_url if is_internal else sub.logs_url_public,
+                    "source_url": source_url,
+                }
+            )
+        else:
+            logger.warning(f"Dropped submission {sub} from results.")
 
     df = pd.DataFrame(rows)
 
