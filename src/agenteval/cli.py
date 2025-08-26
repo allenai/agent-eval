@@ -694,12 +694,12 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         # Upload all results files in one shot
         click.echo(f"Uploading {len(submission_paths)} results to {repo_id}...")
-        # hf_api.upload_folder(
-        #     folder_path=local_results_dir,
-        #     path_in_repo="",
-        #     repo_id=repo_id,
-        #     repo_type="dataset",
-        # )
+        hf_api.upload_folder(
+            folder_path=local_results_dir,
+            path_in_repo="",
+            repo_id=repo_id,
+            repo_type="dataset",
+        )
         click.echo("Done")
 
 
@@ -1037,6 +1037,7 @@ def eval_command(
 
 
 cli.add_command(eval_command)
+
 
 if __name__ == "__main__":
     cli()

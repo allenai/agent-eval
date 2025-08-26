@@ -145,7 +145,7 @@ def check_submissions_against_readme(
             f"Config name {missing_configs} not present in hf://{repo_id}/README.md\n"
             f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
         )
-        raise Exception(exc_msg)
+        raise ValueError(exc_msg)
     missing_splits = list(
         set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
         - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
@@ -155,11 +155,11 @@ def check_submissions_against_readme(
             f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md\n"
             f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
         )
-        raise Exception(exc_msg)
+        raise ValueError(exc_msg)
     local_features = load_dataset_features()
     if local_features.arrow_schema != readme.features.arrow_schema:
         exc_msg = (
             f"Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md\n"
             "Run 'update_readme.py sync-schema' to update it"
         )
-        raise Exception(exc_msg)
+        raise ValueError(exc_msg)
