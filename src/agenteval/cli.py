@@ -20,7 +20,16 @@ from litellm import register_model
 from agenteval.leaderboard.schema_generator import load_dataset_features
 
 from .cli_utils import AliasedChoice, generate_choice_help
-from .config import load_suite_config
+from .config import (
+    OPENNESS_CLOSED_API_AVAILABLE,
+    OPENNESS_CLOSED_UI_ONLY,
+    OPENNESS_OPEN_SOURCE_CLOSED_WEIGHTS,
+    OPENNESS_OPEN_SOURCE_OPEN_WEIGHTS,
+    TOOL_USAGE_CUSTOM_INTERFACE,
+    TOOL_USAGE_FULLY_CUSTOM,
+    TOOL_USAGE_STANDARD,
+    load_suite_config,
+)
 from .io import atomic_write_file
 from .leaderboard.models import LeaderboardSubmission, Readme
 from .leaderboard.upload import (
@@ -39,15 +48,15 @@ SUMMARY_FILENAME = "summary_stats.json"
 SUBMISSION_METADATA_FILENAME = "submission.json"
 SUMMARIES_PREFIX = "summaries"
 OPENNESS_MAPPING = {
-    "c": "Closed source & UI only",
-    "api": "Closed source & API available",
-    "os": "Open source & closed weights",
-    "ow": "Open source & open weights",
+    "c": OPENNESS_CLOSED_UI_ONLY,
+    "api": OPENNESS_CLOSED_API_AVAILABLE,
+    "os": OPENNESS_OPEN_SOURCE_CLOSED_WEIGHTS,
+    "ow": OPENNESS_OPEN_SOURCE_OPEN_WEIGHTS,
 }
 TOOL_MAPPING = {
-    "s": "Standard",
-    "ci": "Custom interface",
-    "c": "Fully custom",
+    "s": TOOL_USAGE_STANDARD,
+    "ci": TOOL_USAGE_CUSTOM_INTERFACE,
+    "c": TOOL_USAGE_FULLY_CUSTOM,
 }
 
 
