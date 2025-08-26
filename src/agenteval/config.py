@@ -5,7 +5,6 @@ Configuration management for agent evaluation.
 import yaml
 from pydantic import BaseModel, ValidationError
 
-
 # If you change these, be careful about any downstream code
 # that depends on the exact values (e.g. asta-bench-leaderboard
 # expects results to have either these values for openness
