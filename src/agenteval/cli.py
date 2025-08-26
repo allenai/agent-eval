@@ -68,7 +68,7 @@ class RepoPathsOfInterest:
             paths.append(path)
 
         if len(repo_ids) > 1:
-            raise Exception("All URLs must reference the same repo")
+            raise ValueError("All URLs must reference the same repo")
 
         repo_id_to_use = repo_ids.pop()
 
@@ -584,7 +584,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         try:
             paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
-        except Exception as exc:
+        except ValueError as exc:
             click.echo(str(exc))
             sys.exit(1)
 
