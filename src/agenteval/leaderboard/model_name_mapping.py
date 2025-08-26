@@ -85,4 +85,6 @@ LB_MODEL_NAME_MAPPING = {
     "gemini/gemini-2.5-pro": "Gemini 2.5 Pro (unpinned)",
     "openai/gpt-4o": "GPT-4o (unpinned)",
     "gpt-3.5-turbo-0125": "GPT-3.5 Turbo (2025-01)",
+    "openai/gpt-5": "GPT-5 (unpinned)",
+    "gpt-5": "GPT-5 (unpinned)",
 }
