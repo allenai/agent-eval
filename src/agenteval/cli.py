@@ -1089,7 +1089,7 @@ class WithinRepoPathComponents:
         )
 
 
-@click.command(name="copyresult", help="TODO")
+@click.command(name="copy", help="TODO")
 @click.argument("result_urls", nargs=-1, required=True, type=str)
 @click.option(
     "--target-submissions-repo",
@@ -1115,7 +1115,7 @@ class WithinRepoPathComponents:
     default=False,
     help="TODO",
 )
-def copy_result_command(
+def copy_command(
     target_submissions_repo: Optional[str],
     target_results_repo: str,
     read_public_logs_field: bool,
@@ -1241,7 +1241,7 @@ def copy_result_command(
     click.echo("Done")
 
 
-cli.add_command(copy_result_command)
+cli.add_command(copy_command)
 
 
 if __name__ == "__main__":
