@@ -129,7 +129,7 @@ def load_dataset_features(input_path: str | None = None) -> Features:
 
 
 def check_submissions_against_readme(
-    lb_submissions: LeaderboardSubmission, repo_id: str
+    lb_submissions: list[LeaderboardSubmission], repo_id: str
 ):
     config_splits = defaultdict(
         list

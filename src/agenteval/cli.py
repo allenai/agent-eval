@@ -583,7 +583,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
         hf_api = HfApi()
 
         try:
-            paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
+            paths_of_interest = RepoPathsOfInterest.from_urls(list(submission_urls))
         except ValueError as exc:
             click.echo(str(exc))
             sys.exit(1)
@@ -1124,7 +1124,7 @@ def copy_command(
     result_urls: tuple[str, ...],
 ):
     try:
-        src_result_paths_of_interest = RepoPathsOfInterest.from_urls(result_urls)
+        src_result_paths_of_interest = RepoPathsOfInterest.from_urls(list(result_urls))
     except ValueError as exc:
         click.echo(str(exc))
         sys.exit(1)
