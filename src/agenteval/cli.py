@@ -7,8 +7,8 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import BytesIO
 
 import click
@@ -687,7 +687,9 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         # Validate the config with the schema in HF
         try:
-            check_submissions_against_readme(lb_submissions=lb_submissions, repo_id=repo_id)
+            check_submissions_against_readme(
+                lb_submissions=lb_submissions, repo_id=repo_id
+            )
         except ValueError as exc:
             click.echo(str(exc))
             sys.exit(1)
@@ -1089,31 +1091,30 @@ class WithinRepoPathComponents:
         )
 
 
-@click.command(name="copy", help="TODO")
+@click.command(name="copy", help="Copy a result from one results HF repo to another.")
 @click.argument("result_urls", nargs=-1, required=True, type=str)
 @click.option(
     "--target-submissions-repo",
     default=None,
     required=False,
-    help="TODO",
+    help="Provide this if you also want to copy the underlying submission to another submissions HF repo.",
 )
 @click.option(
     "--target-results-repo",
     default=None,
     required=True,
-    help="TODO",
 )
 @click.option(
     "--read-public-logs-field",
     is_flag=True,
     default=False,
-    help="TODO",
+    help="Provide this if the source results have log urls in logs_url_public.",
 )
 @click.option(
     "--write-public-logs-field",
     is_flag=True,
     default=False,
-    help="TODO",
+    help="Provide this if the target results should have log urls in logs_url_public.",
 )
 def copy_command(
     target_submissions_repo: str | None,
@@ -1194,7 +1195,9 @@ def copy_command(
         check_submissions_against_readme(
             lb_submissions=lb_submissions, repo_id=target_results_repo
         )
-        click.echo(f"Uploading {len(lb_submissions)} results to {target_results_repo}...")
+        click.echo(
+            f"Uploading {len(lb_submissions)} results to {target_results_repo}..."
+        )
         hf_api.upload_folder(
             folder_path=local_target_results_dir,
             path_in_repo="",
@@ -1218,7 +1221,11 @@ def copy_command(
             local_submissions_dir = os.path.join(temp_dir, "submissions")
             paths_to_pull = []
             for submission_path in submission_paths:
-                paths_to_pull.extend(WithinRepoPathComponents.from_within_repo_submission_path(submission_path).within_repo_submission_patterns())
+                paths_to_pull.extend(
+                    WithinRepoPathComponents.from_within_repo_submission_path(
+                        submission_path
+                    ).within_repo_submission_patterns()
+                )
 
             snapshot_download(
                 repo_id=src_submissions_repo,
