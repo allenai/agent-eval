@@ -1194,7 +1194,7 @@ def copy_command(
         check_submissions_against_readme(
             lb_submissions=lb_submissions, repo_id=target_results_repo
         )
-        print(f"Uploading {len(lb_submissions)} results to {target_results_repo}...")
+        click.echo(f"Uploading {len(lb_submissions)} results to {target_results_repo}...")
         hf_api.upload_folder(
             folder_path=local_target_results_dir,
             path_in_repo="",
@@ -1226,7 +1226,7 @@ def copy_command(
                 allow_patterns=paths_to_pull,
                 local_dir=local_submissions_dir,
             )
-            print(
+            click.echo(
                 f"Uploading {len(submission_paths)} submissions to {target_submissions_repo}..."
             )
             hf_api.upload_folder(
