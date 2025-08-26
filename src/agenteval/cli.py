@@ -583,22 +583,14 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         hf_api = HfApi()
 
-        submission_repo_ids = set()
-        submission_paths = []
-
-        # Validate URLs
-        for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(
-                submission_url
-            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
-            submission_repo_ids.add(submission_repo_id)
-            submission_paths.append(submission_path)
-
-        if len(submission_repo_ids) > 1:
-            click.echo("All submission URLs must reference the same repo")
+        try:
+            paths_of_interest = RepoPathsOfInterest.from_urls(submission_urls)
+        except Exception as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
-        submission_repo_id = submission_repo_ids.pop()
+        submission_repo_id = paths_of_interest.repo_id
+        submission_paths = paths_of_interest.relative_paths
 
         eval_config_rel_paths = [
             f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
