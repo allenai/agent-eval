@@ -5,6 +5,11 @@ Configuration management for agent evaluation.
 import yaml
 from pydantic import BaseModel, ValidationError
 
+
+# If you change these, be careful about any downstream code
+# that depends on the exact values (e.g. asta-bench-leaderboard
+# expects results to have either these values for openness
+# and tool usage, or values from a specific list of aliases).
 OPENNESS_OPEN_SOURCE_OPEN_WEIGHTS = "Open source & open weights"
 OPENNESS_OPEN_SOURCE_CLOSED_WEIGHTS = "Open source & closed weights"
 OPENNESS_CLOSED_API_AVAILABLE = "Closed source & API available"
