@@ -481,12 +481,12 @@ def format_value_with_ci(
 
     if ci is not None and ci > 0:
         formatted_ci = f"{ci:.{decimals}f}"
-        if on_frontier:
-            return f"{formatted_val} +- {formatted_ci}*"
-        else:
-            return f"{formatted_val} +- {formatted_ci}"
-    else:
-        return formatted_val
+        formatted_val = f"{formatted_val} +- {formatted_ci}"
+
+    if on_frontier:
+        formatted_val += "*"
+
+    return formatted_val
 
 
 def process_single_model(model: str, full_entry: dict) -> str:
@@ -596,57 +596,52 @@ def generate_overall_row(
     score, score_ci = get_value_and_ci(entry, "Overall")
     cost, cost_ci = get_value_and_ci(entry, "Overall cost")
     overall_frontier = entry["Overall frontier"]
-    if include_ci:
-        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, on_frontier=overall_frontier)}"
-        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, on_frontier=overall_frontier)}"
-    else:
-        row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True)}"
-        row += f" & {format_value_with_ci(cost, None, COST_DECIMALS)}"
+    if not include_ci:
+        score_ci = None
+        cost_ci = None
+    row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, on_frontier=overall_frontier)}"
+    row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, on_frontier=overall_frontier)}"
 
     # Literature Understanding - check for expected missing
     score, score_ci = get_value_and_ci(entry, "Literature Understanding score")
     cost, cost_ci = get_value_and_ci(entry, "Literature Understanding cost")
     lit_frontier = entry["Literature Understanding frontier"]
     # For overall categories, we check if agent can do ANY task in that category
-    if include_ci:
-        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Literature', on_frontier=lit_frontier)}"
-        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='Literature', on_frontier=lit_frontier)}"
-    else:
-        row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Literature')}"
-        row += f" & {format_value_with_ci(cost, None, COST_DECIMALS, agent_name=agent_name, task_name='Literature')}"
+    if not include_ci:
+        score_ci = None
+        cost_ci = None
+    row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Literature', on_frontier=lit_frontier)}"
+    row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='Literature', on_frontier=lit_frontier)}"
 
     # Code & Execution
     score, score_ci = get_value_and_ci(entry, "Code & Execution score")
     cost, cost_ci = get_value_and_ci(entry, "Code & Execution cost")
     code_frontier = entry["Code & Execution frontier"]
-    if include_ci:
-        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Code', on_frontier=code_frontier)}"
-        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='Code', on_frontier=code_frontier)}"
-    else:
-        row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Code')}"
-        row += f" & {format_value_with_ci(cost, None, COST_DECIMALS, agent_name=agent_name, task_name='Code')}"
+    if not include_ci:
+        score_ci = None
+        cost_ci = None
+    row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='Code', on_frontier=code_frontier)}"
+    row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='Code', on_frontier=code_frontier)}"
 
     # Data Analysis
     score, score_ci = get_value_and_ci(entry, "Data Analysis score")
     cost, cost_ci = get_value_and_ci(entry, "Data Analysis cost")
     data_frontier = entry["Data Analysis frontier"]
-    if include_ci:
-        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='DiscoveryBench', on_frontier=data_frontier)}"
-        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='DiscoveryBench', on_frontier=data_frontier)}"
-    else:
-        row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='DiscoveryBench')}"
-        row += f" & {format_value_with_ci(cost, None, COST_DECIMALS, agent_name=agent_name, task_name='DiscoveryBench')}"
+    if not include_ci:
+        score_ci = None
+        cost_ci = None
+    row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='DiscoveryBench', on_frontier=data_frontier)}"
+    row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='DiscoveryBench', on_frontier=data_frontier)}"
 
     # End-to-End Discovery
     score, score_ci = get_value_and_ci(entry, "End-to-End Discovery score")
     cost, cost_ci = get_value_and_ci(entry, "End-to-End Discovery cost")
     e2e_frontier = entry["End-to-End Discovery frontier"]
-    if include_ci:
-        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='E2E-Bench', on_frontier=e2e_frontier)}"
-        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='E2E-Bench', on_frontier=e2e_frontier)}"
-    else:
-        row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='E2E-Bench')}"
-        row += f" & {format_value_with_ci(cost, None, COST_DECIMALS, agent_name=agent_name, task_name='E2E-Bench')}"
+    if not include_ci:
+        score_ci = None
+        cost_ci = None
+    row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name='E2E-Bench', on_frontier=e2e_frontier)}"
+    row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name='E2E-Bench', on_frontier=e2e_frontier)}"
 
     row += r" \\"
 
@@ -686,12 +681,11 @@ def generate_task_specific_row(
         frontier_key = f"{task_name} frontier"
         on_frontier = entry[frontier_key]
 
-        if include_ci:
-            row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name=task_name, on_frontier=on_frontier)}"
-            row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name=task_name, on_frontier=on_frontier)}"
-        else:
-            row += f" & {format_value_with_ci(score, None, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name=task_name)}"
-            row += f" & {format_value_with_ci(cost, None, COST_DECIMALS, agent_name=agent_name, task_name=task_name)}"
+        if not include_ci:
+            score_ci = None
+            cost_ci = None
+        row += f" & {format_value_with_ci(score, score_ci, SCORE_DECIMALS, is_score=True, agent_name=agent_name, task_name=task_name, on_frontier=on_frontier)}"
+        row += f" & {format_value_with_ci(cost, cost_ci, COST_DECIMALS, agent_name=agent_name, task_name=task_name, on_frontier=on_frontier)}"
 
     row += r" \\"
 
