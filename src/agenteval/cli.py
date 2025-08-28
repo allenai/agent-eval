@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -17,7 +17,7 @@ import httpx
 from litellm import model_cost as litellm_model_cost
 from litellm import register_model
 
-from agenteval.leaderboard.schema_generator import load_dataset_features
+from agenteval.leaderboard.schema_generator import check_submissions_against_readme
 
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import (
@@ -31,7 +31,7 @@ from .config import (
     load_suite_config,
 )
 from .io import atomic_write_file
-from .leaderboard.models import LeaderboardSubmission, Readme
+from .leaderboard.models import LeaderboardSubmission
 from .leaderboard.upload import (
     compress_model_usages,
     sanitize_path_component,
@@ -58,6 +58,33 @@ TOOL_MAPPING = {
     "ci": TOOL_USAGE_CUSTOM_INTERFACE,
     "c": TOOL_USAGE_FULLY_CUSTOM,
 }
+
+
+@dataclass
+class RepoPathsOfInterest:
+    repo_id: str
+    relative_paths: list[str]
+
+    @staticmethod
+    def from_urls(urls: list[str]):
+        repo_ids = set()
+        paths = []
+
+        for url in urls:
+            # validates submission_url format "hf://<repo_id>/<path>"
+            repo_id, path = parse_hf_url(url)
+            repo_ids.add(repo_id)
+            paths.append(path)
+
+        if len(repo_ids) > 1:
+            raise ValueError("All URLs must reference the same repo")
+
+        repo_id_to_use = repo_ids.pop()
+
+        return RepoPathsOfInterest(
+            repo_id=repo_id_to_use,
+            relative_paths=paths,
+        )
 
 
 def parse_hf_url(url: str) -> tuple[str, str]:
@@ -564,22 +591,14 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
 
         hf_api = HfApi()
 
-        submission_repo_ids = set()
-        submission_paths = []
-
-        # Validate URLs
-        for submission_url in submission_urls:
-            submission_repo_id, submission_path = parse_hf_url(
-                submission_url
-            )  # validates submission_url format "hf://<repo_id>/<submission_path>"
-            submission_repo_ids.add(submission_repo_id)
-            submission_paths.append(submission_path)
-
-        if len(submission_repo_ids) > 1:
-            click.echo("All submission URLs must reference the same repo")
+        try:
+            paths_of_interest = RepoPathsOfInterest.from_urls(list(submission_urls))
+        except ValueError as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
-        submission_repo_id = submission_repo_ids.pop()
+        submission_repo_id = paths_of_interest.repo_id
+        submission_paths = paths_of_interest.relative_paths
 
         eval_config_rel_paths = [
             f"{p}/{EVAL_CONFIG_FILENAME}" for p in submission_paths
@@ -601,10 +620,8 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             local_dir=local_submissions_dir,
         )
 
+        lb_submissions = []
         # Create results files locally
-        config_splits = defaultdict(
-            list
-        )  # Accumulate config names and splits being published
         for (
             submission_url,
             submission_path,
@@ -645,7 +662,6 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             eval_config = EvalConfig.model_validate_json(
                 open(local_eval_config_path).read()
             )
-            config_splits[eval_config.suite_config.version].append(eval_config.split)
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
@@ -666,6 +682,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 submission=submission,
             )
             lb_submission = compress_model_usages(lb_submission)
+            lb_submissions.append(lb_submission)
             os.makedirs(
                 os.path.join(local_results_dir, os.path.dirname(submission_path)),
                 exist_ok=True,
@@ -678,34 +695,12 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
                 f.write(lb_submission.model_dump_json(indent=None))
 
         # Validate the config with the schema in HF
-        readme = Readme.download_and_parse(repo_id)
-        missing_configs = list(set(config_splits.keys()) - set(readme.configs.keys()))
-        if missing_configs:
-            click.echo(
-                f"Config name {missing_configs} not present in hf://{repo_id}/README.md"
+        try:
+            check_submissions_against_readme(
+                lb_submissions=lb_submissions, repo_id=repo_id
             )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
-            )
-            sys.exit(1)
-        missing_splits = list(
-            set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
-            - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
-        )
-        if missing_splits:
-            click.echo(
-                f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md"
-            )
-            click.echo(
-                f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
-            )
-            sys.exit(1)
-        local_features = load_dataset_features()
-        if local_features.arrow_schema != readme.features.arrow_schema:
-            click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
-            )
-            click.echo("Run 'update_readme.py sync-schema' to update it")
+        except ValueError as exc:
+            click.echo(str(exc))
             sys.exit(1)
 
         # Upload all results files in one shot
@@ -1053,6 +1048,216 @@ def eval_command(
 
 
 cli.add_command(eval_command)
+
+
+@dataclass
+class WithinRepoPathComponents:
+    hf_config: str
+    split: str
+    submission_name: str
+
+    def to_within_repo_result_path(self):
+        return f"{self.hf_config}/{self.split}/{self.submission_name}.json"
+
+    def to_within_repo_submission_dir(self):
+        return f"{self.hf_config}/{self.split}/{self.submission_name}"
+
+    def to_within_repo_submission_summary_dir(self):
+        return f"summaries/{self.hf_config}/{self.split}/{self.submission_name}"
+
+    def to_within_repo_submission_eval_config(self):
+        return f"{self.to_within_repo_submission_dir()}/{EVAL_CONFIG_FILENAME}"
+
+    def to_within_repo_submission_submission_metadata(self):
+        return f"{self.to_within_repo_submission_dir()}/{SUBMISSION_METADATA_FILENAME}"
+
+    def to_within_repo_submission_scores(self):
+        return f"{self.to_within_repo_submission_summary_dir()}/{SCORES_FILENAME}"
+
+    def within_repo_submission_patterns(self):
+        return [
+            self.to_within_repo_submission_eval_config(),
+            self.to_within_repo_submission_submission_metadata(),
+            self.to_within_repo_submission_scores(),
+            f"{self.to_within_repo_submission_dir()}/*.eval",
+        ]
+
+    @staticmethod
+    def from_within_repo_result_path(result_path):
+        [hf_config, split, filename] = result_path.split("/")
+        suffix = ".json"
+        assert filename.endswith(suffix)
+        submission_name = filename[: -len(suffix)]
+        return WithinRepoPathComponents(
+            hf_config=hf_config, split=split, submission_name=submission_name
+        )
+
+    @staticmethod
+    def from_within_repo_submission_path(submission_path):
+        [hf_config, split, submission_name] = submission_path.split("/")
+        return WithinRepoPathComponents(
+            hf_config=hf_config, split=split, submission_name=submission_name
+        )
+
+
+@click.command(name="copy", help="Copy a result from one results HF repo to another.")
+@click.argument("result_urls", nargs=-1, required=True, type=str)
+@click.option(
+    "--target-submissions-repo",
+    default=None,
+    required=False,
+    help="Provide this if you also want to copy the underlying submission to another submissions HF repo.",
+)
+@click.option(
+    "--target-results-repo",
+    default=None,
+    required=True,
+)
+@click.option(
+    "--read-public-logs-field",
+    is_flag=True,
+    default=False,
+    help="Provide this if the source results have log urls in logs_url_public.",
+)
+@click.option(
+    "--write-public-logs-field",
+    is_flag=True,
+    default=False,
+    help="Provide this if the target results should have log urls in logs_url_public.",
+)
+def copy_command(
+    target_submissions_repo: str | None,
+    target_results_repo: str,
+    read_public_logs_field: bool,
+    write_public_logs_field: bool,
+    result_urls: tuple[str, ...],
+):
+    try:
+        src_result_paths_of_interest = RepoPathsOfInterest.from_urls(list(result_urls))
+    except ValueError as exc:
+        click.echo(str(exc))
+        sys.exit(1)
+
+    src_results_repo = src_result_paths_of_interest.repo_id
+    result_paths = src_result_paths_of_interest.relative_paths
+    click.echo(f"{len(result_paths)} result files to copy.")
+
+    click.echo(f"source results repo: {src_results_repo}")
+    click.echo(f"target results repo: {target_results_repo}")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        from huggingface_hub import HfApi, snapshot_download
+
+        hf_api = HfApi()
+
+        local_src_results_dir = os.path.join(temp_dir, "sourceresults")
+        local_target_results_dir = os.path.join(temp_dir, "targetresults")
+
+        snapshot_download(
+            repo_id=src_results_repo,
+            repo_type="dataset",
+            allow_patterns=result_paths,
+            local_dir=local_src_results_dir,
+        )
+
+        log_urls = []
+        lb_submissions = []
+
+        for result_path in result_paths:
+            local_src_result_path = os.path.join(local_src_results_dir, result_path)
+            with open(local_src_result_path) as f_src_result:
+                result = LeaderboardSubmission.model_validate(json.load(f_src_result))
+
+            current_logs_url = (
+                result.submission.logs_url_public
+                if read_public_logs_field
+                else result.submission.logs_url
+            )
+            if current_logs_url is not None:
+                log_urls.append(current_logs_url)
+                _, src_submission_path = parse_hf_url(current_logs_url)
+
+                if target_submissions_repo is not None:
+                    new_logs_url = (
+                        f"hf://datasets/{target_submissions_repo}/{src_submission_path}"
+                    )
+                    if write_public_logs_field:
+                        result.submission.logs_url_public = new_logs_url
+                        result.submission.logs_url = None
+                    else:
+                        result.submission.logs_url_public = None
+                        result.submission.logs_url = new_logs_url
+
+            lb_submissions.append(result)
+
+            os.makedirs(
+                os.path.join(local_target_results_dir, os.path.dirname(result_path)),
+                exist_ok=True,
+            )
+            with open(
+                os.path.join(local_target_results_dir, result_path),
+                "w",
+                encoding="utf-8",
+            ) as f_target_result:
+                f_target_result.write(result.model_dump_json(indent=None))
+
+        # Validate the config with the schema in HF
+        check_submissions_against_readme(
+            lb_submissions=lb_submissions, repo_id=target_results_repo
+        )
+        click.echo(
+            f"Uploading {len(lb_submissions)} results to {target_results_repo}..."
+        )
+        hf_api.upload_folder(
+            folder_path=local_target_results_dir,
+            path_in_repo="",
+            repo_id=target_results_repo,
+            repo_type="dataset",
+        )
+
+        if target_submissions_repo is not None:
+            try:
+                src_submission_paths_of_interest = RepoPathsOfInterest.from_urls(
+                    log_urls
+                )
+            except ValueError as exc:
+                click.echo(str(exc))
+                sys.exit(1)
+
+            src_submissions_repo = src_submission_paths_of_interest.repo_id
+            submission_paths = src_submission_paths_of_interest.relative_paths
+
+            # I think we can just use the same local dir.
+            local_submissions_dir = os.path.join(temp_dir, "submissions")
+            paths_to_pull = []
+            for submission_path in submission_paths:
+                paths_to_pull.extend(
+                    WithinRepoPathComponents.from_within_repo_submission_path(
+                        submission_path
+                    ).within_repo_submission_patterns()
+                )
+
+            snapshot_download(
+                repo_id=src_submissions_repo,
+                repo_type="dataset",
+                allow_patterns=paths_to_pull,
+                local_dir=local_submissions_dir,
+            )
+            click.echo(
+                f"Uploading {len(submission_paths)} submissions to {target_submissions_repo}..."
+            )
+            hf_api.upload_folder(
+                folder_path=local_submissions_dir,
+                path_in_repo="",
+                repo_id=target_submissions_repo,
+                repo_type="dataset",
+            )
+
+    click.echo("Done")
+
+
+cli.add_command(copy_command)
+
 
 if __name__ == "__main__":
     cli()
