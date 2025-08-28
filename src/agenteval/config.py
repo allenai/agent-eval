@@ -5,6 +5,19 @@ Configuration management for agent evaluation.
 import yaml
 from pydantic import BaseModel, ValidationError
 
+# If you change these, be careful about any downstream code
+# that depends on the exact values (e.g. asta-bench-leaderboard
+# expects results to have either these values for openness
+# and tool usage, or values from a specific list of aliases).
+OPENNESS_OPEN_SOURCE_OPEN_WEIGHTS = "Open source & open weights"
+OPENNESS_OPEN_SOURCE_CLOSED_WEIGHTS = "Open source & closed weights"
+OPENNESS_CLOSED_API_AVAILABLE = "Closed source & API available"
+OPENNESS_CLOSED_UI_ONLY = "Closed source & UI only"
+
+TOOL_USAGE_STANDARD = "Standard"
+TOOL_USAGE_CUSTOM_INTERFACE = "Custom interface"
+TOOL_USAGE_FULLY_CUSTOM = "Fully custom"
+
 
 class WeightAdjustment(BaseModel):
     """Weight adjustment for a specific tag-task combination."""
