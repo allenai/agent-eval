@@ -231,13 +231,16 @@ def parse_values_from_row(row: str, include_metadata_columns: bool = False) -> L
             import re
 
             # Match number with optional +- and CI
-            match = re.match(r"([\d.]+)(?:\s*\+-\s*([\d.]+)\*?)?", part)
+            match = re.match(
+                r"(\\textbf\{|\\bf(series)? |\\B )?(?P<num1>[\d.]+)(?:\s*\+-\s*(?P<num2>[\d.]+)[*}]?)?",
+                part,
+            )
             if not match:
                 # If we can't parse it as a number, keep as string
                 values.append((part, None))
                 continue
 
-            for number_str in [match.group(1), match.group(2)]:
+            for number_str in [match.group("num1"), match.group("num2")]:
                 if number_str is None:
                     continue
                 number_val = float(number_str)

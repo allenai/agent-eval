@@ -484,7 +484,7 @@ def format_value_with_ci(
         formatted_val = f"{formatted_val} +- {formatted_ci}"
 
     if on_frontier:
-        formatted_val += "*"
+        formatted_val = f"\\B {formatted_val}"
 
     return formatted_val
 
