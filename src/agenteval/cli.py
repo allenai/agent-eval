@@ -694,8 +694,8 @@ def validate_split(ctx, param, value):
 )
 @click.option(
     "--tag",
-    default=None,
-    help="If provided, show detail for this tag instead of overview",
+    multiple=True,
+    help="Include specific tags (format: 'tag_name' or 'tag_name:Display Name').",
 )
 @click.option(
     "--save-dir",
@@ -723,12 +723,6 @@ def validate_split(ctx, param, value):
     is_flag=True,
     default=False,
     help="Preserve None values instead of treating them as 0 for incomplete scores",
-)
-@click.option(
-    "--exclude-primary-metric",
-    is_flag=True,
-    default=False,
-    help="Exclude primary metric (overall score+cost for overview, tag score+cost for tag views) from tables and plots",
 )
 @click.option(
     "--dedup",
@@ -772,20 +766,33 @@ def validate_split(ctx, param, value):
     help="Use log scale for x-axis in scatter plots.",
 )
 @click.option(
+    "--scatter-subplots-per-row",
+    type=int,
+    default=1,
+    help="Number of subplots per row in combined scatter plots (default: 1, use 2 for grid layout).",
+)
+@click.option(
+    "--scatter-marker-size",
+    type=float,
+    default=None,
+    help="Size of scatter plot markers (default: matplotlib default).",
+)
+@click.option(
+    "--include-overall",
+    is_flag=True,
+    default=False,
+    help="Include overall plot in scatter plots.",
+)
+@click.option(
     "--is-internal",
     is_flag=True,
     default=False,
     help="Show internal logs URLs instead of public ones.",
 )
 @click.option(
-    "--include-tag",
+    "--task",
     multiple=True,
-    help="Include tags matching pattern (regex, case-insensitive) with optional renaming (format: 'pattern' or 'pattern:Display Name'). Order preserved. Only applies when --tag is NOT specified.",
-)
-@click.option(
-    "--include-task",
-    multiple=True,
-    help="Include tasks matching pattern (regex, case-insensitive) with optional renaming (format: 'pattern' or 'pattern:Display Name'). Order preserved. Only applies when --tag IS specified.",
+    help="Include specific tasks (format: 'task_name' or 'task_name:Display Name').",
 )
 @click.option(
     "--group-agent",
@@ -818,7 +825,6 @@ def view_command(
     save_no_subdirs,
     scatter_show_missing_cost,
     preserve_none_scores,
-    exclude_primary_metric,
     dedup,
     exclude_agent,
     scatter_legend_max_width,
@@ -826,9 +832,11 @@ def view_command(
     scatter_subplot_height,
     scatter_subplot_spacing,
     scatter_x_log_scale,
+    scatter_subplots_per_row,
+    scatter_marker_size,
+    include_overall,
     is_internal,
-    include_tag,
-    include_task,
+    task,
     group_agent,
     group_agent_fixed_colors,
     model_name_mapping_file,
@@ -838,17 +846,6 @@ def view_command(
     import json
 
     from .leaderboard.view import LeaderboardViewer
-
-    # Check for conflicting options
-    if include_tag and tag is not None:
-        click.echo(
-            "Error: --include-tag can only be used when --tag is NOT specified (overall view)"
-        )
-        sys.exit(1)
-
-    if include_task and tag is None:
-        click.echo("Error: --include-task can only be used when --tag IS specified")
-        sys.exit(1)
 
     # Load and preprocess unified model mapping file
     model_mapping = None
@@ -882,14 +879,11 @@ def view_command(
     )
 
     df, plots, pipeline_statistics = viewer.view(
-        tag,
+        None,  # Old tag parameter is deprecated, always None
         with_plots=bool(save_dir),
         preserve_none_scores=preserve_none_scores,
-        exclude_primary_metric=exclude_primary_metric,
         duplicate_handling=dedup,
         exclude_agent_patterns=(list(exclude_agent) if exclude_agent else None),
-        include_tag_specs=(list(include_tag) if include_tag else None),
-        include_task_specs=(list(include_task) if include_task else None),
         group_agent_specs=(list(group_agent) if group_agent else None),
         scatter_show_missing_cost=scatter_show_missing_cost,
         scatter_legend_max_width=scatter_legend_max_width,
@@ -898,6 +892,11 @@ def view_command(
         scatter_subplot_spacing=scatter_subplot_spacing,
         scatter_x_log_scale=scatter_x_log_scale,
         group_agent_fixed_colors=group_agent_fixed_colors,
+        scatter_subplots_per_row=scatter_subplots_per_row,
+        scatter_marker_size=scatter_marker_size,
+        include_overall=include_overall,
+        explicit_tags=(list(tag) if tag else None),
+        explicit_tasks=(list(task) if task else None),
     )
     click.echo(df.to_string(index=False))
 

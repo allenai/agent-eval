@@ -78,7 +78,7 @@ def main():
         "--scatter-show-missing-cost",
         "--scatter-x-log-scale",
         "--scatter-legend-max-width",
-        "30",
+        "51",
         "--scatter-figure-width",
         "6.5",
         "--exclude-agent",
@@ -147,13 +147,14 @@ def main():
         + [
             "--scatter-subplot-height",
             "3.1",
-            "--include-tag",
+            "--include-overall",
+            "--tag",
             "lit:Literature Understanding",
-            "--include-tag",
+            "--tag",
             "code:Code & Execution",
-            "--include-tag",
+            "--tag",
             "data:Data Analysis",
-            "--include-tag",
+            "--tag",
             "discovery:End-to-End Discovery",
             "--save-dir",
             "plots/blog-fig-overall",
@@ -171,13 +172,14 @@ def main():
         + [
             "--scatter-subplot-height",
             "1.5",
-            "--include-tag",
+            "--include-overall",
+            "--tag",
             "lit:Literature Understanding",
-            "--include-tag",
+            "--tag",
             "code:Code & Execution",
-            "--include-tag",
+            "--tag",
             "data:Data Analysis",
-            "--include-tag",
+            "--tag",
             "discovery:End-to-End Discovery",
             "--save-dir",
             "plots/paper-fig-overall",
@@ -197,24 +199,105 @@ def main():
         output_dir / f"figures/results-overall.{args.save_format}",
     )
 
+    # Overall figure with grid layout (2 subplots per row)
+    cmd = (
+        ["agenteval", "lb", "view"]
+        + common_opts
+        # + overall_excludes
+        + [
+            "--scatter-subplot-height",
+            "1.5",
+            "--scatter-subplots-per-row",
+            "2",
+            "--include-overall",
+            "--tag",
+            "lit:Literature Understanding",
+            "--tag",
+            "code:Code & Execution",
+            "--tag",
+            "data:Data Analysis",
+            "--tag",
+            "discovery:End-to-End Discovery",
+            "--save-dir",
+            "plots/paper-fig-overall-grid",
+        ]
+    )
+    run_command(cmd)
+    copy_file(
+        f"plots/paper-fig-overall-grid/scatter.{args.save_format}",
+        output_dir / f"figures/results-overall-grid.{args.save_format}",
+    )
+
+    # Comprehensive plot with exactly 16 subplots: 1 overall + 4 tags + 11 tasks
+    cmd = (
+        ["agenteval", "lb", "view"]
+        + common_opts
+        # + overall_excludes
+        + [
+            "--scatter-subplot-height",
+            "1.2",
+            "--scatter-subplots-per-row",
+            "2",
+            "--scatter-marker-size",
+            "15",
+            "--include-overall",
+            "--tag",
+            "lit:Literature Understanding",
+            "--tag",
+            "code:Code & Execution",
+            "--tag",
+            "data:Data Analysis",
+            "--tag",
+            "discovery:End-to-End Discovery",
+            "--task",
+            "paper_finder_test:PaperFindingBench",
+            "--task",
+            "paper_finder_litqa2_test:LitQA2-FullText-Search",
+            "--task",
+            "sqa_test:ScholarQA-CS2",
+            "--task",
+            "litqa2_test:LitQA2-FullText",
+            "--task",
+            "arxivdigestables_test:ArxivDIGESTables-Clean",
+            "--task",
+            "super_test:SUPER-Expert",
+            "--task",
+            "core_bench_test:CORE-Bench-Hard",
+            "--task",
+            "ds1000_test:DS-1000",
+            "--task",
+            "discoverybench_test:DiscoveryBench",
+            "--task",
+            "e2e_discovery_test:E2E-Bench",
+            "--task",
+            "e2e_discovery_hard_test:E2E-Bench-Hard",
+            "--save-dir",
+            "plots/paper-fig-comprehensive-16",
+        ]
+    )
+    run_command(cmd)
+    copy_file(
+        f"plots/paper-fig-comprehensive-16/scatter.{args.save_format}",
+        output_dir / f"figures/results-comprehensive-16-subplots.{args.save_format}",
+    )
+
     # Detailed figures - Literature Search
     cmd = (
         ["agenteval", "lb", "view"]
         + common_opts
         + [
-            "--tag",
-            "lit",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "3.0",
             "--scatter-subplot-spacing",
             "0.2",
             "--save-dir",
             "plots/paper-fig-lit-search",
-            "--include-task",
+            "--tag",
+            "lit:Literature Understanding",
+            "--task",
             "paper_finder_test:PaperFindingBench",
-            "--include-task",
-            "^paper_finder_litqa2:LitQA2-FullText-Search",
+            "--task",
+            "paper_finder_litqa2_test:LitQA2-FullText-Search",
         ]
     )
     run_command(cmd)
@@ -234,16 +317,15 @@ def main():
         + [
             "--tag",
             "lit",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "3.0",
             "--scatter-subplot-spacing",
             "0.2",
             "--save-dir",
             "plots/paper-fig-lit-qa",
-            "--include-task",
+            "--task",
             "sqa.*:ScholarQA-CS2",
-            "--include-task",
+            "--task",
             "^litqa2:LitQA2-FullText",
         ]
     )
@@ -264,14 +346,13 @@ def main():
         + [
             "--tag",
             "lit",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "3.0",
             "--scatter-subplot-spacing",
             "0.2",
             "--save-dir",
             "plots/paper-fig-lit-table",
-            "--include-task",
+            "--task",
             ".*digest.*:ArxivDIGESTables-Clean",
         ]
     )
@@ -292,18 +373,17 @@ def main():
         + [
             "--tag",
             "code",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "2.5",
             "--scatter-subplot-spacing",
             "0.3",
             "--save-dir",
             "plots/paper-fig-code",
-            "--include-task",
+            "--task",
             ".*super.*:SUPER-Expert",
-            "--include-task",
+            "--task",
             ".*core.*:CORE-Bench-Hard",
-            "--include-task",
+            "--task",
             ".*ds.*:DS-1000",
         ]
     )
@@ -324,14 +404,13 @@ def main():
         + [
             "--tag",
             "data",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "3.0",
             "--scatter-subplot-spacing",
             "0.2",
             "--save-dir",
             "plots/paper-fig-data",
-            "--include-task",
+            "--task",
             ".*:DiscoveryBench",
         ]
     )
@@ -352,16 +431,15 @@ def main():
         + [
             "--tag",
             "discovery",
-            "--exclude-primary-metric",
             "--scatter-subplot-height",
             "3.0",
             "--scatter-subplot-spacing",
             "0.2",
             "--save-dir",
             "plots/paper-fig-discovery",
-            "--include-task",
+            "--task",
             ".*discovery_test:E2E-Bench",
-            "--include-task",
+            "--task",
             ".*hard.*:E2E-Bench-Hard",
         ]
     )

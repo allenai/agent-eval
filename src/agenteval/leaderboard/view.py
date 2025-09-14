@@ -91,11 +91,8 @@ class LeaderboardViewer:
         tag: str | None = None,
         with_plots: bool = False,
         preserve_none_scores: bool = False,
-        exclude_primary_metric: bool = False,
         duplicate_handling: Literal["latest", "index"] = "index",
         exclude_agent_patterns: list[str] | None = None,
-        include_tag_specs: list[str] | None = None,
-        include_task_specs: list[str] | None = None,
         group_agent_specs: list[str] | None = None,
         scatter_show_missing_cost: bool = False,
         scatter_legend_max_width: int | None = None,
@@ -104,6 +101,11 @@ class LeaderboardViewer:
         scatter_subplot_spacing: float | None = None,
         scatter_x_log_scale: bool = False,
         group_agent_fixed_colors: int | None = None,
+        scatter_subplots_per_row: int = 1,
+        scatter_marker_size: float | None = None,
+        include_overall: bool = False,
+        explicit_tags: list[str] | None = None,
+        explicit_tasks: list[str] | None = None,
     ) -> tuple[pd.DataFrame, dict[str, Figure], dict[str, dict]]:
         """
         If tag is None, primary="Overall" and group=all tags.
@@ -304,108 +306,71 @@ class LeaderboardViewer:
             "base_models",
         ]
 
-        # choose primary metric and its sub‐group (using raw column names)
-        if tag is None:
-            primary = "overall/score"
-            group = list(tag_map.keys())
-        else:
-            primary = f"tag/{tag}/score"
-            group = tag_map.get(tag, [])
-
-        # Check if the primary column exists before sorting
-        if primary not in raw_data.columns:
+        # Check if the overall/score column exists before sorting
+        if "overall/score" not in raw_data.columns:
             raise KeyError(
-                f"Column '{primary}' not found. Available columns: {list(raw_data.columns)}"
+                f"Column 'overall/score' not found. Available columns: {list(raw_data.columns)}"
             )
 
         # Apply filtering and collect display name mappings
         item_display_map = {}  # Maps actual item names to display names
 
-        # Filter and rename tags (for overall view)
-        if tag is None and include_tag_specs:
-            patterns, pattern_display_map = parse_specs(include_tag_specs)
+        raw_data = raw_data.sort_values("overall/score", ascending=False)
 
-            filtered_group = []
-            if patterns:
-                for pattern in patterns:
-                    for tag_name in group:
-                        if (
-                            re.search(pattern, tag_name, re.IGNORECASE)
-                            and tag_name not in filtered_group
-                        ):
-                            filtered_group.append(tag_name)
-                            # Map matched tag to display name if provided
-                            if pattern in pattern_display_map:
-                                item_display_map[tag_name] = pattern_display_map[pattern]
-                group = filtered_group
+        # Build scatter pairs - simple: plot exactly what CLI specifies
+        scatter_pairs = []
 
-        # Filter and rename tasks (for tag-specific view)
-        elif tag is not None and include_task_specs:
-            patterns, pattern_display_map = parse_specs(include_task_specs)
+        # Add overall if requested
+        if include_overall:
+            scatter_pairs.append(("overall/score", "overall/cost"))
 
-            filtered_group = []
-            if patterns:
-                for pattern in patterns:
-                    for task_name in group:
-                        if (
-                            re.search(pattern, task_name, re.IGNORECASE)
-                            and task_name not in filtered_group
-                        ):
-                            filtered_group.append(task_name)
-                            # Map matched task to display name if provided
-                            if pattern in pattern_display_map:
-                                item_display_map[task_name] = pattern_display_map[pattern]
-                group = filtered_group
+        # Add each specified tag directly
+        if explicit_tags:  # This will be None or a list
+            for spec in explicit_tags:
+                if ":" in spec:
+                    tag_name, display_name = spec.split(":", 1)
+                    item_display_map[tag_name] = display_name
+                else:
+                    tag_name = spec
+                scatter_pairs.append((f"tag/{tag_name}/score", f"tag/{tag_name}/cost"))
 
-        raw_data = raw_data.sort_values(primary, ascending=False)
+        # Add each specified task directly
+        if explicit_tasks:  # This will be None or a list
+            for spec in explicit_tasks:
+                if ":" in spec:
+                    task_name, display_name = spec.split(":", 1)
+                    item_display_map[task_name] = display_name
+                else:
+                    task_name = spec
+                scatter_pairs.append((f"task/{task_name}/score", f"task/{task_name}/cost"))
 
-        # Apply column renaming based on display map
-        if item_display_map:
-            columns_to_rename = {}
-            for col in raw_data.columns:
-                # Check tags
-                for orig_name, display_name in item_display_map.items():
-                    if f"tag/{orig_name}/" in col:
-                        new_col = col.replace(
-                            f"tag/{orig_name}/", f"tag/{display_name}/"
-                        )
-                        columns_to_rename[col] = new_col
-                        break
-                    elif f"task/{orig_name}/" in col:
-                        new_col = col.replace(
-                            f"task/{orig_name}/", f"task/{display_name}/"
-                        )
-                        columns_to_rename[col] = new_col
-                        break
 
-            if columns_to_rename:
-                raw_data = raw_data.rename(columns=columns_to_rename)
+        # Default fallback only if nothing specified
+        if not scatter_pairs:
+            # Initialize group for fallback logic
+            group = list(tag_map.keys()) if tag_map else []
 
-                # Update primary metric name if renamed
-                for orig_name, display_name in item_display_map.items():
-                    if f"tag/{orig_name}/" in primary:
-                        primary = primary.replace(
-                            f"tag/{orig_name}/", f"tag/{display_name}/"
-                        )
-                    elif f"task/{orig_name}/" in primary:
-                        primary = primary.replace(
-                            f"task/{orig_name}/", f"task/{display_name}/"
-                        )
+            if tag is None:
+                # Always include overall
+                scatter_pairs.append(("overall/score", "overall/cost"))
+                # Add all tags if available
+                for tag_name in group:
+                    scatter_pairs.append((f"tag/{tag_name}/score", f"tag/{tag_name}/cost"))
+            else:
+                # Tag-specific view
+                scatter_pairs.append((f"tag/{tag}/score", f"tag/{tag}/cost"))
+                # Get tasks for this tag
+                task_group = tag_map.get(tag, []) if tag_map else []
+                for task_name in task_group:
+                    scatter_pairs.append((f"task/{task_name}/score", f"task/{task_name}/cost"))
 
-                # Update group list with display names
-                group = [item_display_map.get(item, item) for item in group]
-
-        # build full metric list: primary + its cost + each member and its cost (using raw names)
-        if tag is None:
-            # For overall view, group contains tag names
-            metrics = [primary, "overall/cost"] + [
-                m for t in group for m in (f"tag/{t}/score", f"tag/{t}/cost")
-            ]
-        else:
-            # For tag view, group contains task names
-            metrics = [primary, f"tag/{tag}/cost"] + [
-                m for t in group for m in (f"task/{t}/score", f"task/{t}/cost")
-            ]
+        # build full metric list: include metrics for all scatter pairs
+        metrics = []
+        for score_col, cost_col in scatter_pairs:
+            if score_col not in metrics:
+                metrics.append(score_col)
+            if cost_col not in metrics:
+                metrics.append(cost_col)
 
         # Get CI columns for error bar plotting (only available for task-level metrics)
         ci_cols = []
@@ -418,18 +383,6 @@ class LeaderboardViewer:
         # Keep raw column names for internal processing, include CI columns
         available_metrics = [c for c in metrics if c in raw_data.columns]
 
-        # Exclude primary metric if requested
-        if exclude_primary_metric:
-            # Remove primary metric and its cost from available_metrics
-            primary_cost = primary.replace("/score", "/cost")
-            available_metrics = [
-                m for m in available_metrics if m not in (primary, primary_cost)
-            ]
-
-            # Also remove corresponding CI columns
-            primary_ci = f"{primary}_ci"
-            primary_cost_ci = f"{primary_cost}_ci"
-            ci_cols = [c for c in ci_cols if c not in (primary_ci, primary_cost_ci)]
 
         raw_df = raw_data.loc[
             :,
@@ -465,23 +418,6 @@ class LeaderboardViewer:
             raw_df["agent_group"] = ""
 
         # Build scatter pairs for score/cost metrics
-        scatter_pairs = []
-        if tag is None:
-            # Overall view: primary="overall/score", group=[tag names]
-            scatter_pairs.append(
-                (primary, "overall/cost")
-            )  # ("overall/score", "overall/cost")
-            for tag_name in group:
-                scatter_pairs.append((f"tag/{tag_name}/score", f"tag/{tag_name}/cost"))
-        else:
-            # Tag view: primary="tag/{tag}/score", group=[task names]
-            scatter_pairs.append(
-                (primary, f"tag/{tag}/cost")
-            )  # ("tag/lit/score", "tag/lit/cost")
-            for task_name in group:
-                scatter_pairs.append(
-                    (f"task/{task_name}/score", f"task/{task_name}/cost")
-                )
 
         # Define label transform function - single place to maintain axis label transformations
         def transform_axis_label(metric_path: str) -> str:
@@ -496,6 +432,16 @@ class LeaderboardViewer:
 
         plots: dict = {}
         if with_plots:
+            # Safeguard: if no metrics available, use default overall metrics
+            if not available_metrics:
+                available_metrics = ["overall/score", "overall/cost"]
+                # Add tag metrics if they exist
+                for tag_name in (tag_map.keys() if tag_map else []):
+                    if f"tag/{tag_name}/score" in raw_data.columns:
+                        available_metrics.append(f"tag/{tag_name}/score")
+                    if f"tag/{tag_name}/cost" in raw_data.columns:
+                        available_metrics.append(f"tag/{tag_name}/cost")
+
             # Use available_metrics which already has primary excluded if requested
             plots["bar"] = _plot_hbar(
                 raw_df,
@@ -527,6 +473,8 @@ class LeaderboardViewer:
                     use_log_scale=scatter_x_log_scale,
                     group_fixed_colors=group_agent_fixed_colors,
                     label_transform=transform_axis_label,
+                    subplots_per_row=scatter_subplots_per_row,
+                    marker_size=scatter_marker_size,
                 )
 
             # Also generate individual scatter plots
@@ -1230,8 +1178,11 @@ def _plot_scatter(
         agent_markers,
         use_cost_fallback,
         collect_legend=True,  # Need to collect legend entries for single plots
+        show_xlabel=True,  # Single plots always show labels
+        show_ylabel=True,  # Single plots always show labels
         use_log_scale=use_log_scale,
         label_transform=label_transform,
+        marker_size=None,  # Single plots use default marker size
     )
 
     # Order legend entries: Efficiency Frontier → Frontier Agents → Regular → (no cost)
@@ -1269,8 +1220,10 @@ def _plot_single_scatter_subplot(
     use_cost_fallback: bool = False,
     collect_legend: bool = False,
     show_xlabel: bool = True,
+    show_ylabel: bool = True,
     use_log_scale: bool = False,
     label_transform: Callable[[str], str] | None = None,
+    marker_size: float | None = None,
 ) -> tuple[list, list, list]:
     """Plot a single scatter subplot. Returns (handles, labels, frontier_agents) if collect_legend=True."""
     plot_data = data.dropna(subset=[y])
@@ -1306,13 +1259,19 @@ def _plot_single_scatter_subplot(
             agent_data = real_cost_data[real_cost_data[agent_col] == agent]
 
             # Plot all points with the appropriate marker
+            scatter_kwargs = {
+                "color": agent_colors[agent],
+                "marker": agent_markers.get(agent, "o"),
+                "label": agent if collect_legend else "",
+                "zorder": 5,  # Draw markers on top of lines
+            }
+            if marker_size is not None:
+                scatter_kwargs["s"] = marker_size
+
             scatter = ax.scatter(
                 agent_data[x],
                 agent_data[y],
-                color=agent_colors[agent],
-                marker=agent_markers.get(agent, "o"),
-                label=agent if collect_legend else "",
-                zorder=5,  # Draw markers on top of lines
+                **scatter_kwargs
             )
 
             if collect_legend:
@@ -1363,7 +1322,7 @@ def _plot_single_scatter_subplot(
     ax.margins(y=0.05)  # Add only 5% margin at the top
 
     # Apply consistent axis formatting
-    _setup_axis_formatting(ax, x, y, show_xlabel, label_transform)
+    _setup_axis_formatting(ax, x, y, show_xlabel, show_ylabel, label_transform)
     # Note: Legend font at 7pt visually matches 8pt tick labels due to matplotlib rendering differences
 
     # Set axis limits based on scale type
@@ -1389,15 +1348,21 @@ def _plot_single_scatter_subplot(
             # Plot no-cost agents at fallback position
             for agent in no_cost_data[agent_col].unique():
                 agent_data = no_cost_data[no_cost_data[agent_col] == agent]
+                no_cost_kwargs = {
+                    "facecolors": "none",
+                    "edgecolors": agent_colors[agent],
+                    "marker": agent_markers.get(agent, "o"),
+                    "linewidths": 2,
+                    "label": f"{agent}{NO_COST_SUFFIX}",
+                    "zorder": 5,  # Draw markers on top of lines
+                }
+                if marker_size is not None:
+                    no_cost_kwargs["s"] = marker_size
+
                 scatter = ax.scatter(
                     [fallback_x_position] * len(agent_data),
                     agent_data[y],
-                    facecolors="none",
-                    edgecolors=agent_colors[agent],
-                    marker=agent_markers.get(agent, "o"),
-                    linewidths=2,
-                    label=f"{agent}{NO_COST_SUFFIX}",
-                    zorder=5,  # Draw markers on top of lines
+                    **no_cost_kwargs
                 )
                 if collect_legend:
                     handles.append(scatter)
@@ -1419,15 +1384,21 @@ def _plot_single_scatter_subplot(
             # Plot no-cost agents at fallback position
             for agent in no_cost_data[agent_col].unique():
                 agent_data = no_cost_data[no_cost_data[agent_col] == agent]
+                no_cost_kwargs = {
+                    "facecolors": "none",
+                    "edgecolors": agent_colors[agent],
+                    "marker": agent_markers.get(agent, "o"),
+                    "linewidths": 2,
+                    "label": f"{agent}{NO_COST_SUFFIX}",
+                    "zorder": 5,  # Draw markers on top of lines
+                }
+                if marker_size is not None:
+                    no_cost_kwargs["s"] = marker_size
+
                 scatter = ax.scatter(
                     [fallback_x_position] * len(agent_data),
                     agent_data[y],
-                    facecolors="none",
-                    edgecolors=agent_colors[agent],
-                    marker=agent_markers.get(agent, "o"),
-                    linewidths=2,
-                    label=f"{agent}{NO_COST_SUFFIX}",
-                    zorder=5,  # Draw markers on top of lines
+                    **no_cost_kwargs
                 )
                 if collect_legend:
                     handles.append(scatter)
@@ -1494,13 +1465,15 @@ def _plot_combined_scatter(
     use_log_scale: bool = False,
     group_fixed_colors: int | None = None,
     label_transform: Callable[[str], str] | None = None,
+    subplots_per_row: int = 1,
+    marker_size: float | None = None,
 ) -> Figure:
     """Combined scatter plot with multiple score/cost pairs in subplots and single legend."""
     n_plots = len(scatter_pairs)
 
-    # Always use single column layout for simplicity
-    cols = 1
-    rows = n_plots
+    # Calculate grid layout based on subplots_per_row
+    cols = min(subplots_per_row, n_plots)
+    rows = (n_plots + cols - 1) // cols  # Ceiling division
 
     # Use tight layout instead of constrained for better control
     # Determine figure size
@@ -1509,7 +1482,7 @@ def _plot_combined_scatter(
         if figure_width is not None:
             fig_width = figure_width
         else:
-            fig_width = 8  # Default width when only height is specified
+            fig_width = 8 * cols  # Scale default width by number of columns
 
         if subplot_height is not None:
             figure_height = subplot_height * rows
@@ -1519,16 +1492,17 @@ def _plot_combined_scatter(
         figsize = (fig_width, figure_height)
 
     # Create subplots with optional parameters
+    gridspec_kw = {}
     if subplot_spacing is not None:
-        gridspec_kw = {"hspace": subplot_spacing}
-    else:
-        gridspec_kw = None
+        gridspec_kw["hspace"] = subplot_spacing
+        if cols > 1:  # Add horizontal spacing for multi-column layouts
+            gridspec_kw["wspace"] = subplot_spacing
 
     if figsize is not None:
-        fig, axes = plt.subplots(rows, cols, figsize=figsize, gridspec_kw=gridspec_kw)
+        fig, axes = plt.subplots(rows, cols, figsize=figsize, gridspec_kw=gridspec_kw or None)
     else:
         # Use all matplotlib defaults
-        fig, axes = plt.subplots(rows, cols, gridspec_kw=gridspec_kw)
+        fig, axes = plt.subplots(rows, cols, gridspec_kw=gridspec_kw or None)
 
     # Handle layout based on whether spacing is customized
     legend_space = (
@@ -1549,11 +1523,14 @@ def _plot_combined_scatter(
         # Use tight_layout for nice matplotlib defaults
         fig.tight_layout(rect=(0, 0, 1 - legend_space, 1))
 
-    # Handle axes normalization for single column
+    # Handle axes normalization for grid layout
     if n_plots == 1:
         axes = [axes]
+    elif rows == 1 or cols == 1:
+        axes = list(axes) if hasattr(axes, '__iter__') else [axes]
     else:
-        axes = list(axes)
+        # Multi-dimensional array, flatten to 1D list
+        axes = axes.flatten()
 
     # Get unique agents and groups for consistent coloring
     # Get stable color assignments based on group specs
@@ -1570,12 +1547,25 @@ def _plot_combined_scatter(
     # First pass: collect all handles and labels from all subplots
     subplot_handles_labels = []
     all_frontier_agents = set()
-    
+
+    # Pre-calculate which subplots are last in their column
+    num_subplots = len(scatter_pairs)
+    last_in_column = {}
+    for i in range(num_subplots):
+        col = i % cols
+        last_in_column[col] = i  # Keep updating, last one wins
+
     for idx, (y, x) in enumerate(scatter_pairs):
         ax = axes[idx]
 
-        # Only show x-axis label on the bottom subplot
-        is_bottom_subplot = idx == len(scatter_pairs) - 1
+        # Show labels based on position in grid
+        row_idx = idx // cols
+        col_idx = idx % cols
+        is_bottom_row = row_idx == rows - 1
+        is_leftmost_col = col_idx == 0
+        # Show x-label if in bottom row OR if this is the last subplot in this column
+        is_last_in_column = (idx == last_in_column[col_idx])
+        show_x_label = is_bottom_row or is_last_in_column
 
         # Plot subplot and collect legend info from all subplots
         handles, labels, frontier_agents = _plot_single_scatter_subplot(
@@ -1588,9 +1578,11 @@ def _plot_combined_scatter(
             agent_markers,
             use_cost_fallback,
             collect_legend=True,
-            show_xlabel=is_bottom_subplot,
+            show_xlabel=show_x_label,  # Show x-axis labels on bottom row or last in column
+            show_ylabel=is_leftmost_col,
             use_log_scale=use_log_scale,
             label_transform=label_transform,
+            marker_size=marker_size,
         )
 
         subplot_handles_labels.append((handles, labels))
@@ -1598,10 +1590,15 @@ def _plot_combined_scatter(
         # Handle frontier agents: preserve order for single subplot, merge for multiple
         if len(scatter_pairs) == 1:
             # Single subplot: preserve sorted order from the subplot
-            all_frontier_agents = frontier_agents
+            all_frontier_agents = frontier_agents  # This is already a list
         else:
             # Multiple subplots: merge as set (current behavior)
-            all_frontier_agents.update(frontier_agents)
+            if isinstance(all_frontier_agents, set):
+                all_frontier_agents.update(frontier_agents)
+            else:
+                # Convert list to set for merging
+                all_frontier_agents = set(all_frontier_agents)
+                all_frontier_agents.update(frontier_agents)
 
         # Set subplot title
         # Simply extract the name from the metric path (columns already renamed)
@@ -1614,8 +1611,10 @@ def _plot_combined_scatter(
         ax.set_title(title, fontsize=SCATTER_SUBPLOT_TITLE_FONTSIZE)
 
     # Hide unused subplots
-    for idx in range(n_plots, len(axes)):
-        axes[idx].set_visible(False)
+    total_subplots = rows * cols
+    for idx in range(n_plots, total_subplots):
+        if idx < len(axes):
+            axes[idx].set_visible(False)
 
     # Merge legend entries from all subplots while preserving dataframe order
     # First collect all entries into a dict
@@ -1791,6 +1790,7 @@ def _setup_axis_formatting(
     x_label: str,
     y_label: str,
     show_xlabel: bool = True,
+    show_ylabel: bool = True,
     label_transform: Callable[[str], str] | None = None,
 ):
     """Apply consistent axis formatting including labels and tick styling."""
@@ -1800,8 +1800,11 @@ def _setup_axis_formatting(
     else:
         ax.set_xlabel("", fontsize=SCATTER_AXIS_LABEL_FONTSIZE)  # Hide x-axis label
 
-    ylabel_display = label_transform(y_label) if label_transform else y_label
-    ax.set_ylabel(ylabel_display, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
+    if show_ylabel:
+        ylabel_display = label_transform(y_label) if label_transform else y_label
+        ax.set_ylabel(ylabel_display, fontsize=SCATTER_AXIS_LABEL_FONTSIZE)
+    else:
+        ax.set_ylabel("", fontsize=SCATTER_AXIS_LABEL_FONTSIZE)  # Hide y-axis label
     ax.tick_params(axis="both", which="major", labelsize=SCATTER_TICK_LABEL_FONTSIZE)
 
 
