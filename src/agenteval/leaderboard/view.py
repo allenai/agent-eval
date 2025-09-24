@@ -470,6 +470,7 @@ class LeaderboardViewer:
                     figure_width=scatter_figure_width,
                     subplot_height=scatter_subplot_height,
                     subplot_spacing=scatter_subplot_spacing,
+                    item_display_map=item_display_map,
                     use_log_scale=scatter_x_log_scale,
                     group_fixed_colors=group_agent_fixed_colors,
                     label_transform=transform_axis_label,
@@ -512,7 +513,7 @@ class LeaderboardViewer:
 
         # Create final display DataFrame with pretty column names
         display_df = raw_df.copy()
-        pretty_cols = {c: _pretty_column_name(c) for c in display_df.columns}
+        pretty_cols = {c: _pretty_column_name(c, item_display_map) for c in display_df.columns}
         display_df = display_df.rename(columns=pretty_cols)
 
         return display_df, plots, statistics
@@ -545,6 +546,7 @@ def _get_dataframe(
     ds = eval_results.get(split)
     if not ds:
         cols = ["agent_name", "agent_description", "username", "submit_time"]
+        # Note: item_display_map not available here, using default names
         pretty = [_pretty_column_name(c) for c in cols]
         empty = pd.DataFrame({c: ["No data"] for c in pretty})
         return empty
@@ -761,6 +763,7 @@ def _get_dataframe(
 
     if apply_pretty_names:
         # prepare pretty column mapping
+        # Note: item_display_map not available here, using default names
         pretty_cols = {c: _pretty_column_name(c) for c in df.columns}
         # construct overview table with human-friendly names
         overview = df.rename(columns=pretty_cols)
@@ -769,8 +772,13 @@ def _get_dataframe(
         return df
 
 
-def _pretty_column_name(col: str) -> str:
-    """Map raw column name to display name."""
+def _pretty_column_name(col: str, item_display_map: dict[str, str] | None = None) -> str:
+    """Map raw column name to display name.
+
+    Args:
+        col: Column name to prettify
+        item_display_map: Optional mapping of item names to display names
+    """
     # fixed mappings
     mapping = {
         "submit_time": "Submission date",
@@ -792,17 +800,23 @@ def _pretty_column_name(col: str) -> str:
     # dynamic: task/{name}/{metric} or tag/{name}/{metric}
     parts = col.split("/")
     if len(parts) == 3:
-        _, name, metric = parts
+        prefix, name, metric = parts
+        # Use display name if provided in the map
+        if item_display_map and name in item_display_map:
+            display_name = item_display_map[name]
+        else:
+            display_name = name
+
         if metric == "score":
-            return f"{name} score"
+            return f"{display_name} score"
         if metric == "cost":
-            return f"{name} cost"
+            return f"{display_name} cost"
         if metric == "score_ci":
-            return f"{name} 95% CI"
+            return f"{display_name} 95% CI"
         if metric == "cost_ci":
-            return f"{name} cost 95% CI"
+            return f"{display_name} cost 95% CI"
         if metric == "frontier":
-            return f"{name} frontier"
+            return f"{display_name} frontier"
     # fallback to last segment
     return parts[-1]
 
@@ -1185,7 +1199,7 @@ def _plot_scatter(
         marker_size=None,  # Single plots use default marker size
     )
 
-    # Order legend entries: Efficiency Frontier → Frontier Agents → Regular → (no cost)
+    # Order legend entries: "Efficiency Frontier" line → Agents on frontier → Regular agents → (no cost) agents
     # Preserves input order within each group (which is already dataframe order)
     sorted_handles, sorted_labels = _order_legend_entries(handles, labels, frontier_agents)
 
@@ -1462,6 +1476,7 @@ def _plot_combined_scatter(
     figure_width: float | None = None,
     subplot_height: float | None = None,
     subplot_spacing: float | None = None,
+    item_display_map: dict[str, str] | None = None,
     use_log_scale: bool = False,
     group_fixed_colors: int | None = None,
     label_transform: Callable[[str], str] | None = None,
@@ -1589,25 +1604,30 @@ def _plot_combined_scatter(
         
         # Handle frontier agents: preserve order for single subplot, merge for multiple
         if len(scatter_pairs) == 1:
-            # Single subplot: preserve sorted order from the subplot
+            # Single subplot: preserve sorted order from the subplot (by cost)
             all_frontier_agents = frontier_agents  # This is already a list
         else:
-            # Multiple subplots: merge as set (current behavior)
-            if isinstance(all_frontier_agents, set):
-                all_frontier_agents.update(frontier_agents)
-            else:
-                # Convert list to set for merging
-                all_frontier_agents = set(all_frontier_agents)
-                all_frontier_agents.update(frontier_agents)
+            # Multiple subplots: collect unique agents
+            if not isinstance(all_frontier_agents, set):
+                all_frontier_agents = set()
+            all_frontier_agents.update(frontier_agents)
 
         # Set subplot title
-        # Simply extract the name from the metric path (columns already renamed)
-        title = (
-            y.replace("/score", "")
-            .replace("tag/", "")
-            .replace("task/", "")
-            .replace("overall", "Overall")
-        )
+        # Extract the item name from the metric path and apply display name mapping
+        if "overall" in y:
+            title = "Overall"
+        else:
+            # Extract item name from path like "tag/lit/score" or "task/foo/score"
+            parts = y.split("/")
+            if len(parts) >= 2:
+                item_name = parts[1]  # Get the tag or task name
+                # Use display name if available in the map
+                if item_display_map and item_name in item_display_map:
+                    title = item_display_map[item_name]
+                else:
+                    title = item_name
+            else:
+                title = y
         ax.set_title(title, fontsize=SCATTER_SUBPLOT_TITLE_FONTSIZE)
 
     # Hide unused subplots
@@ -1642,9 +1662,12 @@ def _plot_combined_scatter(
             all_handles.append(label_to_handle[no_cost_label])
             all_labels.append(no_cost_label)
 
-    # Now reorder to group by type: Frontier → Frontier Agents → Regular → (no cost)
+    # Now reorder to group by type: "Efficiency Frontier" line → Agents on frontier → Regular agents → (no cost) agents
     # while preserving dataframe order within each group
     if all_handles:
+        # For multi-subplot case, sort frontier agents alphabetically
+        if len(scatter_pairs) > 1 and isinstance(all_frontier_agents, set):
+            all_frontier_agents = sorted(all_frontier_agents)
         sorted_handles, sorted_labels = _order_legend_entries(all_handles, all_labels, all_frontier_agents)
         # Convert to lists so we can append
         sorted_handles = list(sorted_handles)
@@ -1711,7 +1734,7 @@ def _get_frontier_indices(
 
 
 def _order_legend_entries(handles, labels, frontier_agents=None):
-    """Order legend entries: Efficiency Frontier → Frontier Agents → Regular → (no cost).
+    """Order legend entries: "Efficiency Frontier" line → Agents on frontier → Regular agents → (no cost) agents.
 
     Preserves input order within each group.
 
