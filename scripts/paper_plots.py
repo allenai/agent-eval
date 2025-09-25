@@ -93,6 +93,8 @@ def main():
         "^Asta Code:Llama",
         "--exclude-agent",
         "logs_url:hf://datasets/allenai/asta-bench-internal-submissions/1.0.0-dev1/test/miked-ai_Asta_DataVoyager_2025-07-11T19-46-16",
+        "--exclude-agent",
+        "logs_url:hf://datasets/allenai/asta-bench-internal-submissions/1.0.0-dev1/test/danyhai2_OpenAI_Deep_Research_2025-07-26T02-23-12",
         "--group-agent-fixed-colors",
         "3",
         "--group-agent",
