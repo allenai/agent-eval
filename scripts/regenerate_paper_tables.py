@@ -97,6 +97,12 @@ def extract_table_with_structure(lines: List[str], start_idx: int) -> Dict:
                     result["category"] = "lit_search"
                 else:
                     result["category"] = "lit"
+            else:
+                print(
+                    f"Warning: Could not determine table category from caption: {caption_text}",
+                    file=sys.stderr,
+                )
+                result["category"] = None
         i += 1
 
     # Reset to start and process table
