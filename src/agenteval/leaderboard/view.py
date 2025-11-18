@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
+from scipy.spatial import ConvexHull
 
 from .. import compute_summary_statistics
 from ..config import SuiteConfig
@@ -46,6 +47,7 @@ class LeaderboardViewer:
         is_internal: bool = False,
         model_name_mapping: dict[str, str] | None = None,
         conditional_model_mappings: dict[tuple[str, str], dict[str, str]] | None = None,
+        frontier_method: Literal["stepwise", "convex_hull"] = "convex_hull",
     ):
         self._repo_id = repo_id
         self._config = config
@@ -53,6 +55,7 @@ class LeaderboardViewer:
         self._internal = is_internal
         self._model_name_mapping = model_name_mapping
         self._conditional_model_mappings = conditional_model_mappings
+        self.frontier_method = frontier_method
 
         # build suite_config and mapping from tags to tasks from the first result
         # TODO: Verify the sort order
@@ -432,6 +435,11 @@ class LeaderboardViewer:
 
         plots: dict = {}
         if with_plots:
+            # Select frontier function based on method
+            if self.frontier_method == "convex_hull":
+                frontier_func = _get_frontier_indices_convex_hull
+            else:
+                frontier_func = _get_frontier_indices
             # Safeguard: if no metrics available, use default overall metrics
             if not available_metrics:
                 available_metrics = ["overall/score", "overall/cost"]
@@ -476,6 +484,7 @@ class LeaderboardViewer:
                     label_transform=transform_axis_label,
                     subplots_per_row=scatter_subplots_per_row,
                     marker_size=scatter_marker_size,
+                    frontier_func=frontier_func,
                 )
 
             # Also generate individual scatter plots
@@ -498,6 +507,7 @@ class LeaderboardViewer:
                     use_log_scale=scatter_x_log_scale,
                     group_fixed_colors=group_agent_fixed_colors,
                     label_transform=transform_axis_label,
+                    frontier_func=frontier_func,
                 )
 
         # Calculate frontier information for each scatter pair
@@ -508,7 +518,10 @@ class LeaderboardViewer:
                 # Keep the raw column name format for now, will be prettified later
                 frontier_col_name = y_col.replace("/score", "/frontier")
                 # Get frontier indices and create boolean series
-                frontier_indices = _get_frontier_indices(raw_df, x_col, y_col)
+                if self.frontier_method == "convex_hull":
+                    frontier_indices = _get_frontier_indices_convex_hull(raw_df, x_col, y_col)
+                else:
+                    frontier_indices = _get_frontier_indices(raw_df, x_col, y_col)
                 raw_df[frontier_col_name] = raw_df.index.isin(frontier_indices)
 
         # Create final display DataFrame with pretty column names
@@ -1154,6 +1167,7 @@ def _plot_scatter(
     use_log_scale: bool = False,
     group_fixed_colors: int | None = None,
     label_transform: Callable[[str], str] | None = None,
+    frontier_func: Callable[[pd.DataFrame, str, str], list] | None = None,
 ) -> Figure:
     """Scatter plot of agent results, for showing score vs cost."""
     # Create figure with constrained layout for automatic spacing
@@ -1197,6 +1211,7 @@ def _plot_scatter(
         use_log_scale=use_log_scale,
         label_transform=label_transform,
         marker_size=None,  # Single plots use default marker size
+        frontier_func=frontier_func,
     )
 
     # Order legend entries: "Efficiency Frontier" line → Agents on frontier → Regular agents → (no cost) agents
@@ -1238,6 +1253,7 @@ def _plot_single_scatter_subplot(
     use_log_scale: bool = False,
     label_transform: Callable[[str], str] | None = None,
     marker_size: float | None = None,
+    frontier_func: Callable[[pd.DataFrame, str, str], list] | None = None,
 ) -> tuple[list, list, list]:
     """Plot a single scatter subplot. Returns (handles, labels, frontier_agents) if collect_legend=True."""
     plot_data = data.dropna(subset=[y])
@@ -1261,7 +1277,10 @@ def _plot_single_scatter_subplot(
     # Plot agents with real cost data
     if not real_cost_data.empty:
         # Get frontier indices first for drawing the frontier line
-        frontier_indices = _get_frontier_indices(real_cost_data, x, y)
+        # Use the provided frontier function or default to stepwise
+        if frontier_func is None:
+            frontier_func = _get_frontier_indices
+        frontier_indices = frontier_func(real_cost_data, x, y)
         
         # Extract frontier agent names for legend ordering, sorted by cost (left to right on frontier)
         if frontier_indices:
@@ -1482,6 +1501,7 @@ def _plot_combined_scatter(
     label_transform: Callable[[str], str] | None = None,
     subplots_per_row: int = 1,
     marker_size: float | None = None,
+    frontier_func: Callable[[pd.DataFrame, str, str], list] | None = None,
 ) -> Figure:
     """Combined scatter plot with multiple score/cost pairs in subplots and single legend."""
     n_plots = len(scatter_pairs)
@@ -1598,6 +1618,7 @@ def _plot_combined_scatter(
             use_log_scale=use_log_scale,
             label_transform=label_transform,
             marker_size=marker_size,
+            frontier_func=frontier_func,
         )
 
         subplot_handles_labels.append((handles, labels))
@@ -1731,6 +1752,73 @@ def _get_frontier_indices(
             max_score_so_far = score
 
     return frontier_indices
+
+
+def _get_frontier_indices_convex_hull(
+    data: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+) -> list:
+    """
+    Get indices of rows that are on the efficiency frontier using convex hull approach.
+
+    This finds the upper-right convex hull of the points, which represents
+    the optimal tradeoff curve between cost and score. Unlike the step-wise
+    approach, this creates a smooth frontier that may exclude some locally
+    optimal points that would create concavities.
+    """
+    # Filter to rows with valid cost and score data
+    valid_mask = data[x_col].notna() & data[y_col].notna()
+    valid_data = data[valid_mask]
+
+    if valid_data.empty:
+        return []
+
+    # Need at least 3 points for a meaningful convex hull
+    if len(valid_data) < 3:
+        # Fall back to simple approach for small datasets
+        return _get_frontier_indices(data, x_col, y_col)
+
+    # Extract points as numpy array
+    points = valid_data[[x_col, y_col]].values
+
+    try:
+        # Compute convex hull
+        hull = ConvexHull(points)
+
+        # Get the vertices of the hull (indices into the points array)
+        hull_point_indices = hull.vertices
+
+        # Map back to original dataframe indices
+        hull_df_indices = valid_data.index[hull_point_indices].tolist()
+
+        # Extract hull points with their dataframe indices
+        hull_points = []
+        for df_idx in hull_df_indices:
+            row = data.loc[df_idx]
+            hull_points.append((df_idx, row[x_col], row[y_col]))
+
+        # Sort by cost
+        hull_points.sort(key=lambda x: x[1])
+
+        # Find the upper-right portion of the hull
+        # This is the part where both cost and score are increasing
+        frontier_indices = []
+        max_score_so_far = float("-inf")
+
+        for df_idx, cost, score in hull_points:
+            # Only include points that improve the score (upper portion)
+            if score > max_score_so_far:
+                frontier_indices.append(df_idx)
+                max_score_so_far = score
+
+        return frontier_indices
+
+    except Exception as e:
+        # If convex hull fails (e.g., all points are collinear),
+        # fall back to the original approach
+        logger.warning(f"Convex hull calculation failed: {e}. Falling back to step-wise frontier.")
+        return _get_frontier_indices(data, x_col, y_col)
 
 
 def _order_legend_entries(handles, labels, frontier_agents=None):
