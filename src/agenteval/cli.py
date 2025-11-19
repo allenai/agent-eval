@@ -795,6 +795,12 @@ def validate_split(ctx, param, value):
     help="Include specific tasks (format: 'task_name' or 'task_name:Display Name').",
 )
 @click.option(
+    "--exclude-tag-plots",
+    is_flag=True,
+    default=False,
+    help="When both --tag and --task are specified, exclude tag-level plots (only show task plots). Similar to old --exclude-primary-metric behavior.",
+)
+@click.option(
     "--group-agent",
     multiple=True,
     help="Group agents matching pattern (regex, case-insensitive) to use same color with different markers in scatter plots (format: 'pattern' or 'pattern:Group Name'). Can be specified multiple times for different groups.",
@@ -837,6 +843,7 @@ def view_command(
     include_overall,
     is_internal,
     task,
+    exclude_tag_plots,
     group_agent,
     group_agent_fixed_colors,
     model_name_mapping_file,
@@ -897,6 +904,7 @@ def view_command(
         include_overall=include_overall,
         explicit_tags=(list(tag) if tag else None),
         explicit_tasks=(list(task) if task else None),
+        exclude_tag_plots=exclude_tag_plots,
     )
     click.echo(df.to_string(index=False))
 

@@ -294,6 +294,7 @@ def main():
             "0.2",
             "--save-dir",
             "plots/paper-fig-lit-search",
+            "--exclude-tag-plots",  # Only show task plots, not the tag-level plot
             "--tag",
             "lit:Literature Understanding",
             "--task",

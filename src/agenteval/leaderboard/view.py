@@ -108,6 +108,7 @@ class LeaderboardViewer:
         include_overall: bool = False,
         explicit_tags: list[str] | None = None,
         explicit_tasks: list[str] | None = None,
+        exclude_tag_plots: bool = False,
     ) -> tuple[pd.DataFrame, dict[str, Figure], dict[str, dict]]:
         """
         If tag is None, primary="Overall" and group=all tags.
@@ -378,6 +379,16 @@ class LeaderboardViewer:
                     scatter_pairs.append(
                         (f"task/{task_name}/score", f"task/{task_name}/cost")
                     )
+
+        # If exclude_tag_plots is True and we have both tags and tasks specified,
+        # remove tag-level plots (similar to old --exclude-primary-metric behavior)
+        # The tag is for context/filtering, not for plotting when tasks are specified
+        if exclude_tag_plots and explicit_tags and explicit_tasks:
+            scatter_pairs = [
+                (score, cost)
+                for score, cost in scatter_pairs
+                if not score.startswith("tag/")
+            ]
 
         # Default fallback only if nothing specified
         if not scatter_pairs:
