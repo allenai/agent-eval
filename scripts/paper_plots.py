@@ -413,7 +413,7 @@ def main():
             "--save-dir",
             "plots/paper-fig-data",
             "--task",
-            ".*:DiscoveryBench",
+            ".*discoverybench.*:DiscoveryBench",
         ]
     )
     run_command(cmd)

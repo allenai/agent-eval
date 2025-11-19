@@ -4,7 +4,6 @@ View and plot leaderboard results.
 
 import logging
 import re
-import sys
 from typing import Callable, Literal
 from zoneinfo import ZoneInfo
 
@@ -178,9 +177,9 @@ class LeaderboardViewer:
 
         # Load raw data for internal processing
         raw_data, tag_map = self._load(
-            apply_pretty_names=False, 
+            apply_pretty_names=False,
             preserve_none_scores=preserve_none_scores,
-            exclude_agent_patterns=exclude_agent_patterns
+            exclude_agent_patterns=exclude_agent_patterns,
         )
 
         # Collect initial agent statistics from raw data
@@ -204,7 +203,6 @@ class LeaderboardViewer:
         if not raw_data.empty:
             stats = get_agent_stats(raw_data)
             statistics["after_dropping_all_nan_agents"] = stats
-
 
         # Process agent grouping specs (after exclusion, before display name creation)
         agent_name_mapping = {}  # Maps original agent_name to display name
@@ -233,15 +231,19 @@ class LeaderboardViewer:
                             break  # First matching pattern wins
 
             # Create list of (pattern, group_name) tuples for plotting functions
-            parsed_group_specs = [
-                (
-                    pattern,
-                    pattern_group_map.get(
-                        pattern, pattern_first_agent.get(pattern, pattern)
-                    ),
-                )
-                for pattern in patterns
-            ] if patterns else []
+            parsed_group_specs = (
+                [
+                    (
+                        pattern,
+                        pattern_group_map.get(
+                            pattern, pattern_first_agent.get(pattern, pattern)
+                        ),
+                    )
+                    for pattern in patterns
+                ]
+                if patterns
+                else []
+            )
 
         # Create combined agent names with model information
         if not raw_data.empty:
@@ -337,16 +339,45 @@ class LeaderboardViewer:
                     tag_name = spec
                 scatter_pairs.append((f"tag/{tag_name}/score", f"tag/{tag_name}/cost"))
 
-        # Add each specified task directly
+        # Process explicit tasks - need to handle patterns
         if explicit_tasks:  # This will be None or a list
+            # First, collect all available tasks
+            all_available_tasks = []
+            for tag_tasks in tag_map.values():
+                all_available_tasks.extend(tag_tasks)
+
             for spec in explicit_tasks:
                 if ":" in spec:
-                    task_name, display_name = spec.split(":", 1)
-                    item_display_map[task_name] = display_name
+                    task_pattern, display_name = spec.split(":", 1)
+
+                    # Find all tasks that match this pattern
+                    matched_tasks = []
+                    for task_name in all_available_tasks:
+                        if re.search(task_pattern, task_name, re.IGNORECASE):
+                            matched_tasks.append(task_name)
+
+                    # Apply display name ONLY to the first match to avoid duplicate column names
+                    # Other matched tasks keep their original names
+                    if matched_tasks:
+                        # First match gets the display name and is added to scatter pairs
+                        item_display_map[matched_tasks[0]] = display_name
+                        scatter_pairs.append(
+                            (
+                                f"task/{matched_tasks[0]}/score",
+                                f"task/{matched_tasks[0]}/cost",
+                            )
+                        )
+                    else:
+                        # No matches - treat as literal task name
+                        item_display_map[task_pattern] = display_name
+                        scatter_pairs.append(
+                            (f"task/{task_pattern}/score", f"task/{task_pattern}/cost")
+                        )
                 else:
                     task_name = spec
-                scatter_pairs.append((f"task/{task_name}/score", f"task/{task_name}/cost"))
-
+                    scatter_pairs.append(
+                        (f"task/{task_name}/score", f"task/{task_name}/cost")
+                    )
 
         # Default fallback only if nothing specified
         if not scatter_pairs:
@@ -358,14 +389,18 @@ class LeaderboardViewer:
                 scatter_pairs.append(("overall/score", "overall/cost"))
                 # Add all tags if available
                 for tag_name in group:
-                    scatter_pairs.append((f"tag/{tag_name}/score", f"tag/{tag_name}/cost"))
+                    scatter_pairs.append(
+                        (f"tag/{tag_name}/score", f"tag/{tag_name}/cost")
+                    )
             else:
                 # Tag-specific view
                 scatter_pairs.append((f"tag/{tag}/score", f"tag/{tag}/cost"))
                 # Get tasks for this tag
                 task_group = tag_map.get(tag, []) if tag_map else []
                 for task_name in task_group:
-                    scatter_pairs.append((f"task/{task_name}/score", f"task/{task_name}/cost"))
+                    scatter_pairs.append(
+                        (f"task/{task_name}/score", f"task/{task_name}/cost")
+                    )
 
         # build full metric list: include metrics for all scatter pairs
         metrics = []
@@ -374,6 +409,33 @@ class LeaderboardViewer:
                 metrics.append(score_col)
             if cost_col not in metrics:
                 metrics.append(cost_col)
+
+        # IMPORTANT: When tags are specified (either via explicit_tags or tag parameter),
+        # include ALL tasks under those tags in the metrics (for JSONL export),
+        # even if they weren't explicitly specified for plotting
+        tags_to_include = set()
+
+        # Collect tags from explicit_tags
+        if explicit_tags:
+            for spec in explicit_tags:
+                # Extract just the tag name (before the colon if present)
+                tag_name = spec.split(":")[0] if ":" in spec else spec
+                tags_to_include.add(tag_name)
+
+        # Also include the old-style tag parameter
+        if tag is not None:
+            tags_to_include.add(tag)
+
+        # Add all tasks under included tags to metrics
+        for tag_name in tags_to_include:
+            if tag_name in tag_map:
+                for task_name in tag_map[tag_name]:
+                    task_score = f"task/{task_name}/score"
+                    task_cost = f"task/{task_name}/cost"
+                    if task_score not in metrics and task_score in raw_data.columns:
+                        metrics.append(task_score)
+                    if task_cost not in metrics and task_cost in raw_data.columns:
+                        metrics.append(task_cost)
 
         # Get CI columns for error bar plotting (only available for task-level metrics)
         ci_cols = []
@@ -386,16 +448,28 @@ class LeaderboardViewer:
         # Keep raw column names for internal processing, include CI columns
         available_metrics = [c for c in metrics if c in raw_data.columns]
 
-
         raw_df = raw_data.loc[
             :,
             raw_cols + available_metrics + ci_cols,
         ].reset_index(drop=True)
 
-        # Always filter out rows with all NaN score values (no point showing agents with no data)
-        score_cols = [c for c in available_metrics if c.endswith("/score")]
-        if score_cols:
-            raw_df = raw_df.dropna(subset=score_cols, how="all")
+        # Filter out rows based on scatter pairs (for plotting), not all metrics
+        # This ensures we only plot agents that have data for the tasks being plotted
+        # But still include all task data in JSONL export
+        plot_score_cols = []
+        for score_col, _ in scatter_pairs:
+            if score_col in raw_df.columns and score_col.endswith("/score"):
+                plot_score_cols.append(score_col)
+
+        # If we have specific tasks/tags to plot, filter based on those
+        # Otherwise fall back to all score columns
+        if plot_score_cols:
+            raw_df = raw_df.dropna(subset=plot_score_cols, how="all")
+        else:
+            # Fallback to original behavior when no specific plotting requested
+            score_cols = [c for c in available_metrics if c.endswith("/score")]
+            if score_cols:
+                raw_df = raw_df.dropna(subset=score_cols, how="all")
 
             # Collect final statistics after filtering out agents with no scores in selected view
             stats = get_agent_stats(raw_df)
@@ -444,7 +518,7 @@ class LeaderboardViewer:
             if not available_metrics:
                 available_metrics = ["overall/score", "overall/cost"]
                 # Add tag metrics if they exist
-                for tag_name in (tag_map.keys() if tag_map else []):
+                for tag_name in tag_map.keys() if tag_map else []:
                     if f"tag/{tag_name}/score" in raw_data.columns:
                         available_metrics.append(f"tag/{tag_name}/score")
                     if f"tag/{tag_name}/cost" in raw_data.columns:
@@ -519,14 +593,18 @@ class LeaderboardViewer:
                 frontier_col_name = y_col.replace("/score", "/frontier")
                 # Get frontier indices and create boolean series
                 if self.frontier_method == "convex_hull":
-                    frontier_indices = _get_frontier_indices_convex_hull(raw_df, x_col, y_col)
+                    frontier_indices = _get_frontier_indices_convex_hull(
+                        raw_df, x_col, y_col
+                    )
                 else:
                     frontier_indices = _get_frontier_indices(raw_df, x_col, y_col)
                 raw_df[frontier_col_name] = raw_df.index.isin(frontier_indices)
 
         # Create final display DataFrame with pretty column names
         display_df = raw_df.copy()
-        pretty_cols = {c: _pretty_column_name(c, item_display_map) for c in display_df.columns}
+        pretty_cols = {
+            c: _pretty_column_name(c, item_display_map) for c in display_df.columns
+        }
         display_df = display_df.rename(columns=pretty_cols)
 
         return display_df, plots, statistics
@@ -592,7 +670,7 @@ def _get_dataframe(
                     if re.search(pattern, sub.agent_name or "", re.IGNORECASE):
                         should_exclude = True
                         break
-            
+
             if should_exclude:
                 continue
 
@@ -657,7 +735,9 @@ def _get_dataframe(
                     if not hasattr(sub, field):
                         agent_pattern, model_pattern = field, value
                         # Check if agent matches AND any model matches
-                        if re.search(agent_pattern, sub.agent_name or "", re.IGNORECASE):
+                        if re.search(
+                            agent_pattern, sub.agent_name or "", re.IGNORECASE
+                        ):
                             if any(
                                 re.search(model_pattern, model, re.IGNORECASE)
                                 for model in model_names
@@ -665,7 +745,7 @@ def _get_dataframe(
                             ):
                                 should_exclude_agent_model = True
                                 break
-            
+
             if should_exclude_agent_model:
                 continue
 
@@ -785,7 +865,9 @@ def _get_dataframe(
         return df
 
 
-def _pretty_column_name(col: str, item_display_map: dict[str, str] | None = None) -> str:
+def _pretty_column_name(
+    col: str, item_display_map: dict[str, str] | None = None
+) -> str:
     """Map raw column name to display name.
 
     Args:
@@ -1216,7 +1298,9 @@ def _plot_scatter(
 
     # Order legend entries: "Efficiency Frontier" line → Agents on frontier → Regular agents → (no cost) agents
     # Preserves input order within each group (which is already dataframe order)
-    sorted_handles, sorted_labels = _order_legend_entries(handles, labels, frontier_agents)
+    sorted_handles, sorted_labels = _order_legend_entries(
+        handles, labels, frontier_agents
+    )
 
     # Apply text wrapping if specified
     if legend_max_width is not None:
@@ -1281,7 +1365,7 @@ def _plot_single_scatter_subplot(
         if frontier_func is None:
             frontier_func = _get_frontier_indices
         frontier_indices = frontier_func(real_cost_data, x, y)
-        
+
         # Extract frontier agent names for legend ordering, sorted by cost (left to right on frontier)
         if frontier_indices:
             frontier_data = real_cost_data.loc[frontier_indices]
@@ -1301,11 +1385,7 @@ def _plot_single_scatter_subplot(
             if marker_size is not None:
                 scatter_kwargs["s"] = marker_size
 
-            scatter = ax.scatter(
-                agent_data[x],
-                agent_data[y],
-                **scatter_kwargs
-            )
+            scatter = ax.scatter(agent_data[x], agent_data[y], **scatter_kwargs)
 
             if collect_legend:
                 handles.append(scatter)
@@ -1395,7 +1475,7 @@ def _plot_single_scatter_subplot(
                 scatter = ax.scatter(
                     [fallback_x_position] * len(agent_data),
                     agent_data[y],
-                    **no_cost_kwargs
+                    **no_cost_kwargs,
                 )
                 if collect_legend:
                     handles.append(scatter)
@@ -1431,7 +1511,7 @@ def _plot_single_scatter_subplot(
                 scatter = ax.scatter(
                     [fallback_x_position] * len(agent_data),
                     agent_data[y],
-                    **no_cost_kwargs
+                    **no_cost_kwargs,
                 )
                 if collect_legend:
                     handles.append(scatter)
@@ -1534,7 +1614,9 @@ def _plot_combined_scatter(
             gridspec_kw["wspace"] = subplot_spacing
 
     if figsize is not None:
-        fig, axes = plt.subplots(rows, cols, figsize=figsize, gridspec_kw=gridspec_kw or None)
+        fig, axes = plt.subplots(
+            rows, cols, figsize=figsize, gridspec_kw=gridspec_kw or None
+        )
     else:
         # Use all matplotlib defaults
         fig, axes = plt.subplots(rows, cols, gridspec_kw=gridspec_kw or None)
@@ -1562,7 +1644,7 @@ def _plot_combined_scatter(
     if n_plots == 1:
         axes = [axes]
     elif rows == 1 or cols == 1:
-        axes = list(axes) if hasattr(axes, '__iter__') else [axes]
+        axes = list(axes) if hasattr(axes, "__iter__") else [axes]
     else:
         # Multi-dimensional array, flatten to 1D list
         axes = axes.flatten()
@@ -1599,7 +1681,7 @@ def _plot_combined_scatter(
         is_bottom_row = row_idx == rows - 1
         is_leftmost_col = col_idx == 0
         # Show x-label if in bottom row OR if this is the last subplot in this column
-        is_last_in_column = (idx == last_in_column[col_idx])
+        is_last_in_column = idx == last_in_column[col_idx]
         show_x_label = is_bottom_row or is_last_in_column
 
         # Plot subplot and collect legend info from all subplots
@@ -1622,7 +1704,7 @@ def _plot_combined_scatter(
         )
 
         subplot_handles_labels.append((handles, labels))
-        
+
         # Handle frontier agents: preserve order for single subplot, merge for multiple
         if len(scatter_pairs) == 1:
             # Single subplot: preserve sorted order from the subplot (by cost)
@@ -1689,7 +1771,9 @@ def _plot_combined_scatter(
         # For multi-subplot case, sort frontier agents alphabetically
         if len(scatter_pairs) > 1 and isinstance(all_frontier_agents, set):
             all_frontier_agents = sorted(all_frontier_agents)
-        sorted_handles, sorted_labels = _order_legend_entries(all_handles, all_labels, all_frontier_agents)
+        sorted_handles, sorted_labels = _order_legend_entries(
+            all_handles, all_labels, all_frontier_agents
+        )
         # Convert to lists so we can append
         sorted_handles = list(sorted_handles)
         sorted_labels = list(sorted_labels)
@@ -1817,7 +1901,9 @@ def _get_frontier_indices_convex_hull(
     except Exception as e:
         # If convex hull fails (e.g., all points are collinear),
         # fall back to the original approach
-        logger.warning(f"Convex hull calculation failed: {e}. Falling back to step-wise frontier.")
+        logger.warning(
+            f"Convex hull calculation failed: {e}. Falling back to step-wise frontier."
+        )
         return _get_frontier_indices(data, x_col, y_col)
 
 
@@ -1845,7 +1931,7 @@ def _order_legend_entries(handles, labels, frontier_agents=None):
 
     # First pass: collect items into categories and build a map for frontier agents
     frontier_agent_map = {}  # Maps agent name to (handle, label)
-    
+
     for handle, label in zip(handles, labels):
         if label == FRONTIER_LABEL:
             frontier_line_items.append((handle, label))
@@ -1858,14 +1944,14 @@ def _order_legend_entries(handles, labels, frontier_agents=None):
                 if agent in label:
                     matched_agent = agent
                     break
-            
+
             if matched_agent:
                 frontier_agent_map[matched_agent] = (handle, label)
             else:
                 regular_items.append((handle, label))
         else:
             regular_items.append((handle, label))
-    
+
     # Second pass: add frontier agents in the order specified by frontier_agents list
     if frontier_agents:
         for agent in frontier_agents:
@@ -1876,11 +1962,18 @@ def _order_legend_entries(handles, labels, frontier_agents=None):
     divider_items = []
     if frontier_agent_items and regular_items:
         import matplotlib.lines as mlines
-        divider_line = mlines.Line2D([], [], color='gray', linestyle='-', linewidth=1)
+
+        divider_line = mlines.Line2D([], [], color="gray", linestyle="-", linewidth=1)
         divider_items.append((divider_line, "───────────"))
 
     # Combine in desired order: Frontier line → Frontier agents → Divider → Regular → No-cost
-    ordered_items = frontier_line_items + frontier_agent_items + divider_items + regular_items + no_cost_items
+    ordered_items = (
+        frontier_line_items
+        + frontier_agent_items
+        + divider_items
+        + regular_items
+        + no_cost_items
+    )
 
     if ordered_items:
         ordered_handles, ordered_labels = zip(*ordered_items)
