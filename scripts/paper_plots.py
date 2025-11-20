@@ -66,6 +66,7 @@ def main():
 
     # Common options for all commands
     common_opts = [
+        "--exclude-tag-plots",
         "--split",
         "test",
         "--config",
@@ -294,7 +295,6 @@ def main():
             "0.2",
             "--save-dir",
             "plots/paper-fig-lit-search",
-            "--exclude-tag-plots",  # Only show task plots, not the tag-level plot
             "--tag",
             "lit:Literature Understanding",
             "--task",

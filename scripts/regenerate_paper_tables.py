@@ -742,7 +742,7 @@ def main():
                 new_lines.extend(lines[i : table_structure["end_line"] + 1])
             else:
                 print(
-                    f"Processing table {table_num} ({table_structure['category']})",
+                    f"Processing table {table_num} ({table_structure['category']}) {table_structure['has_ci']}",
                     file=sys.stderr,
                 )
 

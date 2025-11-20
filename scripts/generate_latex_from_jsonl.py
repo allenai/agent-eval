@@ -748,7 +748,7 @@ def main():
             "file": "overall.jsonl",
             "name": "Overall Results",
             "generator": generate_overall_row,
-            "default_ci": False,  # Overall table typically doesn't show CIs
+            "default_ci": False,
         },
         "lit_search": {
             "file": "lit_search.jsonl",

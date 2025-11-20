@@ -451,7 +451,7 @@ class LeaderboardViewer:
         # Get CI columns for error bar plotting (only available for task-level metrics)
         ci_cols = []
         for m in metrics:
-            if m.startswith("task/") and (m.endswith("/score") or m.endswith("/cost")):
+            if m.endswith("/score") or m.endswith("/cost"):
                 ci_col = f"{m}_ci"
                 if ci_col in raw_data.columns:
                     ci_cols.append(ci_col)
@@ -785,10 +785,24 @@ def _get_dataframe(
             parts = key.split("/")
             if parts[0] == "overall":
                 flat["overall/score"], flat["overall/cost"] = s.score, s.cost
+                # Add CI for overall scores (same as for tasks)
+                flat["overall/score_ci"] = (
+                    (s.score_stderr * 1.96) if s.score_stderr is not None else np.nan
+                )
+                flat["overall/cost_ci"] = (
+                    (s.cost_stderr * 1.96) if s.cost_stderr is not None else np.nan
+                )
             elif parts[0] == "tag":
                 flat[f"tag/{parts[1]}/score"], flat[f"tag/{parts[1]}/cost"] = (
                     s.score,
                     s.cost,
+                )
+                # Add CI for tag scores
+                flat[f"tag/{parts[1]}/score_ci"] = (
+                    (s.score_stderr * 1.96) if s.score_stderr is not None else np.nan
+                )
+                flat[f"tag/{parts[1]}/cost_ci"] = (
+                    (s.cost_stderr * 1.96) if s.cost_stderr is not None else np.nan
                 )
             else:  # task
                 t0 = parts[1]
@@ -900,6 +914,8 @@ def _pretty_column_name(
         "overall/score": "Overall",
         "overall/cost": "Overall cost",
         "overall/frontier": "Overall frontier",
+        "overall/score_ci": "Overall 95% CI",
+        "overall/cost_ci": "Overall cost 95% CI",
     }
     if col in mapping:
         return mapping[col]
