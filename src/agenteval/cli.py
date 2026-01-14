@@ -972,6 +972,18 @@ cli.add_command(lb)
     help="Display format. Defaults to plain.",
     default="plain",
 )
+@click.option(
+    "--task",
+    "task_filters",
+    multiple=True,
+    help="Filter to only run tasks whose name contains this string (can be specified multiple times).",
+)
+@click.option(
+    "--task-category",
+    "task_category_filters",
+    multiple=True,
+    help="Filter to only run tasks with this tag (can be specified multiple times).",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def eval_command(
     log_dir: str | None,
@@ -980,11 +992,42 @@ def eval_command(
     ignore_git: bool,
     config_only: bool,
     display: str,
+    task_filters: tuple[str, ...],
+    task_category_filters: tuple[str, ...],
     args: tuple[str],
 ):
     """Run inspect eval-set with arguments and append tasks"""
     suite_config = load_suite_config(config_path)
     tasks = suite_config.get_tasks(split)
+
+    # Apply task filtering
+    if task_filters or task_category_filters:
+        original_count = len(tasks)
+        filtered_tasks = []
+        for task in tasks:
+            # Check task name filter (substring match)
+            if task_filters:
+                name_match = any(f in task.name for f in task_filters)
+                if not name_match:
+                    continue
+
+            # Check task category filter (exact tag match)
+            if task_category_filters:
+                task_tags = task.get_tag_names()
+                category_match = any(cat in task_tags for cat in task_category_filters)
+                if not category_match:
+                    continue
+
+            filtered_tasks.append(task)
+
+        tasks = filtered_tasks
+        click.echo(f"Filtered to {len(tasks)} of {original_count} tasks")
+
+        if not tasks:
+            raise click.ClickException(
+                "No tasks match the specified filters. "
+                f"Task filters: {task_filters}, Category filters: {task_category_filters}"
+            )
 
     # Verify git status for reproducibility
     if not ignore_git:
