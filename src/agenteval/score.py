@@ -139,6 +139,14 @@ def get_normalized_task_name(log: EvalLog, task_name_mapping: dict[str, str]) ->
     task_registry_name = log.eval.task_registry_name
     assert task_registry_name is not None, f"We expect a task registry name."
     if task_registry_name not in task_name_mapping:
+        # Try suffix match: "super_test" should match "astabench/super_test"
+        suffix_matches = [
+            name
+            for path, name in task_name_mapping.items()
+            if path.endswith("/" + task_registry_name)
+        ]
+        if len(suffix_matches) == 1:
+            return suffix_matches[0]
         warning_msg = (
             f"Task '{task_registry_name}' not found in the suite task "
             f"paths {task_name_mapping.keys()}.  This could happen if you "
