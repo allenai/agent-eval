@@ -159,7 +159,7 @@ def prep_litellm_cost_map():
     # This snippet is mostly lifted from
     # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
     # See the Development.md before changing.
-    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/eb66daeef740947c0326826817cf68fb56a8b931/litellm/model_prices_and_context_window_backup.json"
+    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/2d02eaaa4e00b580c976fe8ff3ca4a96b2fd3b9e/litellm/model_prices_and_context_window_backup.json"
     response = httpx.get(desired_model_costs_url, timeout=5)
     response.raise_for_status()
     desired_model_costs = response.json()
@@ -183,10 +183,10 @@ def prep_litellm_cost_map():
     # is incompatible.
     click.echo(f"Model costs hash {model_cost_hash}.")
 
-    # Between this and the version of the file we pass to register_model()
-    # I think we can reconstruct the model costs used.
     litellm_version = importlib.metadata.version("litellm")
     click.echo(f"litellm version: {litellm_version}")
+
+    return desired_model_costs_url
 
 
 @click.group()
@@ -207,7 +207,7 @@ def score_command(
 ):
     # so that we know what model costs we're using to score
     # more details in the Development.md
-    prep_litellm_cost_map()
+    cost_map_url = prep_litellm_cost_map()
 
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
     temp_dir: tempfile.TemporaryDirectory | None = None
@@ -245,7 +245,7 @@ def score_command(
             click.echo(f"  - {error}")
         sys.exit(1)
 
-    task_results = TaskResults(results=log_processing_outcome.results)
+    task_results = TaskResults(results=log_processing_outcome.results, cost_map_url=cost_map_url)
 
     # Warn if multiple evaluation specs present
     if len(task_results.agent_specs) > 1:

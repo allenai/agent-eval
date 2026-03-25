@@ -48,6 +48,10 @@ class TaskResults(BaseModel):
 
     results: list[TaskResult]
 
+    cost_map_url: str | None = None
+    """URL of the litellm model pricing JSON used to compute costs.
+    Points to a specific git commit so the cost basis is exactly reproducible."""
+
     @cached_property
     def agent_specs(self) -> set[str]:
         specs: set[str] = set()
