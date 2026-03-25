@@ -1,6 +1,5 @@
-from typing import TypedDict
-
 from litellm.utils import CostPerToken
+from pydantic import BaseModel
 
 # even where these exist in https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
 # calling cost_per_token does not return a cost, perhaps due to the associated provider
@@ -37,7 +36,7 @@ CUSTOM_PRICING = {
 }
 
 
-class CostPerTokenWithCache(TypedDict):
+class CostPerTokenWithCache(BaseModel):
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: float

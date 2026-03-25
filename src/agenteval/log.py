@@ -119,10 +119,10 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 cache_read_tokens = model_usage.usage.input_tokens_cache_read or 0
                 text_tokens = input_tokens - cache_read_tokens
                 prompt_cost = (
-                    text_tokens * pricing["input_cost_per_token"]
-                    + cache_read_tokens * pricing["cache_read_input_token_cost"]
+                    text_tokens * pricing.input_cost_per_token
+                    + cache_read_tokens * pricing.cache_read_input_token_cost
                 )
-                completion_cost = output_tokens * pricing["output_cost_per_token"]
+                completion_cost = output_tokens * pricing.output_cost_per_token
 
             else:
                 total_tokens = model_usage.usage.total_tokens
