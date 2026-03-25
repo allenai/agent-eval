@@ -15,7 +15,7 @@ from litellm import cost_per_token
 from litellm.types.utils import PromptTokensDetailsWrapper, Usage
 from pydantic import BaseModel
 
-from .local_cost import CUSTOM_PRICING
+from .local_cost import CUSTOM_PRICING, CUSTOM_PRICING_WITH_CACHE
 
 logger = getLogger(__name__)
 
@@ -112,6 +112,17 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                     completion_tokens=output_tokens,
                     custom_cost_per_token=CUSTOM_PRICING[model_usage.model],
                 )
+
+            elif model_usage.model in CUSTOM_PRICING_WITH_CACHE.keys():
+
+                pricing = CUSTOM_PRICING_WITH_CACHE[model_usage.model]
+                cache_read_tokens = model_usage.usage.input_tokens_cache_read or 0
+                text_tokens = input_tokens - cache_read_tokens
+                prompt_cost = (
+                    text_tokens * pricing["input_cost_per_token"]
+                    + cache_read_tokens * pricing["cache_read_input_token_cost"]
+                )
+                completion_cost = output_tokens * pricing["output_cost_per_token"]
 
             else:
                 total_tokens = model_usage.usage.total_tokens
