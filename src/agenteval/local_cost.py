@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 from litellm.utils import CostPerToken
 
 # even where these exist in https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
@@ -31,5 +33,25 @@ CUSTOM_PRICING = {
     ),
     "akariasai/os_8b": CostPerToken(
         input_cost_per_token=1.8e-07, output_cost_per_token=1.8e-07
+    ),
+}
+
+
+class CostPerTokenWithCache(TypedDict):
+    input_cost_per_token: float
+    output_cost_per_token: float
+    cache_read_input_token_cost: float
+
+
+# Like CUSTOM_PRICING, but for models that also have a cache read discount.
+# cost_per_token with usage_object doesn't work for these models in litellm 1.75.8,
+# so costs are computed manually in compute_model_cost.
+# key represents model name as found in inspect model_usage
+CUSTOM_PRICING_WITH_CACHE = {
+    # costs from https://platform.moonshot.ai/docs/guide/kimi-k2-5-quickstart
+    "moonshotai/kimi-k2.5-0127": CostPerTokenWithCache(
+        input_cost_per_token=6e-07,
+        output_cost_per_token=3e-06,
+        cache_read_input_token_cost=1e-07,
     ),
 }
