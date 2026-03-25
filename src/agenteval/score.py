@@ -98,6 +98,10 @@ class TaskResult(BaseModel):
     model_costs: list[float | None] | None = None
     """List of model costs per sample. Computed from `model_usages`."""
 
+    cost_map_url: str | None = None
+    """URL of the litellm model pricing JSON used to compute costs.
+    Points to a specific git commit so the cost basis is exactly reproducible."""
+
 
 def get_metrics(log: EvalLog) -> list[Metric]:
     """Extract metrics from an evaluation log."""
