@@ -245,7 +245,9 @@ def score_command(
             click.echo(f"  - {error}")
         sys.exit(1)
 
-    task_results = TaskResults(results=log_processing_outcome.results, cost_map_url=cost_map_url)
+    task_results = TaskResults(
+        results=log_processing_outcome.results, cost_map_url=cost_map_url
+    )
 
     # Warn if multiple evaluation specs present
     if len(task_results.agent_specs) > 1:
