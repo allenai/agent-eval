@@ -4,6 +4,7 @@ Utility module for maintainers to generate HuggingFace Dataset schema from Pydan
 
 import datetime
 import types
+from collections import defaultdict
 from importlib import resources
 from typing import Any, Literal, Union, get_args, get_origin
 
@@ -12,7 +13,7 @@ import yaml
 from datasets import Features
 from pydantic import BaseModel
 
-from .models import LeaderboardSubmission
+from .models import LeaderboardSubmission, Readme
 
 
 def _pa_type_for_annotation(anno) -> pa.DataType:
@@ -125,3 +126,40 @@ def load_dataset_features(input_path: str | None = None) -> Features:
         with open(input_path, "r", encoding="utf-8") as f:
             yaml_values = yaml.safe_load(f)
     return Features._from_yaml_list(yaml_values)
+
+
+def check_submissions_against_readme(
+    lb_submissions: list[LeaderboardSubmission], repo_id: str
+):
+    config_splits = defaultdict(
+        list
+    )  # Accumulate config names and splits being published
+    for lb_submission in lb_submissions:
+        config_splits[lb_submission.suite_config.version].append(lb_submission.split)
+
+    # Validate the config with the schema in HF
+    readme = Readme.download_and_parse(repo_id)
+    missing_configs = list(set(config_splits.keys()) - set(readme.configs.keys()))
+    if missing_configs:
+        exc_msg = (
+            f"Config name {missing_configs} not present in hf://{repo_id}/README.md\n"
+            f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_configs[0]}' to add it"
+        )
+        raise ValueError(exc_msg)
+    missing_splits = list(
+        set(((c, s) for c in config_splits.keys() for s in config_splits[c]))
+        - set(((c, s) for c in readme.configs.keys() for s in readme.configs[c]))
+    )
+    if missing_splits:
+        exc_msg = (
+            f"Config/Split {missing_splits} not present in hf://{repo_id}/README.md\n"
+            f"Run 'update_readme.py add-config --repo-id {repo_id} --config-name {missing_splits[0][0]} --split {missing_splits[0][1]}` to add it"
+        )
+        raise ValueError(exc_msg)
+    local_features = load_dataset_features()
+    if local_features.arrow_schema != readme.features.arrow_schema:
+        exc_msg = (
+            f"Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md\n"
+            "Run 'update_readme.py sync-schema' to update it"
+        )
+        raise ValueError(exc_msg)
