@@ -34,6 +34,7 @@ def sync_schema(repo_id: str, dry_run: bool):
         click.echo(f"Would update hf://{repo_id}/README.md to:")
         print(str(readme))
     else:
+        readme.features = local_features
         readme.upload(repo_id=repo_id, comment="Update results schema")
         click.echo(f"Updated hf://{repo_id}/README.md")
 

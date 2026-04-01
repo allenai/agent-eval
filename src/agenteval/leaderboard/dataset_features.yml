@@ -52,6 +52,8 @@
         dtype: string
       - name: commit
         dtype: string
+      - name: dirty
+        dtype: bool
     - name: packages
       dtype: string
   - name: metrics
@@ -79,6 +81,8 @@
           dtype: int64
         - name: reasoning_tokens
           dtype: int64
+        - name: total_cost
+          dtype: float64
   - name: model_costs
     list: float64
 - name: submission
