@@ -4,15 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval"
-version = "0.1.46"
+version = "0.1.47"
 description = "Agent evaluation toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "click",
-  # Pin inspect-ai to avoid breaking changes in 0.3.137+ (Event classes moved)
-  # See allenai/astabench-issues#275 for upgrade process
-  "inspect-ai>=0.3.104,<0.3.137",
+  # Pin to tested version; see allenai/nora-issues#2733 for upgrade history
+  "inspect-ai==0.3.203",
   # pin litellm so that we know what model costs we're using
   # see the Development.md doc before changing
   "litellm>=1.67.4.post1,<=1.82.3",

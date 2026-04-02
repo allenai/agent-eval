@@ -2,7 +2,7 @@
 
 from logging import getLogger
 
-from inspect_ai.log import (
+from inspect_ai.log import (  # type: ignore[attr-defined]
     Event,
     ModelEvent,
     ScoreEvent,
