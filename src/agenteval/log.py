@@ -2,7 +2,7 @@
 
 from logging import getLogger
 
-from inspect_ai.log import (
+from inspect_ai.log._transcript import (
     Event,
     ModelEvent,
     ScoreEvent,

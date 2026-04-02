@@ -6,7 +6,7 @@ from random import Random
 import inspect_ai
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
-from inspect_ai.log import ModelEvent, ScoreEvent, SpanBeginEvent, SpanEndEvent
+from inspect_ai.log._transcript import ModelEvent, ScoreEvent, SpanBeginEvent, SpanEndEvent
 from inspect_ai.model import (
     ChatMessageSystem,
     GenerateConfig,
