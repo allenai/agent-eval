@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 🔢 Extract version from pyproject.toml
-version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+version=$(grep -m 1 'version' pyproject.toml | cut -d '"' -f2)
 
 # ✔ Ensure Git tag for this version exists
 if ! git rev-parse "$version" >/dev/null 2>&1; then
@@ -25,5 +25,5 @@ python -m build
 twine upload dist/*
 
 # Report version
-version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+version=$(grep -m 1 'version' pyproject.toml | cut -d '"' -f2)
 echo "Successfully published version $version"

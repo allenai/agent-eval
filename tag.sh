@@ -22,7 +22,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 # 🔢 Extract version
-version=$(grep '^version = ' pyproject.toml | cut -d '"' -f2)
+version=$(grep -m 1 'version' pyproject.toml | cut -d '"' -f2)
 
 # ✅ Validate semantic version
 if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
