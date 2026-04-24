@@ -26,13 +26,6 @@ CUSTOM_PRICING = {
     ),
     # cost is for xai/grok-3 https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
     "grok-3": CostPerToken(input_cost_per_token=3e-06, output_cost_per_token=1.5e-05),
-    # Flat historical Anthropic API pricing for Sonnet 4 calls without the 1M context beta.
-    "claude-sonnet-4-20250514": CostPerToken(
-        input_cost_per_token=3e-06, output_cost_per_token=1.5e-05
-    ),
-    "anthropic/claude-sonnet-4-20250514": CostPerToken(
-        input_cost_per_token=3e-06, output_cost_per_token=1.5e-05
-    ),
     # using https://artificialanalysis.ai/models/qwen3-8b-instruct
     "Qwen3-8B-SciQA-SFT": CostPerToken(
         input_cost_per_token=1.8e-07, output_cost_per_token=7e-07
