@@ -40,6 +40,7 @@ class CostPerTokenWithCache(BaseModel):
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: float
+    cache_write_input_token_cost: float | None = None
 
 
 # Like CUSTOM_PRICING, but for models that also have a cache read discount.
@@ -47,6 +48,19 @@ class CostPerTokenWithCache(BaseModel):
 # so costs are computed manually in compute_model_cost.
 # key represents model name as found in inspect model_usage
 CUSTOM_PRICING_WITH_CACHE = {
+    # Costs from https://platform.claude.com/docs/en/about-claude/pricing
+    "claude-3-5-haiku-20241022": CostPerTokenWithCache(
+        input_cost_per_token=8e-07,
+        output_cost_per_token=4e-06,
+        cache_read_input_token_cost=8e-08,
+        cache_write_input_token_cost=1e-06,
+    ),
+    "anthropic/claude-3-5-haiku-20241022": CostPerTokenWithCache(
+        input_cost_per_token=8e-07,
+        output_cost_per_token=4e-06,
+        cache_read_input_token_cost=8e-08,
+        cache_write_input_token_cost=1e-06,
+    ),
     # costs from https://platform.moonshot.ai/docs/guide/kimi-k2-5-quickstart
     "moonshotai/kimi-k2.5-0127": CostPerTokenWithCache(
         input_cost_per_token=6e-07,
