@@ -159,7 +159,7 @@ def prep_litellm_cost_map():
     # This snippet is mostly lifted from
     # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
     # See the Development.md before changing.
-    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/26fcbc93e52d8f212f818d53c6922a0fdddb4d48/litellm/model_prices_and_context_window_backup.json"
+    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/319193604cfccb1092a17f58ec4ca049115da446/litellm/model_prices_and_context_window_backup.json"
     response = httpx.get(desired_model_costs_url, timeout=5)
     response.raise_for_status()
     desired_model_costs = response.json()
