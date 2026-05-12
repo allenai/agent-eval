@@ -1,8 +1,11 @@
 import os
+import signal
 import tempfile
 
+import pytest
 from click.testing import CliRunner
 
+import agenteval.cli as cli_module
 from agenteval.cli import cli
 
 
@@ -269,3 +272,85 @@ splits:
 
             assert result.exit_code != 0
             assert "No tasks match the specified filters" in result.output
+
+    @pytest.mark.parametrize("returncode", [-signal.SIGINT, 128 + signal.SIGINT])
+    def test_eval_interrupt_with_sigint_returncode_aborts(
+        self, monkeypatch, returncode
+    ):
+        """Test Ctrl-C followed by inspect's SIGINT exit is reported as abort."""
+
+        class FakeProc:
+            pid = 12345
+
+            def __init__(self):
+                self.wait_calls = 0
+
+            def wait(self):
+                self.wait_calls += 1
+                if self.wait_calls == 1:
+                    raise KeyboardInterrupt()
+                return returncode
+
+        monkeypatch.setattr(cli_module.subprocess, "Popen", lambda command: FakeProc())
+
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = self._create_test_config(tmpdir)
+            log_dir = os.path.join(tmpdir, "logs")
+
+            result = runner.invoke(
+                cli,
+                [
+                    "eval",
+                    "--config-path",
+                    config_path,
+                    "--split",
+                    "test",
+                    "--ignore-git",
+                    "--log-dir",
+                    log_dir,
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "Aborted!" in result.output
+        assert "inspect eval-set failed" not in result.output
+
+    def test_eval_interrupt_with_non_sigint_returncode_fails(self, monkeypatch):
+        """Test non-SIGINT inspect failures after Ctrl-C are still reported."""
+
+        class FakeProc:
+            pid = 12345
+
+            def __init__(self):
+                self.wait_calls = 0
+
+            def wait(self):
+                self.wait_calls += 1
+                if self.wait_calls == 1:
+                    raise KeyboardInterrupt()
+                return 1
+
+        monkeypatch.setattr(cli_module.subprocess, "Popen", lambda command: FakeProc())
+
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = self._create_test_config(tmpdir)
+            log_dir = os.path.join(tmpdir, "logs")
+
+            result = runner.invoke(
+                cli,
+                [
+                    "eval",
+                    "--config-path",
+                    config_path,
+                    "--split",
+                    "test",
+                    "--ignore-git",
+                    "--log-dir",
+                    log_dir,
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "inspect eval-set failed" in result.output

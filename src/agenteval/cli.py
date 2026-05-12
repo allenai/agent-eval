@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1087,9 +1088,11 @@ def eval_command(
     # Popen + our own Ctrl-C handling; `subprocess.run` would automatically
     # SIGKILL the child and skip cleanup
     proc = subprocess.Popen(inspect_command)
+    interrupted = False
     try:
         returncode = proc.wait()
     except KeyboardInterrupt:
+        interrupted = True
         click.echo(
             f"\nInterrupt received; waiting for inspect (pid {proc.pid}) to "
             f"finish sandbox cleanup.\n"
@@ -1111,6 +1114,9 @@ def eval_command(
             click.echo("Aborting: sending SIGKILL to inspect.", err=True)
             proc.kill()
             returncode = proc.wait()
+
+    if interrupted and returncode in (-signal.SIGINT, 128 + signal.SIGINT):
+        raise click.Abort()
 
     if returncode != 0:
         raise click.ClickException(
