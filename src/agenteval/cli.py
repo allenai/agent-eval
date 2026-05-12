@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1084,9 +1085,40 @@ def eval_command(
         return
 
     click.echo(f"Running {' '.join(inspect_command)}")
-    proc = subprocess.run(inspect_command)
+    # Popen + our own Ctrl-C handling; `subprocess.run` would automatically
+    # SIGKILL the child and skip cleanup
+    proc = subprocess.Popen(inspect_command)
+    interrupted = False
+    try:
+        returncode = proc.wait()
+    except KeyboardInterrupt:
+        interrupted = True
+        click.echo(
+            f"\nInterrupt received; waiting for inspect (pid {proc.pid}) to "
+            f"finish sandbox cleanup.\n"
+            f"  - If Ctrl-C went to the whole process group (the usual case "
+            f"when running `astabench eval` directly in a terminal), inspect "
+            f"already received SIGINT and is cleaning up -- just wait.\n"
+            f"  - If only this process was signalled (e.g. a wrapper script "
+            f"forwarded SIGINT by PID rather than to the process group), "
+            f"inspect did NOT receive SIGINT and will not exit on its own; "
+            f"in another terminal run `kill -INT {proc.pid}` to trigger its "
+            f"cleanup.\n"
+            f"  - Press Ctrl-C again to give up and SIGKILL inspect (may "
+            f"leave orphan sandbox containers).",
+            err=True,
+        )
+        try:
+            returncode = proc.wait()
+        except KeyboardInterrupt:
+            click.echo("Aborting: sending SIGKILL to inspect.", err=True)
+            proc.kill()
+            returncode = proc.wait()
 
-    if proc.returncode != 0:
+    if interrupted and returncode in (-signal.SIGINT, 128 + signal.SIGINT):
+        raise click.Abort()
+
+    if returncode != 0:
         raise click.ClickException(
             f"inspect eval-set failed while running {config_path}"
         )
