@@ -20,9 +20,12 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
+        # The core suite exercises the scoring path (score.py/log.py) and tests/conftest.py
+        # imports inspect_ai, so it needs the scoring extra. inspect-ai is no longer a base
+        # dependency (moved to the scoring extra; see pyproject / allenai/gas2own#346).
         run: |
           python -m pip install --upgrade pip
-          pip install .[dev]
+          pip install .[dev,scoring]
 
       - name: Check Code Style
         run: make code-check
