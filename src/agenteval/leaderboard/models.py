@@ -6,7 +6,9 @@ import yaml
 from datasets import Features
 from pydantic import BaseModel, Field
 
-from ..models import SubmissionMetadata, SuiteConfig, TaskResult
+from ..config import SuiteConfig
+from ..models import SubmissionMetadata
+from ..score import TaskResult
 
 
 class LeaderboardSubmission(BaseModel):

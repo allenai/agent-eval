@@ -10,8 +10,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "click",
-  # Pin to tested version; see allenai/nora-issues#2733 for upgrade history
-  "inspect-ai==0.3.203",
+  # NOTE: inspect-ai is deliberately NOT a base dependency. It is only needed by
+  # the scoring path (agenteval.score / .log / .summary / .leaderboard); the
+  # config/EvalConfig/io/repro "contract" that solve environments import is
+  # inspect-free. Keeping inspect out of the base install lets a solver env
+  # (e.g. astabench solve, which needs a newer inspect for inspect-swe) depend on
+  # agent-eval without the ==0.3.203 pin winning uv's re-resolution and
+  # downgrading its runtime. See allenai/gas2own#346. Install the `scoring`
+  # (or `leaderboard`) extra to get inspect for scoring.
   # pin litellm so that we know what model costs we're using
   # see the Development.md doc before changing
   "litellm>=1.67.4.post1,<=1.88.1",
@@ -42,8 +48,15 @@ dev = [
   "pandas-stubs",
   "types-seaborn"
 ]
-# Leaderboard view dependencies
+# Scoring dependencies. inspect-ai is required to read .eval logs and compute
+# scores; it lives here (not in base) so solve-only consumers stay inspect-free.
+# Pin to tested version; see allenai/nora-issues#2733 for upgrade history.
+scoring = [
+  "inspect-ai==0.3.203",
+]
+# Leaderboard view dependencies (scoring + plotting)
 leaderboard = [
+  "agent-eval[scoring]",
   "seaborn",
   "matplotlib",
   "pandas"
