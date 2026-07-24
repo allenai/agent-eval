@@ -20,7 +20,10 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -e .
+        # The leaderboard submission schema embeds inspect-ai types (EvalSpec.revision:
+        # EvalRevision, via TaskResult), so schema generation needs the scoring extra.
+        # inspect-ai is no longer a base dependency (see pyproject / allenai/gas2own#346).
+        run: pip install -e .[scoring]
 
       - name: Check if schema is up to date
         run: python scripts/update_schema.py --check
