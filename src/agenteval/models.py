@@ -1,3 +1,4 @@
+import importlib
 from datetime import datetime
 from functools import cached_property
 
@@ -40,3 +41,23 @@ class SubmissionMetadata(BaseModel):
     summary_url: str | None = None
     openness: str | None = None
     tool_usage: str | None = None
+
+
+# These inspect-bound types historically lived in this module. Keep lazy
+# compatibility aliases so existing scoring consumers continue to work while
+# importing EvalConfig remains inspect-free for solve environments.
+_LAZY_ATTRS = {
+    "TaskResult": "agenteval.score",
+    "TaskResults": "agenteval.score",
+}
+
+
+def __getattr__(name: str):
+    module_name = _LAZY_ATTRS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(importlib.import_module(module_name), name)
+
+
+def __dir__():
+    return sorted(list(globals()) + list(_LAZY_ATTRS))

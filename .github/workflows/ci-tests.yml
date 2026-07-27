@@ -7,6 +7,54 @@ on:
     branches: [ main ]
 
 jobs:
+  test-inspect-free-contract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install base package without scoring dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Verify solve contract imports without inspect-ai
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import tempfile
+          from pathlib import Path
+
+          import agenteval
+          from agenteval.config import load_suite_config
+          from agenteval.io import atomic_write_file, verify_git_reproducibility
+          from agenteval.models import EvalConfig
+
+          assert importlib.util.find_spec("inspect_ai") is None
+          assert "inspect_ai" not in agenteval.__dict__
+
+          config_yaml = """name: smoke\nversion: 1.0.0\nsplits:\n  - name: test\n    tasks:\n      - name: task\n        path: task.py\n        primary_metric: accuracy\n"""
+          with tempfile.TemporaryDirectory() as tmpdir:
+              config_path = Path(tmpdir) / "suite.yml"
+              atomic_write_file(config_path, config_yaml)
+              suite = load_suite_config(config_path)
+              encoded = EvalConfig(
+                  suite_config=suite,
+                  split="test",
+                  inspect_command=["inspect", "eval-set", "task.py"],
+              ).model_dump_json()
+              decoded = EvalConfig.model_validate_json(encoded)
+              assert decoded.task_names == {"task"}
+
+          assert callable(verify_git_reproducibility)
+          PY
+
   test-core:
     runs-on: ubuntu-latest
 
