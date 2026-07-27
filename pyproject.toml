@@ -22,6 +22,7 @@ dependencies = [
   # see the Development.md doc before changing
   "litellm>=1.67.4.post1,<=1.88.1",
   "pydantic>=2.0.0",
+  "pyyaml",
   # For leaderboard
   "huggingface_hub",
   "pyarrow",
