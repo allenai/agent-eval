@@ -1,10 +1,10 @@
+import importlib
 from datetime import datetime
 from functools import cached_property
 
 from pydantic import BaseModel
 
 from .config import SuiteConfig
-from .score import TaskResult
 
 
 class EvalConfig(BaseModel):
@@ -43,52 +43,21 @@ class SubmissionMetadata(BaseModel):
     tool_usage: str | None = None
 
 
-class TaskResults(BaseModel):
-    """Scores for all tasks in the suite"""
+# These inspect-bound types historically lived in this module. Keep lazy
+# compatibility aliases so existing scoring consumers continue to work while
+# importing EvalConfig remains inspect-free for solve environments.
+_LAZY_ATTRS = {
+    "TaskResult": "agenteval.score",
+    "TaskResults": "agenteval.score",
+}
 
-    results: list[TaskResult]
-    cost_map_url: str | None = None
-    """URL of the litellm model pricing JSON used to compute costs.
-    Points to a specific git commit so the cost basis is exactly reproducible."""
 
-    @cached_property
-    def agent_specs(self) -> set[str]:
-        specs: set[str] = set()
-        for task_result in self.results or []:
-            if task_result.eval_spec:
-                agent_spec = task_result.eval_spec.model_dump_json(
-                    include={"solver", "solver_args", "model", "model_args"}
-                )
-                specs.add(agent_spec)
-        return specs
+def __getattr__(name: str):
+    module_name = _LAZY_ATTRS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(importlib.import_module(module_name), name)
 
-    @cached_property
-    def code_specs(self) -> set[str]:
-        specs: set[str] = set()
-        for task_result in self.results or []:
-            if task_result.eval_spec:
-                code_spec = task_result.eval_spec.model_dump_json(
-                    include={"revision", "packages"}
-                )
-                specs.add(code_spec)
-        return specs
 
-    @cached_property
-    def tasks_with_args(self) -> list[str]:
-        tasks_with_args: list[str] = []
-        for task_result in self.results or []:
-            if task_result.eval_spec and task_result.eval_spec.task_args_passed:
-                tasks_with_args.append(task_result.task_name)
-        return tasks_with_args
-
-    @cached_property
-    def task_names(self) -> set[str]:
-        """
-        Get the names of all tasks in the results.
-
-        Returns:
-            List of task names.
-        """
-        return (
-            set(result.task_name for result in self.results) if self.results else set()
-        )
+def __dir__():
+    return sorted(list(globals()) + list(_LAZY_ATTRS))
