@@ -18,8 +18,6 @@ import httpx
 from litellm import model_cost as litellm_model_cost
 from litellm import register_model
 
-from agenteval.leaderboard.schema_generator import load_dataset_features
-
 from .cli_utils import AliasedChoice, generate_choice_help
 from .config import (
     OPENNESS_CLOSED_API_AVAILABLE,
@@ -32,15 +30,7 @@ from .config import (
     load_suite_config,
 )
 from .io import atomic_write_file, verify_git_reproducibility
-from .leaderboard.models import LeaderboardSubmission, Readme
-from .leaderboard.upload import (
-    compress_model_usages,
-    sanitize_path_component,
-    upload_folder_to_hf,
-)
 from .models import EvalConfig, SubmissionMetadata
-from .score import TaskResults, process_eval_logs
-from .summary import compute_summary_statistics
 
 HF_URL_PATTERN = r"^hf://(?:datasets/)?(?P<repo_id>[^/]+/[^/]+)/(?P<path>.*)$"
 EVAL_CONFIG_FILENAME = "eval_config.json"
@@ -135,6 +125,9 @@ def cli():
 def score_command(
     log_dir: str,
 ):
+    from .score import TaskResults, process_eval_logs
+    from .summary import compute_summary_statistics
+
     # so that we know what model costs we're using to score
     # more details in the Development.md
     cost_map_url = prep_litellm_cost_map()
@@ -318,6 +311,8 @@ def publish_logs_command(
     # Allow huggingface imports to be optional
     from huggingface_hub import HfApi
 
+    from .leaderboard.upload import sanitize_path_component, upload_folder_to_hf
+
     # Derive a filesafe agent_name
     safe_agent_name = sanitize_path_component(agent_name)
     if safe_agent_name != agent_name:
@@ -409,6 +404,9 @@ cli.add_command(publish_logs_command)
 )
 @click.argument("submission_path", type=str)
 def backfill_command(results_repo_id, submissions_repo_id, submission_path):
+    from .leaderboard.models import LeaderboardSubmission
+    from .score import TaskResults
+
     with tempfile.TemporaryDirectory() as temp_dir:
         submissions_dir = os.path.join(temp_dir, "submissions")
         results_dir = os.path.join(temp_dir, "results")
@@ -484,6 +482,11 @@ cli.add_command(backfill_command)
     help="HuggingFace repo",
 )
 def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
+    from .leaderboard.models import LeaderboardSubmission, Readme
+    from .leaderboard.schema_generator import load_dataset_features
+    from .leaderboard.upload import compress_model_usages
+    from .score import TaskResults
+
     if not submission_urls:
         click.echo("At least one submission URL is required.")
         sys.exit(1)
