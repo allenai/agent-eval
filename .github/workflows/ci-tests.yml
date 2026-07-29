@@ -32,6 +32,7 @@ jobs:
           from pathlib import Path
 
           import agenteval
+          from agenteval.cli import eval_command
           from agenteval.config import load_suite_config
           from agenteval.io import atomic_write_file, verify_git_reproducibility
           from agenteval.models import EvalConfig
@@ -53,6 +54,7 @@ jobs:
               assert decoded.task_names == {"task"}
 
           assert callable(verify_git_reproducibility)
+          assert callable(eval_command)
           PY
 
   test-core:
