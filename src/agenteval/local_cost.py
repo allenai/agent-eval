@@ -48,6 +48,17 @@ class CostPerTokenWithCache(BaseModel):
 # so costs are computed manually in compute_model_cost.
 # key represents model name as found in inspect model_usage
 CUSTOM_PRICING_WITH_CACHE = {
+    # DeepSeek V4 Pro preview pricing before the GA pricing change took effect
+    # on 2026-08-16 at 16:00 UTC. DeepSeek accepted `deepseek-v4-pro` as the
+    # request model while Inspect logs contain this provider response model name.
+    # Historical pricing:
+    # https://github.com/BerriAI/litellm/blob/0059b497f44d8ad2ab8dae5e17fbd8df0cfcdb11/model_prices_and_context_window.json
+    "deepseek/deepseek-v4pro-preview": CostPerTokenWithCache(
+        input_cost_per_token=4.35e-07,
+        output_cost_per_token=8.7e-07,
+        cache_read_input_token_cost=3.625e-09,
+        cache_write_input_token_cost=0.0,
+    ),
     # Costs from https://platform.claude.com/docs/en/about-claude/pricing
     "claude-3-5-haiku-20241022": CostPerTokenWithCache(
         input_cost_per_token=8e-07,
