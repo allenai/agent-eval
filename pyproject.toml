@@ -7,7 +7,7 @@ name = "agent-eval"
 version = "0.1.55"
 description = "Agent evaluation toolkit"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "click",
   # NOTE: inspect-ai is deliberately NOT a base dependency. It is only needed by
