@@ -24,6 +24,7 @@ MODEL_TRANSLATIONS = {
     "models/gemini-2.5-flash-preview-05-20": "gemini/gemini-2.5-flash",
     "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro",
     "mistral-large-2411": "vertex_ai/mistral-large-2411",
+    "osd-proxy/gpt-5.6-sol": "gpt-5.6-sol",
     "sonar-deep-research": "perplexity/sonar-deep-research",
 }
 
