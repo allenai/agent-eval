@@ -36,6 +36,7 @@ from .io import atomic_write_file, verify_git_reproducibility
 from .models import EvalConfig, SubmissionMetadata
 
 HF_URL_PATTERN = r"^hf://(?:datasets/)?(?P<repo_id>[^/]+/[^/]+)/(?P<path>.*)$"
+SCORING_LITELLM_VERSION = "1.97.0"
 FROZEN_MODEL_COST_MAP_URL = "https://raw.githubusercontent.com/BerriAI/litellm/ef84494d52c6708e4e9f4a54ce551a265995ad8f/litellm/model_prices_and_context_window_backup.json"
 EVAL_CONFIG_FILENAME = "eval_config.json"
 SCORES_FILENAME = "scores.json"
@@ -111,6 +112,13 @@ def load_model_cost_additions() -> dict:
 
 
 def prep_litellm_cost_map() -> CostMapMetadata:
+    litellm_version = importlib.metadata.version("litellm")
+    if litellm_version != SCORING_LITELLM_VERSION:
+        raise click.ClickException(
+            f"Scoring requires LiteLLM {SCORING_LITELLM_VERSION}; found {litellm_version}. "
+            "Install the scoring extra with: pip install 'agent-eval[scoring]'"
+        )
+
     if os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") != "True":
         raise click.ClickException(
             f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
@@ -168,7 +176,6 @@ def prep_litellm_cost_map() -> CostMapMetadata:
     # is incompatible.
     click.echo(f"Model costs hash {model_cost_hash}.")
 
-    litellm_version = importlib.metadata.version("litellm")
     click.echo(f"litellm version: {litellm_version}")
 
     return {

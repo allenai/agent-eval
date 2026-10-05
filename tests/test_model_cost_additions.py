@@ -36,6 +36,33 @@ def registered_additions(additions):
         litellm.model_cost.update(original)
 
 
+@pytest.mark.parametrize("version", ["1.67.4.post1", "1.98.0"])
+def test_score_rejects_unsupported_litellm_before_processing(
+    monkeypatch, tmp_path, version
+):
+    from agenteval import score as score_module
+
+    monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+    monkeypatch.setattr(cli_module.importlib.metadata, "version", lambda name: version)
+    fetch = Mock()
+    register = Mock()
+    process = Mock()
+    monkeypatch.setattr(cli_module.httpx, "get", fetch)
+    monkeypatch.setattr(cli_module, "register_model", register)
+    monkeypatch.setattr(score_module, "process_eval_logs", process)
+
+    result = CliRunner().invoke(cli_module.score_command, [str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Scoring requires LiteLLM 1.97.0" in result.output
+    assert f"found {version}" in result.output
+    assert "pip install 'agent-eval[scoring]'" in result.output
+    fetch.assert_not_called()
+    register.assert_not_called()
+    process.assert_not_called()
+    assert not (tmp_path / cli_module.SCORES_FILENAME).exists()
+
+
 def test_frozen_table_preserved_and_combined_hash(monkeypatch, capsys, additions):
     base = {"existing-model": {"input_cost_per_token": 0.123}}
     registered = {}

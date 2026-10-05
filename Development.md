@@ -50,7 +50,7 @@ The script will enforce that all config versions use the same data model for lea
 
 We do a couple of things in an effort to compute costs for things in a consistent way. One of these things is putting limits on the litellm version used (more details [here](https://github.com/allenai/astabench-issues/issues/391)).
 
-If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `FROZEN_MODEL_COST_MAP_URL`. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.
+If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `FROZEN_MODEL_COST_MAP_URL`. Update `SCORING_LITELLM_VERSION` alongside the scoring extra's exact pin. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.
 
 ## Targeted model additions
 
@@ -69,7 +69,9 @@ the supported LiteLLM versions compute the model's standard input, cache and
 output/reasoning costs correctly: new prices cannot add unsupported billing
 rules. The scoring extra requires LiteLLM 1.97.0: the formerly allowed
 1.67.4.post1 overcharges Gemini calls with both cache reads and separate
-reasoning tokens. Solve-only installs retain the broader dependency range.
+reasoning tokens. Scoring also checks the installed version before fetching
+prices or processing logs, so installing Inspect separately cannot bypass the
+requirement. Solve-only installs retain the broader dependency range.
 Flex, batch, priority and search-tool fields are retained verbatim from the
 upstream entry but are inert in our token-only standard-rate calculation.
 Check actual submission usage against its adapter
