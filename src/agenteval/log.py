@@ -28,6 +28,12 @@ MODEL_TRANSLATIONS = {
     "sonar-deep-research": "perplexity/sonar-deep-research",
 }
 
+# Models whose input_tokens and total_tokens exclude cache reads/writes.
+# Unknown conventions cannot be inferred when cache reads fit inside input.
+INPUT_EXCLUDES_CACHE_READ = {
+    "osd-proxy/gpt-5.6-sol",
+}
+
 
 class ModelUsageWithName(BaseModel):
     """ModelUsage with model name information."""
@@ -141,7 +147,24 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 )
                 reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
-                if input_tokens == total_tokens - output_tokens:
+                if model_usage.model in INPUT_EXCLUDES_CACHE_READ:
+                    text_tokens = input_tokens
+                    prompt_tokens = (
+                        input_tokens
+                        + cache_read_input_tokens
+                        + cache_write_input_tokens
+                    )
+                    completion_tokens = output_tokens
+
+                elif input_tokens == total_tokens - output_tokens:
+                    # (openai) input tokens count includes cache read tokens
+                    if cache_read_input_tokens > input_tokens:
+                        raise ValueError(
+                            f"Cache read tokens ({cache_read_input_tokens}) exceed "
+                            f"input tokens ({input_tokens}); input likely excludes "
+                            f"cache reads. Add the model to INPUT_EXCLUDES_CACHE_READ "
+                            f"if so."
+                        )
                     text_tokens = input_tokens - cache_read_input_tokens
                     prompt_tokens = input_tokens
                     completion_tokens = output_tokens
@@ -183,7 +206,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 litellm_usage = Usage(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
-                    total_tokens=model_usage.usage.total_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
                     reasoning_tokens=model_usage.usage.reasoning_tokens,
                     prompt_tokens_details=prompt_tokens_wrapper,
                     cache_read_input_tokens=cache_read_input_tokens,

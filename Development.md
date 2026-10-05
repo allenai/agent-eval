@@ -3,7 +3,7 @@
 # Setup
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,scoring]"
 ```
 
 For leaderboard viewing features: `pip install -e ".[dev,leaderboard]"`
@@ -51,3 +51,11 @@ The script will enforce that all config versions use the same data model for lea
 We do a couple of things in an effort to compute costs for things in a consistent way. One of these things is putting limits on the litellm version used (more details [here](https://github.com/allenai/astabench-issues/issues/391)).
 
 If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `desired_model_costs_url`. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.
+
+The version pin alone does not freeze LiteLLM's prices. Set
+`LITELLM_LOCAL_MODEL_COST_MAP=True` before starting Python to disable its live
+price-map fetch. The scoring CLI requires this setting and calls
+`prep_litellm_cost_map()` to load the map at the fixed release SHA. Direct library
+callers must initialize their pricing map before computing costs. Tests set the
+environment variable in `conftest.py` before scoring imports and use the bundled
+map from the pinned scoring dependency.

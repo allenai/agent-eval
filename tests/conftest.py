@@ -1,3 +1,8 @@
+import os
+
+# Freeze prices before importing any module that loads LiteLLM.
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
 import pytest
 from inspect_ai.model import ModelUsage
 
