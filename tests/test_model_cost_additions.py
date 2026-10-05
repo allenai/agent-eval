@@ -26,6 +26,15 @@ def additions():
 
 
 @pytest.fixture
+def supported_scoring_runtime(monkeypatch):
+    monkeypatch.setattr(
+        cli_module.importlib.metadata,
+        "version",
+        lambda name: cli_module.SCORING_LITELLM_VERSION,
+    )
+
+
+@pytest.fixture
 def registered_additions(additions):
     original = copy.deepcopy(litellm.model_cost)
     try:
@@ -63,7 +72,9 @@ def test_score_rejects_unsupported_litellm_before_processing(
     assert not (tmp_path / cli_module.SCORES_FILENAME).exists()
 
 
-def test_frozen_table_preserved_and_combined_hash(monkeypatch, capsys, additions):
+def test_frozen_table_preserved_and_combined_hash(
+    monkeypatch, capsys, additions, supported_scoring_runtime
+):
     base = {"existing-model": {"input_cost_per_token": 0.123}}
     registered = {}
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
@@ -92,7 +103,9 @@ def test_frozen_table_preserved_and_combined_hash(monkeypatch, capsys, additions
     assert additions["source"] in output
 
 
-def test_addition_cannot_override_base(monkeypatch, additions):
+def test_addition_cannot_override_base(
+    monkeypatch, additions, supported_scoring_runtime
+):
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     monkeypatch.setattr(
         cli_module.httpx,
@@ -210,7 +223,9 @@ def test_legacy_scores_without_additions_metadata():
         '{"models": {"model": {"litellm_provider": "gemini", "input_cost_per_token": 1, "output_cost_per_token": NaN}}}',
     ],
 )
-def test_invalid_additions_fail_before_registration(monkeypatch, additions, invalid):
+def test_invalid_additions_fail_before_registration(
+    monkeypatch, additions, invalid, supported_scoring_runtime
+):
     if invalid.startswith('{"models"'):
         invalid = json.dumps({"source": additions["source"], **json.loads(invalid)})
     resource = SimpleNamespace(

@@ -62,7 +62,27 @@ at commit `d8f71d7bdbd7c9873d98293f83d64c6db72847e6`. The unchanged base table
 is from v1.97.0 at `ef84494d52c6708e4e9f4a54ce551a265995ad8f`, matching the
 scoring runtime. Only the addition comes from a newer release.
 Existing base entries cannot be overridden. When upgrading the base table,
-remove additions it now includes before scoring.
+remove additions it now includes before scoring. Check both the canonical
+provider/model key and any aliases in `MODEL_TRANSLATIONS`; the runtime overlap
+check compares exact keys only.
+
+When editing an addition, verify every entry against its pinned source:
+
+```python
+import httpx
+from agenteval.cli import load_model_cost_additions
+
+additions = load_model_cost_additions()
+response = httpx.get(additions["source"], timeout=30)
+response.raise_for_status()
+upstream = response.json()
+for model, costs in additions["models"].items():
+    assert upstream[model] == costs, model
+```
+
+This is a maintainer check requiring network access, rather than a dependency
+of the offline unit suite. Review every optional rate as well as the required
+input/output rates: runtime validation currently covers only the latter.
 
 Add a name translation in `log.py` if provider inference requires one. Verify
 the supported LiteLLM versions compute the model's standard input, cache and
@@ -74,8 +94,25 @@ prices or processing logs, so installing Inspect separately cannot bypass the
 requirement. Solve-only installs retain the broader dependency range.
 Flex, batch, priority and search-tool fields are retained verbatim from the
 upstream entry but are inert in our token-only standard-rate calculation.
-Check actual submission usage against its adapter
-and independent estimate before accepting costs.
+The bare `gemini-3.7-flash` name assumes Gemini API standard pricing. It does
+not identify a Vertex or other provider route; confirm the adapter's route
+before accepting costs for a bare name.
+
+Before accepting submission costs, inspect the adapter and representative
+model events in the submission's `.eval` logs. Confirm whether input includes
+cache reads and whether output includes reasoning. Match these counts to the
+adapter's underlying API usage fields and the `total_tokens` arithmetic used
+by `compute_model_cost()`. Include calls with cache reads and reasoning when
+present; a missing call type in the submission is not evidence of support.
+After rescoring, compare each task's per-sample `model_costs` in regenerated
+`scores.json` with independently computed standard-rate estimates from its
+`model_usages`, using the confirmed token conventions. For this model, charge
+uncached input at $0.75/M, cache reads at $0.075/M and all output including
+reasoning at $3.75/M.
+Compare aggregates with the submitter's estimate and explain differences due
+to service tier, tool charges or token conventions. Preserve the recorded
+price source and frozen hash, and record the comparison and discrepancies
+in the submission's review ticket before approving costs.
 
 Scoring validates the addition's immutable source URL, provider and required
 nonnegative rates before registration. It prints the source and a SHA-256 hash
