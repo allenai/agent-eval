@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval"
-version = "0.1.55"
+version = "0.1.56"
 description = "Agent evaluation toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -54,6 +54,7 @@ dev = [
 # Pin to tested version; see allenai/nora-issues#2733 for upgrade history.
 scoring = [
   "inspect-ai==0.3.203",
+  "litellm==1.97.0",
 ]
 # Leaderboard view dependencies (scoring + plotting)
 leaderboard = [
@@ -98,6 +99,7 @@ ignore = [
 include-package-data = true
 
 [tool.setuptools.package-data]
+"agenteval" = ["model_cost_additions.json"]
 "agenteval.leaderboard" = ["dataset_features.yml"]
 
 [tool.isort]

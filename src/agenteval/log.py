@@ -20,6 +20,7 @@ from .local_cost import CUSTOM_PRICING, CUSTOM_PRICING_WITH_CACHE
 logger = getLogger(__name__)
 
 MODEL_TRANSLATIONS = {
+    "gemini-3.7-flash": "gemini/gemini-3.7-flash",
     "google:gemini2flash-default": "gemini/gemini-2.0-flash",
     "models/gemini-2.5-flash-preview-05-20": "gemini/gemini-2.5-flash",
     "models/gemini-2.5-pro-preview-06-05": "gemini/gemini-2.5-pro",

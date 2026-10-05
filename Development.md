@@ -51,3 +51,27 @@ The script will enforce that all config versions use the same data model for lea
 We do a couple of things in an effort to compute costs for things in a consistent way. One of these things is putting limits on the litellm version used (more details [here](https://github.com/allenai/astabench-issues/issues/391)).
 
 If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `desired_model_costs_url`. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.
+
+## Targeted model additions
+
+When a dependency conflict prevents upgrading LiteLLM, a new model can be
+added in `src/agenteval/model_cost_additions.json` without replacing the frozen
+base table. The file records an immutable source URL and only the selected
+model entries; currently it adds `gemini/gemini-3.7-flash` from LiteLLM v1.98.0.
+Existing base entries cannot be overridden. When upgrading the base table,
+remove additions it now includes before scoring.
+
+Add a name translation in `log.py` if provider inference requires one. Verify
+the supported LiteLLM versions compute the model's standard input, cache and
+output/reasoning costs correctly: new prices cannot add unsupported billing
+rules. The scoring extra requires LiteLLM 1.97.0: the formerly allowed
+1.67.4.post1 overcharges Gemini calls with both cache reads and separate
+reasoning tokens. Solve-only installs retain the broader dependency range.
+Flex, batch, priority and search-tool charges are outside the token-only
+standard-rate calculation. Check actual submission usage against its adapter
+and independent estimate before accepting costs.
+
+Scoring prints the addition's source and a SHA-256 hash of the combined frozen
+table, followed by the existing hash of LiteLLM's registered runtime map and
+its installed version. `cost_map_url` still identifies the base table; reproduce
+the additions with the same agent-eval package version and check both hashes.

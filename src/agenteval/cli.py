@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import hashlib
 import importlib.metadata
+import importlib.resources
 import json
 import os
 import re
@@ -83,6 +84,23 @@ def prep_litellm_cost_map():
     response = httpx.get(desired_model_costs_url, timeout=5)
     response.raise_for_status()
     desired_model_costs = response.json()
+
+    additions = json.loads(
+        importlib.resources.files("agenteval")
+        .joinpath("model_cost_additions.json")
+        .read_text(encoding="utf-8")
+    )
+    overlapping_models = desired_model_costs.keys() & additions["models"].keys()
+    if overlapping_models:
+        raise click.ClickException(
+            f"Remove cost additions already present in the frozen table: {sorted(overlapping_models)}"
+        )
+    desired_model_costs.update(additions["models"])
+    click.echo(f'Model cost additions source: {additions["source"]}')
+    frozen_hash = hashlib.sha256(
+        json.dumps(desired_model_costs, sort_keys=True).encode()
+    ).hexdigest()
+    click.echo(f"Frozen model costs hash {frozen_hash}.")
 
     # try to check that we aren't getting info that's not also in or overridden by
     # the cost file we're pointing at
