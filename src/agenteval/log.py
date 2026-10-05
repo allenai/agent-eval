@@ -28,9 +28,8 @@ MODEL_TRANSLATIONS = {
     "sonar-deep-research": "perplexity/sonar-deep-research",
 }
 
-# Models whose logged input_tokens (and total_tokens) exclude cache reads/writes
-# even though total == input + output, which otherwise reads as OpenAI-style
-# counting where input includes cache reads. Proxy-specific, so listed per model.
+# Models whose input_tokens and total_tokens exclude cache reads/writes.
+# Unknown conventions cannot be inferred when cache reads fit inside input.
 INPUT_EXCLUDES_CACHE_READ = {
     "osd-proxy/gpt-5.6-sol",
 }
