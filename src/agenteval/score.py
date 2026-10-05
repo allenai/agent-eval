@@ -225,8 +225,11 @@ class TaskResults(BaseModel):
 
     results: list[TaskResult]
     cost_map_url: str | None = None
-    """URL of the litellm model pricing JSON used to compute costs.
-    Points to a specific git commit so the cost basis is exactly reproducible."""
+    """Immutable URL of the base LiteLLM pricing table."""
+    cost_map_additions_source: str | None = None
+    """Immutable source URL of the packaged model additions."""
+    frozen_cost_map_sha256: str | None = None
+    """SHA-256 of the base table combined with the packaged additions."""
 
     @cached_property
     def agent_specs(self) -> set[str]:

@@ -3,6 +3,7 @@ import hashlib
 import importlib.metadata
 import importlib.resources
 import json
+import math
 import os
 import re
 import signal
@@ -12,6 +13,7 @@ import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import TypedDict
 
 import click
 import datasets
@@ -34,6 +36,7 @@ from .io import atomic_write_file, verify_git_reproducibility
 from .models import EvalConfig, SubmissionMetadata
 
 HF_URL_PATTERN = r"^hf://(?:datasets/)?(?P<repo_id>[^/]+/[^/]+)/(?P<path>.*)$"
+FROZEN_MODEL_COST_MAP_URL = "https://raw.githubusercontent.com/BerriAI/litellm/ef84494d52c6708e4e9f4a54ce551a265995ad8f/litellm/model_prices_and_context_window_backup.json"
 EVAL_CONFIG_FILENAME = "eval_config.json"
 SCORES_FILENAME = "scores.json"
 SUMMARY_FILENAME = "summary_stats.json"
@@ -63,7 +66,51 @@ def parse_hf_url(url: str) -> tuple[str, str]:
     return hf_url_match.group("repo_id"), hf_url_match.group("path")
 
 
-def prep_litellm_cost_map():
+class CostMapMetadata(TypedDict):
+    cost_map_url: str
+    cost_map_additions_source: str
+    frozen_cost_map_sha256: str
+
+
+def load_model_cost_additions() -> dict:
+    try:
+        additions = json.loads(
+            importlib.resources.files("agenteval")
+            .joinpath("model_cost_additions.json")
+            .read_text(encoding="utf-8")
+        )
+        if not isinstance(additions, dict):
+            raise ValueError("expected a JSON object")
+        source = additions.get("source")
+        if not isinstance(source, str) or not re.fullmatch(
+            r"https://raw\.githubusercontent\.com/BerriAI/litellm/[0-9a-f]{40}/"
+            r"litellm/model_prices_and_context_window_backup\.json",
+            source,
+        ):
+            raise ValueError("source must identify a pinned LiteLLM commit")
+        models = additions.get("models")
+        if not isinstance(models, dict):
+            raise ValueError("models must be an object")
+        for model, costs in models.items():
+            if not isinstance(costs, dict) or not costs.get("litellm_provider"):
+                raise ValueError(f"{model}: missing litellm_provider")
+            if not isinstance(costs["litellm_provider"], str):
+                raise ValueError(f"{model}: litellm_provider must be a string")
+            for key in ("input_cost_per_token", "output_cost_per_token"):
+                rate = costs.get(key)
+                if (
+                    isinstance(rate, bool)
+                    or not isinstance(rate, (int, float))
+                    or not math.isfinite(rate)
+                    or rate < 0
+                ):
+                    raise ValueError(f"{model}: {key} must be finite and nonnegative")
+        return additions
+    except (OSError, ValueError) as error:
+        raise click.ClickException(f"Invalid model cost additions: {error}") from error
+
+
+def prep_litellm_cost_map() -> CostMapMetadata:
     if os.getenv("LITELLM_LOCAL_MODEL_COST_MAP") != "True":
         raise click.ClickException(
             f'Please set the LITELLM_LOCAL_MODEL_COST_MAP env variable to "True" before scoring.'
@@ -78,18 +125,13 @@ def prep_litellm_cost_map():
     # This snippet is mostly lifted from
     # https://github.com/BerriAI/litellm/blob/b9621c760d3355e06dd17ec89b9eb6776755392e/litellm/litellm_core_utils/get_model_cost_map.py#L16
     # See the Development.md before changing.
-    # SHA below is the v1.97.0 release tag of BerriAI/litellm (upper bound of the
-    # litellm pin in pyproject.toml); keep the two in sync when bumping.
-    desired_model_costs_url = "https://raw.githubusercontent.com/BerriAI/litellm/ef84494d52c6708e4e9f4a54ce551a265995ad8f/litellm/model_prices_and_context_window_backup.json"
+    # Keep the frozen base URL in sync with the scoring runtime.
+    desired_model_costs_url = FROZEN_MODEL_COST_MAP_URL
     response = httpx.get(desired_model_costs_url, timeout=5)
     response.raise_for_status()
     desired_model_costs = response.json()
 
-    additions = json.loads(
-        importlib.resources.files("agenteval")
-        .joinpath("model_cost_additions.json")
-        .read_text(encoding="utf-8")
-    )
+    additions = load_model_cost_additions()
     overlapping_models = desired_model_costs.keys() & additions["models"].keys()
     if overlapping_models:
         raise click.ClickException(
@@ -98,7 +140,12 @@ def prep_litellm_cost_map():
     desired_model_costs.update(additions["models"])
     click.echo(f'Model cost additions source: {additions["source"]}')
     frozen_hash = hashlib.sha256(
-        json.dumps(desired_model_costs, sort_keys=True).encode()
+        json.dumps(
+            desired_model_costs,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
     ).hexdigest()
     click.echo(f"Frozen model costs hash {frozen_hash}.")
 
@@ -124,7 +171,11 @@ def prep_litellm_cost_map():
     litellm_version = importlib.metadata.version("litellm")
     click.echo(f"litellm version: {litellm_version}")
 
-    return desired_model_costs_url
+    return {
+        "cost_map_url": desired_model_costs_url,
+        "cost_map_additions_source": additions["source"],
+        "frozen_cost_map_sha256": frozen_hash,
+    }
 
 
 @click.group()
@@ -148,7 +199,7 @@ def score_command(
 
     # so that we know what model costs we're using to score
     # more details in the Development.md
-    cost_map_url = prep_litellm_cost_map()
+    cost_map_metadata = prep_litellm_cost_map()
 
     hf_url_match = re.match(HF_URL_PATTERN, log_dir)
     temp_dir: tempfile.TemporaryDirectory | None = None
@@ -187,7 +238,7 @@ def score_command(
         sys.exit(1)
 
     task_results = TaskResults(
-        results=log_processing_outcome.results, cost_map_url=cost_map_url
+        results=log_processing_outcome.results, **cost_map_metadata
     )
 
     # Warn if multiple evaluation specs present
