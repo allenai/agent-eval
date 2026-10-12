@@ -16,6 +16,32 @@ from agenteval.score import Metric, TaskResult, TaskResults
 
 
 @pytest.mark.parametrize(
+    "allowance",
+    [
+        "hf://datasets/example/submissions/typo",
+        "hf://datasets/example/submissions/good/",
+    ],
+)
+def test_unmatched_cost_allowance_fails_before_network_access(monkeypatch, allowance):
+    def no_api():
+        pytest.fail("No network access is needed to reject an unmatched URL")
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", no_api)
+    result = CliRunner().invoke(
+        cli_module.cli,
+        [
+            "lb",
+            "publish",
+            "hf://datasets/example/submissions/good",
+            "--allow-missing-costs",
+            allowance,
+        ],
+    )
+    assert result.exit_code != 0
+    assert "URLs must match a submission URL exactly" in result.output
+
+
+@pytest.mark.parametrize(
     "costs,allow_missing,has_usage,expected_success",
     [
         ([-0.1], False, False, False),

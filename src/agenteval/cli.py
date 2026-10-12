@@ -501,6 +501,13 @@ def publish_lb_command(
         click.echo("At least one submission URL is required.")
         sys.exit(1)
 
+    unmatched_allowances = set(allow_missing_costs) - set(submission_urls)
+    if unmatched_allowances:
+        raise click.ClickException(
+            "--allow-missing-costs URLs must match a submission URL exactly: "
+            + ", ".join(sorted(unmatched_allowances))
+        )
+
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download
 

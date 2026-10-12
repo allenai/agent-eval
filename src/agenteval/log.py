@@ -12,7 +12,7 @@ from inspect_ai.log import (  # type: ignore[attr-defined]
     StepEvent,
 )
 from inspect_ai.model import ModelUsage
-from litellm import cost_per_token
+from litellm import cost_per_token, get_model_info, model_cost
 from litellm.types.utils import PromptTokensDetailsWrapper, Usage
 from pydantic import BaseModel
 
@@ -103,6 +103,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
     Handles cached tokens via litellm Usage object.
+    Raises CostAccountingError on invalid usage or pricing; callers must propagate it.
     """
     total_cost = 0.0
     for model_usage in model_usages:
@@ -176,7 +177,6 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                             f"Re-emit usage with total_tokens including cache "
                             f"reads/writes (Inspect ModelUsage convention)."
                         )
-                    text_tokens = input_tokens - cache_read_input_tokens
                     prompt_tokens = input_tokens
                     completion_tokens = output_tokens
 
@@ -185,7 +185,6 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     input_tokens
                     == model_usage.usage.total_tokens - output_tokens - reasoning_tokens
                 ):
-                    text_tokens = input_tokens
                     prompt_tokens = input_tokens
                     completion_tokens = output_tokens + reasoning_tokens
 
@@ -197,7 +196,6 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     - cache_read_input_tokens
                     - cache_write_input_tokens
                 ):
-                    text_tokens = input_tokens
                     prompt_tokens = (
                         input_tokens
                         + cache_read_input_tokens
@@ -214,6 +212,26 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     raise ValueError("Cache categories exceed total prompt tokens")
                 if reasoning_tokens > completion_tokens:
                     raise ValueError("Reasoning tokens exceed total completion tokens")
+                text_tokens = (
+                    prompt_tokens - cache_read_input_tokens - cache_write_input_tokens
+                )
+                price_key = get_model_info(adapt_model_name(model_usage.model))["key"]
+                # get_model_info() replaces missing base prices with zero.
+                # Check the source entry so absence cannot become free usage.
+                price_info = model_cost[price_key]
+                for count, price_field in (
+                    (text_tokens, "input_cost_per_token"),
+                    (completion_tokens, "output_cost_per_token"),
+                    (cache_read_input_tokens, "cache_read_input_token_cost"),
+                    (cache_write_input_tokens, "cache_creation_input_token_cost"),
+                ):
+                    if count:
+                        rate = price_info.get(price_field)
+                        if rate is None:
+                            raise ValueError(f"Missing required price: {price_field}")
+                        rate = float(rate)
+                        if rate < 0 or not isfinite(rate):
+                            raise ValueError(f"Invalid price {price_field}: {rate}")
 
                 prompt_tokens_wrapper = PromptTokensDetailsWrapper(
                     cached_tokens=cache_read_input_tokens, text_tokens=text_tokens

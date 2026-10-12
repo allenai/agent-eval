@@ -2,7 +2,7 @@
 
 import pytest
 from inspect_ai.model import ModelUsage
-from litellm import model_cost
+from litellm import get_model_info, model_cost
 from litellm.types.utils import Usage
 
 import agenteval.log as log_module
@@ -115,6 +115,53 @@ def test_unknown_model_price_fails_loudly():
         )
 
 
+@pytest.mark.parametrize(
+    "price_field",
+    [
+        "input_cost_per_token",
+        "output_cost_per_token",
+        "cache_read_input_token_cost",
+        "cache_creation_input_token_cost",
+    ],
+)
+def test_missing_component_price_cannot_silently_become_zero(monkeypatch, price_field):
+    model = "claude-sonnet-4-5"
+    monkeypatch.setitem(model_cost, model, {**model_cost[model], price_field: None})
+    get_model_info.cache_clear()
+    try:
+        with pytest.raises(CostAccountingError, match="Missing required price"):
+            _cost(
+                model,
+                input_tokens=1000,
+                output_tokens=500,
+                total_tokens=8500,
+                input_tokens_cache_read=5000,
+                input_tokens_cache_write=2000,
+            )
+    finally:
+        get_model_info.cache_clear()
+
+
+def test_explicit_zero_cache_write_price_is_valid(monkeypatch):
+    model = "claude-sonnet-4-5"
+    monkeypatch.setitem(
+        model_cost, model, {**model_cost[model], "cache_creation_input_token_cost": 0.0}
+    )
+    get_model_info.cache_clear()
+    try:
+        input_rate, read_rate, output_rate = _rates(model)
+        assert _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=8500,
+            input_tokens_cache_read=5000,
+            input_tokens_cache_write=2000,
+        ) == pytest.approx(1000 * input_rate + 5000 * read_rate + 500 * output_rate)
+    finally:
+        get_model_info.cache_clear()
+
+
 def test_unrecognized_token_pattern_fails_loudly():
     with pytest.raises(CostAccountingError, match="don't follow expected pattern"):
         _cost(
@@ -201,6 +248,41 @@ def test_anthropic_style_input_excludes_cache_read_and_write():
         1_000 * input_rate + 5_000 * cache_rate + 2_000 * write_rate + 500 * output_rate
     )
     assert cost == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "input_tokens,output_tokens,total_tokens,reasoning_tokens",
+    [(8000, 500, 8500, 0), (1000, 500, 8500, 0), (8000, 200, 8500, 300)],
+)
+def test_cache_categories_are_priced_once(
+    monkeypatch, input_tokens, output_tokens, total_tokens, reasoning_tokens
+):
+    captured = []
+    original = log_module.cost_per_token
+
+    def capture(**kwargs):
+        captured.append(kwargs["usage_object"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(log_module, "cost_per_token", capture)
+    model = "claude-sonnet-4-5"
+    input_rate, read_rate, output_rate = _rates(model)
+    write_rate = model_cost[model]["cache_creation_input_token_cost"]
+    cost = _cost(
+        model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_tokens_cache_read=5000,
+        input_tokens_cache_write=2000,
+        reasoning_tokens=reasoning_tokens,
+    )
+    assert cost == pytest.approx(
+        1000 * input_rate + 5000 * read_rate + 2000 * write_rate + 500 * output_rate
+    )
+    assert captured[0].prompt_tokens == 8000
+    assert captured[0].prompt_tokens_details.text_tokens == 1000
+    assert captured[0].completion_tokens == 500
 
 
 def test_gemini_style_output_excludes_reasoning(monkeypatch):

@@ -117,28 +117,32 @@ def find_cost_problems(
     problems = []
     if not results:
         return ["No task results"]
-    for res in results or []:
+    for res in results:
         costs = res.model_costs
         has_usage = bool(res.model_usages and any(res.model_usages))
         allow_missing_here = allow_missing and not has_usage
-        if not costs:
-            if not allow_missing_here:
-                problems.append(f"{res.task_name}: no model costs")
-            continue
-        if res.model_usages is not None and len(costs) != len(res.model_usages):
+        if (
+            costs is not None
+            and res.model_usages is not None
+            and len(costs) != len(res.model_usages)
+        ):
             problems.append(
                 f"{res.task_name}: {len(costs)} costs for "
                 f"{len(res.model_usages)} sample usages"
             )
-        negative = [i for i, c in enumerate(costs) if c is not None and c < 0]
+        if not costs:
+            if not allow_missing_here:
+                problems.append(f"{res.task_name}: no model costs")
+            continue
+        negative = [i for i, c in enumerate(costs, start=1) if c is not None and c < 0]
         if negative:
             problems.append(f"{res.task_name}: negative cost at samples {negative}")
         non_finite = [
-            i for i, c in enumerate(costs) if c is not None and not isfinite(c)
+            i for i, c in enumerate(costs, start=1) if c is not None and not isfinite(c)
         ]
         if non_finite:
             problems.append(f"{res.task_name}: non-finite cost at samples {non_finite}")
-        missing = [i for i, c in enumerate(costs) if c is None]
+        missing = [i for i, c in enumerate(costs, start=1) if c is None]
         if missing and not allow_missing_here:
             problems.append(f"{res.task_name}: missing cost at samples {missing}")
     return problems

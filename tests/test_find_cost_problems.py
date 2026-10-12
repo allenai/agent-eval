@@ -15,12 +15,12 @@ def test_valid_costs_pass():
 
 def test_negative_cost_rejected_even_when_missing_allowed():
     problems = find_cost_problems([_result([0.1, -0.2])], allow_missing=True)
-    assert problems == ["t: negative cost at samples [1]"]
+    assert problems == ["t: negative cost at samples [2]"]
 
 
 def test_missing_costs_rejected_by_default():
     assert find_cost_problems([_result([0.1, None])]) == [
-        "t: missing cost at samples [1]"
+        "t: missing cost at samples [2]"
     ]
     assert find_cost_problems([_result(None)]) == ["t: no model costs"]
 
@@ -58,7 +58,7 @@ def test_missing_cost_override_cannot_hide_reported_usage():
         ]
     ]
     assert find_cost_problems([result], allow_missing=True) == [
-        "t: missing cost at samples [0]"
+        "t: missing cost at samples [1]"
     ]
 
 
@@ -66,3 +66,11 @@ def test_truncated_costs_rejected():
     result = _result([0.1])
     result.model_usages = [[], []]
     assert find_cost_problems([result]) == ["t: 1 costs for 2 sample usages"]
+
+
+def test_empty_costs_cannot_bypass_sample_coverage_check():
+    result = _result([])
+    result.model_usages = [[], []]
+    assert find_cost_problems([result], allow_missing=True) == [
+        "t: 0 costs for 2 sample usages"
+    ]

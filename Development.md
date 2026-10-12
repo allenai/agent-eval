@@ -11,10 +11,10 @@ For leaderboard viewing features: `pip install -e ".[dev,leaderboard]"`
 # Testing
 
 ```bash
-make test
+LITELLM_LOCAL_MODEL_COST_MAP=True make test
 ```
 
-For all tests including leaderboard: `make test-all` (requires `.[dev,leaderboard]`)
+For all tests including leaderboard: `LITELLM_LOCAL_MODEL_COST_MAP=True make test-all` (requires `.[dev,leaderboard]`)
 
 # Publication
 
@@ -58,11 +58,12 @@ price-map fetch. The scoring CLI requires this setting and calls
 `prep_litellm_cost_map()` to load the map at the fixed release SHA. Direct library
 callers must initialize their pricing map before computing costs. Tests set the
 environment variable in `conftest.py` before scoring imports and use the bundled
-map from the pinned scoring dependency.
+map from the pinned scoring dependency. They fail if LiteLLM has already been
+imported before `conftest.py`, rather than silently using previously fetched prices.
 
 Scoring raises `CostAccountingError` for invalid token counts, unresolved usage
-patterns, missing model prices, and negative or non-finite costs. The error
-identifies the task, sample position, and model; score artifacts are not written
+patterns, missing model or required token-category prices, and negative or non-finite costs. Explicit zero prices are valid. The error
+identifies the task, 1-based sample position, and model; score artifacts are not written
 when cost accounting fails. Direct library callers should propagate the error
 rather than replace it with a partial, zero, or missing cost.
 
@@ -70,4 +71,6 @@ rather than replace it with a partial, zero, or missing cost.
 Negative/non-finite costs, empty results, and truncated cost lists are rejected.
 Missing costs require `--allow-missing-costs <submission-url>` and no reported
 model usage for that task (for example, a closed product without token counts).
-This flag cannot bypass failed accounting when token usage was reported.
+This flag cannot bypass failed accounting when token usage was reported. Its URL
+must exactly match a submission URL in the command. Publication diagnostics also
+use 1-based sample positions.

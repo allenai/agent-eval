@@ -72,7 +72,7 @@ def test_scoring_failure_identifies_sample_and_preserves_artifacts(
 
     assert result.exit_code != 0
     assert isinstance(result.exception, CostAccountingError)
-    assert f"Task task_test, sample 2:" in str(result.exception)
+    assert "Task task_test, sample 2:" in str(result.exception)
     assert model in str(result.exception)
     assert all(artifact.read_text() == "previous result" for artifact in artifacts)
     for artifact in artifacts:
