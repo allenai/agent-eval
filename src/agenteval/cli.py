@@ -125,6 +125,7 @@ def cli():
 def score_command(
     log_dir: str,
 ):
+    from .log import CostAccountingError
     from .score import TaskResults, process_eval_logs
     from .summary import compute_summary_statistics
 
@@ -157,10 +158,13 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate_json(f.read())
 
-    log_processing_outcome = process_eval_logs(
-        log_dir,
-        reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
-    )
+    try:
+        log_processing_outcome = process_eval_logs(
+            log_dir,
+            reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+        )
+    except CostAccountingError as e:
+        raise click.ClickException(str(e)) from e
 
     if log_processing_outcome.errors:
         click.echo("Errors processing logs")
@@ -663,7 +667,7 @@ def publish_lb_command(
         local_features = load_dataset_features()
         if local_features.arrow_schema != readme.features.arrow_schema:
             click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
+                f"Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
             )
             click.echo("Run 'update_readme.py sync-schema' to update it")
             sys.exit(1)

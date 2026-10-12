@@ -615,3 +615,33 @@ def test_custom_cached_model_exclusive_usage_keeps_read_discount():
         total_tokens=1700,
         input_tokens_cache_read=200,
     ) == pytest.approx(1000 * 6e-7 + 200 * 1e-7 + 500 * 3e-6)
+
+
+@pytest.mark.parametrize(
+    "model", ["gpt-5.6-sol", "grok-3", "deepseek/deepseek-v4pro-preview"]
+)
+@pytest.mark.parametrize("cache_read,cache_write", [(200, 0), (0, 200), (100, 100)])
+def test_overlapping_cache_and_reasoning_conventions_fail_loudly(
+    model, cache_read, cache_write
+):
+    # Either cache-exclusive input or separate reasoning explains this total,
+    # but they produce different billable counts.
+    with pytest.raises(CostAccountingError, match="Ambiguous usage convention"):
+        _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1700,
+            input_tokens_cache_read=cache_read,
+            input_tokens_cache_write=cache_write,
+            reasoning_tokens=200,
+        )
+
+
+@pytest.mark.parametrize("total_tokens", [None, 0])
+def test_custom_pricing_requires_reported_consistent_total(total_tokens):
+    usage = dict(input_tokens=1000, output_tokens=500)
+    if total_tokens is not None:
+        usage["total_tokens"] = total_tokens
+    with pytest.raises(CostAccountingError, match="don't follow expected pattern"):
+        _cost("grok-3", **usage)

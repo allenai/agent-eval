@@ -59,8 +59,15 @@ def test_unmatched_cost_allowance_fails_before_network_access(monkeypatch, allow
         (None, True, False, None, True),
     ],
 )
+@pytest.mark.parametrize("current_schema", [True, False])
 def test_publish_validates_whole_batch_before_upload(
-    monkeypatch, costs, allow_missing, has_usage, sample_count, expected_success
+    monkeypatch,
+    costs,
+    allow_missing,
+    has_usage,
+    sample_count,
+    expected_success,
+    current_schema,
 ):
     config = EvalConfig(
         suite_config=SuiteConfig(
@@ -96,6 +103,9 @@ def test_publish_validates_whole_batch_before_upload(
     api.upload_folder.side_effect = upload
     monkeypatch.setattr(huggingface_hub, "HfApi", lambda: api)
     features = load_dataset_features()
+    if not current_schema:
+        # The previous live schema had no optional per-task sample count.
+        del features["results"].feature["sample_count"]
     monkeypatch.setattr(
         Readme,
         "download_and_parse",
@@ -142,11 +152,15 @@ def test_publish_validates_whole_batch_before_upload(
 
     result = CliRunner().invoke(cli_module.cli, args)
 
-    if expected_success:
+    if expected_success and current_schema:
         assert result.exit_code == 0, result.output
         api.upload_folder.assert_called_once()
         assert uploaded_counts == [1, sample_count]
     else:
         assert result.exit_code != 0
-        assert "Refusing to publish 1.0.0/test/second" in result.output
+        if expected_success:
+            assert "hf://example/results/README.md" in result.output
+            assert "sync-schema" in result.output
+        else:
+            assert "Refusing to publish 1.0.0/test/second" in result.output
         api.upload_folder.assert_not_called()

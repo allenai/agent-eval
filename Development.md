@@ -56,7 +56,9 @@ The version pin alone does not freeze LiteLLM's prices. Set
 `LITELLM_LOCAL_MODEL_COST_MAP=True` before starting Python to disable its live
 price-map fetch. The scoring CLI requires this setting and calls
 `prep_litellm_cost_map()` to load the map at the fixed release SHA. Direct library
-callers must initialize their pricing map before computing costs. Tests set the
+callers must initialize their pricing map before computing costs. The CLI check
+guards scoring; it cannot undo a live fetch triggered by an earlier LiteLLM
+import, so the variable must be set before Python starts. Tests set the
 environment variable in `conftest.py` before scoring imports and use the bundled
 map from the pinned scoring dependency. They fail if LiteLLM has already been
 imported before `conftest.py`, rather than silently using previously fetched prices.
@@ -84,7 +86,13 @@ is included in completion counts once, whether already in output or recorded
 separately. Custom tables with only input/output rates reject reported cache
 usage until cache rates are supplied; a missing rate is not a zero rate or an
 instruction to charge the base input rate. A cache-write price does not determine
-the usage convention.
+the usage convention. If multiple supported conventions match and imply different
+billable counts (for example, cache tokens equal separately reported reasoning),
+scoring rejects the ambiguity. Matches implying identical counts are harmless,
+including absent cache/reasoning breakdowns. Missing or zero totals do not bypass
+reconciliation when input/output usage is nonzero, even with custom prices.
+The CLI prints accounting errors without a traceback and exits nonzero; direct
+library callers still receive `CostAccountingError`.
 
 `agenteval lb publish` validates saved costs before uploading any submission.
 Negative/non-finite costs, empty results, and truncated cost lists are rejected.
@@ -105,3 +113,5 @@ release, a maintainer must run
 `python scripts/update_readme.py sync-schema --repo-id <results-repo>` for
 the target results dataset before publishing with this version. That updates the
 live dataset's README schema; generating the local schema does not update it.
+Publication compares the local and live schemas and refuses to upload when they
+differ, with a pointer to the schema-sync command.
