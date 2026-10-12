@@ -28,11 +28,9 @@ MODEL_TRANSLATIONS = {
     "sonar-deep-research": "perplexity/sonar-deep-research",
 }
 
-# Models whose input_tokens and total_tokens exclude cache reads/writes.
-# Unknown conventions cannot be inferred when cache reads fit inside input.
-INPUT_EXCLUDES_CACHE_READ = {
-    "osd-proxy/gpt-5.6-sol",
-}
+
+class CostAccountingError(ValueError):
+    """Usage counts cannot be priced unambiguously; scoring must stop, not blank."""
 
 
 class ModelUsageWithName(BaseModel):
@@ -147,23 +145,16 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 )
                 reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
-                if model_usage.model in INPUT_EXCLUDES_CACHE_READ:
-                    text_tokens = input_tokens
-                    prompt_tokens = (
-                        input_tokens
-                        + cache_read_input_tokens
-                        + cache_write_input_tokens
-                    )
-                    completion_tokens = output_tokens
-
-                elif input_tokens == total_tokens - output_tokens:
+                if input_tokens == total_tokens - output_tokens:
                     # (openai) input tokens count includes cache read tokens
                     if cache_read_input_tokens > input_tokens:
-                        raise ValueError(
-                            f"Cache read tokens ({cache_read_input_tokens}) exceed "
-                            f"input tokens ({input_tokens}); input likely excludes "
-                            f"cache reads. Add the model to INPUT_EXCLUDES_CACHE_READ "
-                            f"if so."
+                        raise CostAccountingError(
+                            f"Model {model_usage.model}: cache read tokens "
+                            f"({cache_read_input_tokens}) exceed input tokens "
+                            f"({input_tokens}) but total_tokens ({total_tokens}) "
+                            f"excludes them, so the usage convention is ambiguous. "
+                            f"Re-emit usage with total_tokens including cache "
+                            f"reads/writes (Inspect ModelUsage convention)."
                         )
                     text_tokens = input_tokens - cache_read_input_tokens
                     prompt_tokens = input_tokens
@@ -218,8 +209,15 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                     usage_object=litellm_usage,
                 )
 
+            if prompt_cost < 0 or completion_cost < 0:
+                raise CostAccountingError(
+                    f"Model {model_usage.model}: negative cost "
+                    f"(prompt {prompt_cost}, completion {completion_cost})."
+                )
             if total_cost is not None:
                 total_cost += prompt_cost + completion_cost
+        except CostAccountingError:
+            raise
         except Exception as e:
             total_cost = None
             logger.warning(
