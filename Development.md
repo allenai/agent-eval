@@ -77,6 +77,15 @@ identifies the task, 1-based sample position, and model; score artifacts are not
 when cost accounting fails. Direct library callers should propagate the error
 rather than replace it with a partial, zero, or missing cost.
 
+All pricing paths, including custom prices, reconcile the same supported usage
+patterns before billing. Cache reads/writes are removed from inclusive input
+or added to exclusive input and priced once at their category rates. Reasoning
+is included in completion counts once, whether already in output or recorded
+separately. Custom tables with only input/output rates reject reported cache
+usage until cache rates are supplied; a missing rate is not a zero rate or an
+instruction to charge the base input rate. A cache-write price does not determine
+the usage convention.
+
 `agenteval lb publish` validates saved costs before uploading any submission.
 Negative/non-finite costs, empty results, and truncated cost lists are rejected.
 Missing costs require `--allow-missing-costs <submission-url>` and no reported

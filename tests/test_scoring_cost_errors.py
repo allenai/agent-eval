@@ -19,6 +19,10 @@ from agenteval.score import EvalSpec, Metric
         ("unknown-price-model", 1500, 0),
         ("gpt-5.6-sol", 1600, 0),
         ("gpt-5.6-sol", 1500, 5000),
+        ("grok-3", 1600, 0),
+        ("grok-3", 1700, 200),
+        ("moonshotai/kimi-k2.5-0127", 1600, 0),
+        ("deepseek/deepseek-v4pro-preview", 1500, 5000),
     ],
 )
 def test_scoring_failure_identifies_sample_and_preserves_artifacts(

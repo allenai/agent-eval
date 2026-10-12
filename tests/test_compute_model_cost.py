@@ -363,8 +363,8 @@ def test_reasoning_cannot_exceed_inclusive_output():
         )
 
 
-def test_custom_cached_model_cannot_have_negative_uncached_input():
-    with pytest.raises(CostAccountingError, match="Derived uncached input"):
+def test_custom_cached_model_rejects_cache_exceeding_inclusive_input():
+    with pytest.raises(CostAccountingError, match="exceed input tokens"):
         _cost(
             "moonshotai/kimi-k2.5-0127",
             input_tokens=1000,
@@ -383,7 +383,7 @@ def test_custom_cached_model_requires_price_for_cache_writes():
             "moonshotai/kimi-k2.5-0127",
             input_tokens=1000,
             output_tokens=500,
-            total_tokens=1600,
+            total_tokens=1800,
             input_tokens_cache_read=200,
             input_tokens_cache_write=100,
         )
@@ -490,3 +490,128 @@ def test_gemini_style_output_excludes_reasoning(monkeypatch):
     assert captured_usage[0].completion_tokens == 500
     assert captured_usage[0].total_tokens == 1_500
     assert captured_usage[0].completion_tokens_details.reasoning_tokens == 300
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["grok-3", "moonshotai/kimi-k2.5-0127", "deepseek/deepseek-v4pro-preview"],
+)
+def test_custom_models_reject_unreconciled_totals(model):
+    with pytest.raises(CostAccountingError, match="don't follow expected pattern"):
+        _cost(model, input_tokens=1000, output_tokens=500, total_tokens=1600)
+
+
+@pytest.mark.parametrize(
+    "model,input_rate,output_rate",
+    [
+        ("grok-3", 3e-6, 1.5e-5),
+        ("moonshotai/kimi-k2.5-0127", 6e-7, 3e-6),
+        ("deepseek/deepseek-v4pro-preview", 4.35e-7, 8.7e-7),
+    ],
+)
+@pytest.mark.parametrize("output_tokens", [200, 500])
+def test_custom_models_bill_reasoning_once(
+    model, input_rate, output_rate, output_tokens
+):
+    assert _cost(
+        model,
+        input_tokens=1000,
+        output_tokens=output_tokens,
+        reasoning_tokens=300,
+        total_tokens=1500,
+    ) == pytest.approx(1000 * input_rate + 500 * output_rate)
+
+
+@pytest.mark.parametrize(
+    "model,input_rate,read_rate,write_rate,output_rate",
+    [
+        ("deepseek/deepseek-v4pro-preview", 4.35e-7, 3.625e-9, 0.0, 8.7e-7),
+        ("claude-3-5-haiku-20241022", 8e-7, 8e-8, 1e-6, 4e-6),
+    ],
+)
+@pytest.mark.parametrize(
+    "input_tokens,output_tokens,reasoning_tokens",
+    [(8000, 500, 0), (1000, 500, 0), (8000, 200, 300), (1000, 500, 300)],
+)
+def test_custom_cached_models_bill_cache_categories_once(
+    model,
+    input_rate,
+    read_rate,
+    write_rate,
+    output_rate,
+    input_tokens,
+    output_tokens,
+    reasoning_tokens,
+):
+    assert _cost(
+        model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=8500,
+        input_tokens_cache_read=5000,
+        input_tokens_cache_write=2000,
+        reasoning_tokens=reasoning_tokens,
+    ) == pytest.approx(
+        1000 * input_rate + 5000 * read_rate + 2000 * write_rate + 500 * output_rate
+    )
+
+
+@pytest.mark.parametrize(
+    "field,price_field",
+    [
+        ("input_tokens_cache_read", "cache_read_input_token_cost"),
+        ("input_tokens_cache_write", "cache_creation_input_token_cost"),
+    ],
+)
+def test_custom_model_without_cache_prices_rejects_cache_usage(field, price_field):
+    with pytest.raises(
+        CostAccountingError, match=f"Missing required price: {price_field}"
+    ):
+        _cost(
+            "grok-3",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1700,
+            **{field: 200},
+        )
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["grok-3", "moonshotai/kimi-k2.5-0127", "deepseek/deepseek-v4pro-preview"],
+)
+def test_custom_models_reject_reasoning_exceeding_inclusive_output(model):
+    with pytest.raises(CostAccountingError, match="Reasoning tokens exceed"):
+        _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            reasoning_tokens=600,
+        )
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["moonshotai/kimi-k2.5-0127", "deepseek/deepseek-v4pro-preview"],
+)
+def test_custom_cached_models_reject_cache_exceeding_inclusive_input(model):
+    with pytest.raises(CostAccountingError, match="exceed input tokens"):
+        _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            input_tokens_cache_read=800,
+            input_tokens_cache_write=800,
+        )
+
+
+def test_custom_cached_model_exclusive_usage_keeps_read_discount():
+    assert _cost(
+        "moonshotai/kimi-k2.5-0127",
+        input_tokens=1000,
+        output_tokens=500,
+        total_tokens=1700,
+        input_tokens_cache_read=200,
+    ) == pytest.approx(1000 * 6e-7 + 200 * 1e-7 + 500 * 3e-6)

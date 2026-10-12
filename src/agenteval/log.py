@@ -136,115 +136,105 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
             if any(count < 0 for count in counts.values()):
                 raise ValueError(f"Negative token counts: {counts}")
 
+            total_tokens = model_usage.usage.total_tokens
+
+            cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
+            cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
+            reasoning_tokens = model_usage.usage.reasoning_tokens or 0
+
+            if input_tokens == total_tokens - output_tokens:
+                # Legacy inclusive input counts contain both cache categories.
+                if cache_read_input_tokens + cache_write_input_tokens > input_tokens:
+                    raise ValueError(
+                        f"Model {model_usage.model}: cache read/write tokens "
+                        f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
+                        f"exceed input tokens "
+                        f"({input_tokens}) but total_tokens ({total_tokens}) "
+                        f"excludes them, so the usage convention is ambiguous. "
+                        f"Re-emit usage with total_tokens including cache "
+                        f"reads/writes (Inspect ModelUsage convention)."
+                    )
+                prompt_tokens = input_tokens
+                completion_tokens = output_tokens
+
+            # (gemini) output tokens count excludes reasoning tokens
+            elif (
+                input_tokens
+                == model_usage.usage.total_tokens - output_tokens - reasoning_tokens
+            ):
+                prompt_tokens = input_tokens
+                completion_tokens = output_tokens + reasoning_tokens
+
+            # (anthropic) input tokens count excludes cache read and cache write tokens
+            elif (
+                input_tokens
+                == model_usage.usage.total_tokens
+                - output_tokens
+                - cache_read_input_tokens
+                - cache_write_input_tokens
+            ):
+                prompt_tokens = (
+                    input_tokens + cache_read_input_tokens + cache_write_input_tokens
+                )
+                completion_tokens = output_tokens
+
+            else:
+                raise ValueError(
+                    "Model usage token counts don't follow expected pattern."
+                )
+
+            if cache_read_input_tokens + cache_write_input_tokens > prompt_tokens:
+                raise ValueError("Cache categories exceed total prompt tokens")
+            if reasoning_tokens > completion_tokens:
+                raise ValueError("Reasoning tokens exceed total completion tokens")
+            text_tokens = (
+                prompt_tokens - cache_read_input_tokens - cache_write_input_tokens
+            )
+
             if model_usage.model in CUSTOM_PRICING.keys():
                 pricing_without_cache = CUSTOM_PRICING[model_usage.model]
                 for count, field in (
-                    (input_tokens, "input_cost_per_token"),
-                    (output_tokens, "output_cost_per_token"),
+                    (cache_read_input_tokens, "cache_read_input_token_cost"),
+                    (cache_write_input_tokens, "cache_creation_input_token_cost"),
+                ):
+                    if count:
+                        raise ValueError(f"Missing required price: {field}")
+                for count, field in (
+                    (prompt_tokens, "input_cost_per_token"),
+                    (completion_tokens, "output_cost_per_token"),
                 ):
                     if count:
                         _validate_price(pricing_without_cache.get(field), field)
                 prompt_cost, completion_cost = cost_per_token(
                     model=model_usage.model,
-                    prompt_tokens=input_tokens,
-                    completion_tokens=output_tokens,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                     custom_cost_per_token=pricing_without_cache,
                 )
 
             elif model_usage.model in CUSTOM_PRICING_WITH_CACHE.keys():
 
                 pricing = CUSTOM_PRICING_WITH_CACHE[model_usage.model]
-                cache_read_tokens = model_usage.usage.input_tokens_cache_read or 0
-                cache_write_tokens = model_usage.usage.input_tokens_cache_write or 0
-                cache_write_cost = pricing.cache_write_input_token_cost
-                if cache_write_cost is None:
-                    if cache_write_tokens:
-                        raise ValueError(
-                            "Missing required price: cache_write_input_token_cost"
-                        )
-                    text_tokens = input_tokens - cache_read_tokens
-                    cache_write_cost = 0
-                else:
-                    text_tokens = input_tokens
-                if text_tokens < 0:
-                    raise ValueError("Derived uncached input token count is negative")
+                prompt_cost = 0.0
                 for count, field in (
                     (text_tokens, "input_cost_per_token"),
-                    (output_tokens, "output_cost_per_token"),
-                    (cache_read_tokens, "cache_read_input_token_cost"),
-                    (cache_write_tokens, "cache_write_input_token_cost"),
+                    (cache_read_input_tokens, "cache_read_input_token_cost"),
+                    (cache_write_input_tokens, "cache_write_input_token_cost"),
                 ):
                     if count:
-                        _validate_price(getattr(pricing, field), field)
-                prompt_cost = (
-                    text_tokens * pricing.input_cost_per_token
-                    + cache_read_tokens * pricing.cache_read_input_token_cost
-                    + cache_write_tokens * cache_write_cost
+                        prompt_cost += count * _validate_price(
+                            getattr(pricing, field), field
+                        )
+                completion_cost = (
+                    completion_tokens
+                    * _validate_price(
+                        pricing.output_cost_per_token, "output_cost_per_token"
+                    )
+                    if completion_tokens
+                    else 0.0
                 )
-                completion_cost = output_tokens * pricing.output_cost_per_token
 
             else:
-                total_tokens = model_usage.usage.total_tokens
-
-                cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
-                cache_write_input_tokens = (
-                    model_usage.usage.input_tokens_cache_write or 0
-                )
-                reasoning_tokens = model_usage.usage.reasoning_tokens or 0
-
-                if input_tokens == total_tokens - output_tokens:
-                    # Legacy inclusive input counts contain both cache categories.
-                    if (
-                        cache_read_input_tokens + cache_write_input_tokens
-                        > input_tokens
-                    ):
-                        raise ValueError(
-                            f"Model {model_usage.model}: cache read/write tokens "
-                            f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
-                            f"exceed input tokens "
-                            f"({input_tokens}) but total_tokens ({total_tokens}) "
-                            f"excludes them, so the usage convention is ambiguous. "
-                            f"Re-emit usage with total_tokens including cache "
-                            f"reads/writes (Inspect ModelUsage convention)."
-                        )
-                    prompt_tokens = input_tokens
-                    completion_tokens = output_tokens
-
-                # (gemini) output tokens count excludes reasoning tokens
-                elif (
-                    input_tokens
-                    == model_usage.usage.total_tokens - output_tokens - reasoning_tokens
-                ):
-                    prompt_tokens = input_tokens
-                    completion_tokens = output_tokens + reasoning_tokens
-
-                # (anthropic) input tokens count excludes cache read and cache write tokens
-                elif (
-                    input_tokens
-                    == model_usage.usage.total_tokens
-                    - output_tokens
-                    - cache_read_input_tokens
-                    - cache_write_input_tokens
-                ):
-                    prompt_tokens = (
-                        input_tokens
-                        + cache_read_input_tokens
-                        + cache_write_input_tokens
-                    )
-                    completion_tokens = output_tokens
-
-                else:
-                    raise ValueError(
-                        "Model usage token counts don't follow expected pattern."
-                    )
-
-                if cache_read_input_tokens + cache_write_input_tokens > prompt_tokens:
-                    raise ValueError("Cache categories exceed total prompt tokens")
-                if reasoning_tokens > completion_tokens:
-                    raise ValueError("Reasoning tokens exceed total completion tokens")
-                text_tokens = (
-                    prompt_tokens - cache_read_input_tokens - cache_write_input_tokens
-                )
                 price_key = get_model_info(adapt_model_name(model_usage.model))["key"]
                 # get_model_info() replaces missing base prices with zero.
                 # Check the source entry so absence cannot become free usage.
