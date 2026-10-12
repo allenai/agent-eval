@@ -100,9 +100,6 @@ class TaskResult(BaseModel):
     metrics: list[Metric]
     """List of metrics. Derived from Inspect `EvalLog.results.scores`."""
 
-    sample_count: int | None = Field(default=None, ge=0)
-    """Number of samples read from the log, including samples without model usage."""
-
     model_usages: list[list[ModelUsageWithName]] | None = None
     """List of model usage lists per sample. Derived from Inspect `EvalLog.samples`."""
 
@@ -125,16 +122,7 @@ def find_cost_problems(
         costs = res.model_costs
         has_usage = bool(res.model_usages and any(res.model_usages))
         allow_missing_here = allow_missing and not has_usage
-        sample_count = res.sample_count
-        if res.model_usages is not None:
-            usage_count = len(res.model_usages)
-            if sample_count is None:
-                sample_count = usage_count
-            elif sample_count != usage_count:
-                problems.append(
-                    f"{res.task_name}: {usage_count} sample usages for "
-                    f"{sample_count} samples"
-                )
+        sample_count = len(res.model_usages) if res.model_usages is not None else None
         for sample_index, usages in enumerate(res.model_usages or [], start=1):
             for model_usage in usages:
                 try:
@@ -145,8 +133,6 @@ def find_cost_problems(
                         f"{model_usage.model}, usage "
                         f"{model_usage.usage.model_dump(exclude_none=True)}: {e}"
                     )
-        if sample_count == 0:
-            problems.append(f"{res.task_name}: no samples")
         if costs is not None:
             if sample_count is None:
                 problems.append(
@@ -296,7 +282,6 @@ def process_eval_logs(
                 task_name=task_name,
                 eval_spec=eval_spec,
                 metrics=metrics,
-                sample_count=len(model_usages),
                 # Set to None to avoid incorrect pyarrow model usage type inference
                 model_usages=model_usages if has_model_usages else None,
                 model_costs=model_costs if has_model_usages else None,

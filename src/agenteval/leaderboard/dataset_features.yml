@@ -62,8 +62,6 @@
       dtype: string
     - name: value
       dtype: float64
-  - name: sample_count
-    dtype: int64
   - name: model_usages
     list:
       list:

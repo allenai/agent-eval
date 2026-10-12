@@ -1,16 +1,8 @@
 import pytest
-from datasets import Dataset
 from inspect_ai.model import ModelUsage
 
-from agenteval.config import SuiteConfig
-from agenteval.leaderboard.models import LeaderboardSubmission
-from agenteval.leaderboard.schema_generator import load_dataset_features
-from agenteval.leaderboard.upload import (
-    compress_model_usages,
-    compress_usages_by_problem,
-)
+from agenteval.leaderboard.upload import compress_usages_by_problem
 from agenteval.log import ModelUsageWithName
-from agenteval.score import TaskResult, find_cost_problems
 
 
 def calculate_model_usages_cost(
@@ -71,27 +63,3 @@ def test_compression_preserves_total_cost(sample_model_usages, sample_model_cost
     assert (
         abs(original_cost - compressed_cost) < 1e-10
     ), f"Original cost: {original_cost}, Compressed cost: {compressed_cost}"
-
-
-def test_optional_sample_count_supports_old_and_new_dataset_rows():
-    submission = LeaderboardSubmission(
-        suite_config=SuiteConfig(name="test", version="1.0.0", splits=[]),
-        split="test",
-        results=[
-            TaskResult(
-                task_name="task", metrics=[], sample_count=2, model_costs=[0.1, 0.2]
-            )
-        ],
-    )
-    compressed = compress_model_usages(submission)
-    new_row = compressed.model_dump()
-    old_row = submission.model_dump()
-    del old_row["results"][0]["sample_count"]
-
-    dataset = Dataset.from_list([old_row, new_row], features=load_dataset_features())
-    old_result = TaskResult.model_validate(dataset[0]["results"][0])
-    new_result = TaskResult.model_validate(dataset[1]["results"][0])
-
-    assert old_result.sample_count is None
-    assert new_result.sample_count == 2
-    assert find_cost_problems([new_result]) == []

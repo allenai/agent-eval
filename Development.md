@@ -116,16 +116,7 @@ This flag cannot bypass failed accounting when token usage was reported. Its URL
 must exactly match a submission URL in the command. Publication diagnostics also
 use 1-based sample positions.
 
-New score files record each task's `sample_count`, including samples without
-model usage. Publication compares cost and usage list lengths against that count.
-For older files, a recorded usage list provides the count; files with costs but
-neither source of coverage must be rescored. The missing-cost allowance still
-permits older product results with `model_costs=None` and no reported usage.
-
-The added optional sample count also updates `dataset_features.yml`. After
-release, a maintainer must run
-`python scripts/update_readme.py sync-schema --repo-id <results-repo>` for
-the target results dataset before publishing with this version. That updates the
-live dataset's README schema; generating the local schema does not update it.
-Publication compares the local and live schemas and refuses to upload when they
-differ, with a pointer to the schema-sync command.
+Publication compares each task's cost-list length against its recorded usage
+list. Files with costs but no usage list cannot be verified and must be rescored.
+The missing-cost allowance still permits older product results with
+`model_costs=None` and no reported usage.
