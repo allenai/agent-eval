@@ -1,6 +1,7 @@
 """Utilities for computing model usages and costs from Inspect eval logs."""
 
 from logging import getLogger
+from math import isfinite
 
 from inspect_ai.log import (  # type: ignore[attr-defined]
     Event,
@@ -30,7 +31,7 @@ MODEL_TRANSLATIONS = {
 
 
 class CostAccountingError(ValueError):
-    """Usage counts cannot be priced unambiguously; scoring must stop, not blank."""
+    """Usage cannot be priced reliably; scoring must stop."""
 
 
 class ModelUsageWithName(BaseModel):
@@ -98,17 +99,30 @@ def adapt_model_name(model: str) -> str:
         return model
 
 
-def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
+def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
     Handles cached tokens via litellm Usage object.
     """
-    total_cost: float | None = 0.0
+    total_cost = 0.0
     for model_usage in model_usages:
         input_tokens = model_usage.usage.input_tokens
         output_tokens = model_usage.usage.output_tokens
 
         try:
+            counts = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": model_usage.usage.total_tokens,
+                "input_tokens_cache_read": model_usage.usage.input_tokens_cache_read
+                or 0,
+                "input_tokens_cache_write": model_usage.usage.input_tokens_cache_write
+                or 0,
+                "reasoning_tokens": model_usage.usage.reasoning_tokens or 0,
+            }
+            if any(count < 0 for count in counts.values()):
+                raise ValueError(f"Negative token counts: {counts}")
+
             if model_usage.model in CUSTOM_PRICING.keys():
 
                 prompt_cost, completion_cost = cost_per_token(
@@ -146,11 +160,15 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 reasoning_tokens = model_usage.usage.reasoning_tokens or 0
 
                 if input_tokens == total_tokens - output_tokens:
-                    # (openai) input tokens count includes cache read tokens
-                    if cache_read_input_tokens > input_tokens:
+                    # Legacy inclusive input counts contain both cache categories.
+                    if (
+                        cache_read_input_tokens + cache_write_input_tokens
+                        > input_tokens
+                    ):
                         raise CostAccountingError(
-                            f"Model {model_usage.model}: cache read tokens "
-                            f"({cache_read_input_tokens}) exceed input tokens "
+                            f"Model {model_usage.model}: cache read/write tokens "
+                            f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
+                            f"exceed input tokens "
                             f"({input_tokens}) but total_tokens ({total_tokens}) "
                             f"excludes them, so the usage convention is ambiguous. "
                             f"Re-emit usage with total_tokens including cache "
@@ -187,7 +205,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
 
                 else:
                     raise ValueError(
-                        f"Model usage token counts don't follow expected pattern."
+                        "Model usage token counts don't follow expected pattern."
                     )
 
                 prompt_tokens_wrapper = PromptTokensDetailsWrapper(
@@ -214,14 +232,18 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                     f"Model {model_usage.model}: negative cost "
                     f"(prompt {prompt_cost}, completion {completion_cost})."
                 )
-            if total_cost is not None:
-                total_cost += prompt_cost + completion_cost
+            if not isfinite(prompt_cost) or not isfinite(completion_cost):
+                raise ValueError(
+                    f"Non-finite cost (prompt {prompt_cost}, completion {completion_cost})"
+                )
+            total_cost += prompt_cost + completion_cost
+            if not isfinite(total_cost):
+                raise ValueError("Non-finite aggregate cost")
         except CostAccountingError:
             raise
         except Exception as e:
-            total_cost = None
-            logger.warning(
-                f"Problem calculating cost for model {model_usage.model}: {e}"
-            )
-            break
+            raise CostAccountingError(
+                f"Problem calculating cost for model {model_usage.model}, "
+                f"usage {model_usage.usage.model_dump(exclude_none=True)}: {e}"
+            ) from e
     return total_cost

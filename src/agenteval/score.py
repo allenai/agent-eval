@@ -14,7 +14,12 @@ from inspect_ai.log import (
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from .config import Task
-from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
+from .log import (
+    CostAccountingError,
+    ModelUsageWithName,
+    collect_model_usage,
+    compute_model_cost,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,9 +231,14 @@ def process_eval_logs(
             errors.append(f"No metrics found for task {task_name}.")
             continue
         model_usages = get_model_usages(log)
-        model_costs: list[float | None] = [
-            compute_model_cost(usages) for usages in model_usages
-        ]
+        model_costs: list[float | None] = []
+        for sample_index, usages in enumerate(model_usages, start=1):
+            try:
+                model_costs.append(compute_model_cost(usages))
+            except CostAccountingError as e:
+                raise CostAccountingError(
+                    f"Task {task_name}, sample {sample_index}: {e}"
+                ) from e
         has_model_usages = any(len(usages) > 0 for usages in model_usages)
         results.append(
             TaskResult(

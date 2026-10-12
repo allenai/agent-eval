@@ -59,3 +59,9 @@ price-map fetch. The scoring CLI requires this setting and calls
 callers must initialize their pricing map before computing costs. Tests set the
 environment variable in `conftest.py` before scoring imports and use the bundled
 map from the pinned scoring dependency.
+
+Scoring raises `CostAccountingError` for invalid token counts, unresolved usage
+patterns, missing model prices, and negative or non-finite costs. The error
+identifies the task, sample position, and model; score artifacts are not written
+when cost accounting fails. Direct library callers should propagate the error
+rather than replace it with a partial, zero, or missing cost.

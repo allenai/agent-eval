@@ -1,12 +1,7 @@
 """Tests for compute_model_cost token-count conventions."""
 
 import pytest
-from inspect_ai.log import (  # type: ignore[attr-defined]
-    ModelEvent,
-    SpanBeginEvent,
-    SpanEndEvent,
-)
-from inspect_ai.model import GenerateConfig, ModelOutput, ModelUsage
+from inspect_ai.model import ModelUsage
 from litellm import model_cost
 from litellm.types.utils import Usage
 
@@ -14,14 +9,13 @@ import agenteval.log as log_module
 from agenteval.log import (
     CostAccountingError,
     ModelUsageWithName,
-    collect_model_usage,
     compute_model_cost,
 )
 
 PROXY_MODEL = "osd-proxy/gpt-5.6-sol"
 
 
-def _cost(model: str, **usage) -> float | None:
+def _cost(model: str, **usage) -> float:
     return compute_model_cost(
         [ModelUsageWithName(model=model, usage=ModelUsage(**usage))]
     )
@@ -96,6 +90,64 @@ def test_invalid_model_usage_fails_aggregate_cost():
     for usages in ([valid, invalid], [invalid, valid]):
         with pytest.raises(CostAccountingError):
             compute_model_cost(usages)
+
+
+@pytest.mark.parametrize("cache_read,cache_write", [(800, 800), (0, 1001)])
+def test_combined_cache_counts_exceeding_input_fail_loudly(cache_read, cache_write):
+    with pytest.raises(CostAccountingError, match="exceed input tokens"):
+        _cost(
+            "gpt-5.6-sol",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            input_tokens_cache_read=cache_read,
+            input_tokens_cache_write=cache_write,
+        )
+
+
+def test_unknown_model_price_fails_loudly():
+    with pytest.raises(CostAccountingError, match="model unknown-price-model, usage"):
+        _cost(
+            "unknown-price-model",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+        )
+
+
+def test_unrecognized_token_pattern_fails_loudly():
+    with pytest.raises(CostAccountingError, match="don't follow expected pattern"):
+        _cost(
+            "gpt-5.6-sol",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1600,
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "input_tokens_cache_read",
+        "input_tokens_cache_write",
+        "reasoning_tokens",
+    ],
+)
+def test_negative_token_counts_fail_loudly(field):
+    usage = dict(input_tokens=1000, output_tokens=500, total_tokens=1500)
+    usage[field] = -1
+    with pytest.raises(CostAccountingError, match="Negative token counts"):
+        _cost("gpt-5.6-sol", **usage)
+
+
+@pytest.mark.parametrize("cost", [-1.0, float("nan"), float("inf")])
+def test_invalid_price_result_fails_loudly(monkeypatch, cost):
+    monkeypatch.setattr(log_module, "cost_per_token", lambda **_: (cost, 0.0))
+    with pytest.raises(CostAccountingError):
+        _cost("gpt-5.6-sol", input_tokens=1000, output_tokens=500, total_tokens=1500)
 
 
 def test_anthropic_style_input_excludes_cache_read_and_write():
