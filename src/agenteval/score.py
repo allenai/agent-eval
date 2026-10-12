@@ -100,6 +100,30 @@ class TaskResult(BaseModel):
     """List of model costs per sample. Computed from `model_usages`."""
 
 
+def find_cost_problems(
+    results: list[TaskResult] | None, allow_missing: bool = False
+) -> list[str]:
+    """Describe per-sample costs that must block publication.
+
+    Negative costs are always rejected. Missing costs are rejected unless
+    `allow_missing`, for submissions with no token usage to price.
+    """
+    problems = []
+    for res in results or []:
+        costs = res.model_costs
+        if costs is None:
+            if not allow_missing:
+                problems.append(f"{res.task_name}: no model costs")
+            continue
+        negative = [i for i, c in enumerate(costs) if c is not None and c < 0]
+        if negative:
+            problems.append(f"{res.task_name}: negative cost at samples {negative}")
+        missing = [i for i, c in enumerate(costs) if c is None]
+        if missing and not allow_missing:
+            problems.append(f"{res.task_name}: missing cost at samples {missing}")
+    return problems
+
+
 def get_metrics(log: EvalLog) -> list[Metric]:
     """Extract metrics from an evaluation log."""
     metrics_list = []

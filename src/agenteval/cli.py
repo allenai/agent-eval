@@ -481,11 +481,21 @@ cli.add_command(backfill_command)
     required=False,
     help="HuggingFace repo",
 )
-def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
+@click.option(
+    "--allow-missing-costs",
+    multiple=True,
+    help="Submission URL allowed to publish without per-sample costs "
+    "(e.g. a product with no token usage). Repeatable.",
+)
+def publish_lb_command(
+    repo_id: str,
+    submission_urls: tuple[str, ...],
+    allow_missing_costs: tuple[str, ...] = (),
+):
     from .leaderboard.models import LeaderboardSubmission, Readme
     from .leaderboard.schema_generator import load_dataset_features
     from .leaderboard.upload import compress_model_usages
-    from .score import TaskResults
+    from .score import TaskResults, find_cost_problems
 
     if not submission_urls:
         click.echo("At least one submission URL is required.")
@@ -584,6 +594,14 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
+            cost_problems = find_cost_problems(
+                results, allow_missing=submission_url in allow_missing_costs
+            )
+            if cost_problems:
+                click.echo(f"Refusing to publish {submission_path}: invalid costs")
+                for problem in cost_problems:
+                    click.echo(f"  - {problem}")
+                sys.exit(1)
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
