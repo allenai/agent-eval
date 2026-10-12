@@ -48,11 +48,21 @@ def test_proxy_usage_with_cache_in_total_prices_cache_on_top():
     assert cost == pytest.approx(expected)
 
 
-def test_openai_style_input_includes_cache_read():
+def test_legacy_inclusive_cached_input_requires_contract_normalization():
+    with pytest.raises(CostAccountingError, match="Ambiguous cache accounting"):
+        _cost(
+            "gpt-5.6-sol",
+            input_tokens=60_000,
+            output_tokens=1_000,
+            total_tokens=61_000,
+            input_tokens_cache_read=50_000,
+        )
+    # Confirmed inclusive input normalizes by subtracting caches from input,
+    # retaining the total. Do not add caches to an already-inclusive total.
     input_rate, cache_rate, output_rate = _rates("gpt-5.6-sol")
     cost = _cost(
         "gpt-5.6-sol",
-        input_tokens=60_000,
+        input_tokens=10_000,
         output_tokens=1_000,
         total_tokens=61_000,
         input_tokens_cache_read=50_000,
@@ -214,7 +224,7 @@ def test_invalid_active_context_price_fails_loudly(monkeypatch, field, rate):
         with pytest.raises(CostAccountingError, match=tier_field):
             _cost(
                 model,
-                input_tokens=273000,
+                input_tokens=72000,
                 output_tokens=500,
                 total_tokens=273500,
                 input_tokens_cache_read=200000,
@@ -389,10 +399,10 @@ def test_custom_cached_model_requires_price_for_cache_writes():
         )
 
 
-def test_custom_cached_model_without_cache_writes_keeps_read_discount():
+def test_custom_cached_model_normalized_input_keeps_read_discount():
     cost = _cost(
         "moonshotai/kimi-k2.5-0127",
-        input_tokens=1000,
+        input_tokens=800,
         output_tokens=500,
         total_tokens=1500,
         input_tokens_cache_read=200,
@@ -446,6 +456,20 @@ def test_cache_categories_are_priced_once(
 
     monkeypatch.setattr(log_module, "cost_per_token", capture)
     model = "claude-sonnet-4-5"
+    if input_tokens == 8000:
+        with pytest.raises(CostAccountingError, match="Ambiguous cache accounting"):
+            _cost(
+                model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                input_tokens_cache_read=5000,
+                input_tokens_cache_write=2000,
+                reasoning_tokens=reasoning_tokens,
+            )
+        assert captured == []
+        input_tokens -= 7000
+        output_tokens += reasoning_tokens
     input_rate, read_rate, output_rate = _rates(model)
     write_rate = model_cost[model]["cache_creation_input_token_cost"]
     cost = _cost(
@@ -543,6 +567,19 @@ def test_custom_cached_models_bill_cache_categories_once(
     output_tokens,
     reasoning_tokens,
 ):
+    if input_tokens == 8000:
+        with pytest.raises(CostAccountingError, match="Ambiguous cache accounting"):
+            _cost(
+                model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=8500,
+                input_tokens_cache_read=5000,
+                input_tokens_cache_write=2000,
+                reasoning_tokens=reasoning_tokens,
+            )
+        input_tokens -= 7000
+        output_tokens += reasoning_tokens
     assert _cost(
         model,
         input_tokens=input_tokens,
@@ -645,3 +682,26 @@ def test_custom_pricing_requires_reported_consistent_total(total_tokens):
         usage["total_tokens"] = total_tokens
     with pytest.raises(CostAccountingError, match="don't follow expected pattern"):
         _cost("grok-3", **usage)
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["gpt-5.6-sol", PROXY_MODEL, "deepseek/deepseek-v4pro-preview"],
+)
+@pytest.mark.parametrize("cache_read,cache_write", [(200, 0), (0, 200), (100, 100)])
+@pytest.mark.parametrize("reasoning", [0, 300])
+def test_cache_excluded_from_input_and_total_cannot_be_undercharged(
+    model, cache_read, cache_write, reasoning
+):
+    # The same counts also describe legacy inclusive caches. Arithmetic cannot
+    # establish which input contract produced the record, even for known models.
+    with pytest.raises(CostAccountingError, match="Ambiguous cache accounting"):
+        _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500 + reasoning,
+            input_tokens_cache_read=cache_read,
+            input_tokens_cache_write=cache_write,
+            reasoning_tokens=reasoning,
+        )

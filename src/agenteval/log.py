@@ -111,6 +111,86 @@ def _validate_price(rate: Any, field: str) -> float:
     return rate
 
 
+def normalize_model_usage(usage: ModelUsage) -> tuple[int, int]:
+    """Validate usage and return total prompt/completion counts without pricing."""
+    input_tokens = usage.input_tokens
+    output_tokens = usage.output_tokens
+    total_tokens = usage.total_tokens
+    cache_read_input_tokens = usage.input_tokens_cache_read or 0
+    cache_write_input_tokens = usage.input_tokens_cache_write or 0
+    reasoning_tokens = usage.reasoning_tokens or 0
+    counts = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "input_tokens_cache_read": cache_read_input_tokens,
+        "input_tokens_cache_write": cache_write_input_tokens,
+        "reasoning_tokens": reasoning_tokens,
+    }
+    if any(count < 0 for count in counts.values()):
+        raise ValueError(f"Negative token counts: {counts}")
+
+    billable_counts = set()
+    if input_tokens == total_tokens - output_tokens:
+        # Legacy inclusive input counts contain both cache categories.
+        if cache_read_input_tokens + cache_write_input_tokens > input_tokens:
+            raise ValueError(
+                f"Cache read/write tokens "
+                f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
+                f"exceed input tokens "
+                f"({input_tokens}) but total_tokens ({total_tokens}) "
+                f"excludes them, so the usage convention is ambiguous. "
+                f"Re-emit usage with total_tokens including cache "
+                f"reads/writes (Inspect ModelUsage convention)."
+            )
+        billable_counts.add((input_tokens, output_tokens))
+
+    # (gemini) output tokens count excludes reasoning tokens
+    if input_tokens == total_tokens - output_tokens - reasoning_tokens:
+        billable_counts.add((input_tokens, output_tokens + reasoning_tokens))
+
+    # (anthropic) input tokens count excludes cache read and cache write tokens
+    if (
+        input_tokens
+        == total_tokens
+        - output_tokens
+        - cache_read_input_tokens
+        - cache_write_input_tokens
+    ):
+        billable_counts.add(
+            (
+                input_tokens + cache_read_input_tokens + cache_write_input_tokens,
+                output_tokens,
+            )
+        )
+
+    if not billable_counts:
+        raise ValueError("Model usage token counts don't follow expected pattern.")
+    if len(billable_counts) > 1:
+        raise ValueError(
+            "Ambiguous usage convention: cache-exclusive input and separate "
+            "reasoning imply different billable prompt/completion counts. "
+            "Clarify token accounting before scoring."
+        )
+    prompt_tokens, completion_tokens = billable_counts.pop()
+
+    if cache_read_input_tokens + cache_write_input_tokens > prompt_tokens:
+        raise ValueError("Cache categories exceed total prompt tokens")
+    if reasoning_tokens > completion_tokens:
+        raise ValueError("Reasoning tokens exceed total completion tokens")
+    if (
+        cache_read_input_tokens + cache_write_input_tokens
+        and prompt_tokens == input_tokens
+    ):
+        raise ValueError(
+            "Ambiguous cache accounting: token totals do not establish whether "
+            "input includes cache reads/writes or both input and total omit them. "
+            "Confirm the usage contract and normalize to Inspect ModelUsage: "
+            "input_tokens excludes cache reads/writes; total_tokens includes them."
+        )
+    return prompt_tokens, completion_tokens
+
+
 def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
@@ -119,77 +199,11 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     total_cost = 0.0
     for model_usage in model_usages:
-        input_tokens = model_usage.usage.input_tokens
-        output_tokens = model_usage.usage.output_tokens
-
         try:
-            total_tokens = model_usage.usage.total_tokens
+            prompt_tokens, completion_tokens = normalize_model_usage(model_usage.usage)
             cache_read_input_tokens = model_usage.usage.input_tokens_cache_read or 0
             cache_write_input_tokens = model_usage.usage.input_tokens_cache_write or 0
             reasoning_tokens = model_usage.usage.reasoning_tokens or 0
-            counts = {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total_tokens,
-                "input_tokens_cache_read": cache_read_input_tokens,
-                "input_tokens_cache_write": cache_write_input_tokens,
-                "reasoning_tokens": reasoning_tokens,
-            }
-            if any(count < 0 for count in counts.values()):
-                raise ValueError(f"Negative token counts: {counts}")
-
-            billable_counts = set()
-            if input_tokens == total_tokens - output_tokens:
-                # Legacy inclusive input counts contain both cache categories.
-                if cache_read_input_tokens + cache_write_input_tokens > input_tokens:
-                    raise ValueError(
-                        f"Model {model_usage.model}: cache read/write tokens "
-                        f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
-                        f"exceed input tokens "
-                        f"({input_tokens}) but total_tokens ({total_tokens}) "
-                        f"excludes them, so the usage convention is ambiguous. "
-                        f"Re-emit usage with total_tokens including cache "
-                        f"reads/writes (Inspect ModelUsage convention)."
-                    )
-                billable_counts.add((input_tokens, output_tokens))
-
-            # (gemini) output tokens count excludes reasoning tokens
-            if input_tokens == total_tokens - output_tokens - reasoning_tokens:
-                billable_counts.add((input_tokens, output_tokens + reasoning_tokens))
-
-            # (anthropic) input tokens count excludes cache read and cache write tokens
-            if (
-                input_tokens
-                == total_tokens
-                - output_tokens
-                - cache_read_input_tokens
-                - cache_write_input_tokens
-            ):
-                billable_counts.add(
-                    (
-                        input_tokens
-                        + cache_read_input_tokens
-                        + cache_write_input_tokens,
-                        output_tokens,
-                    )
-                )
-
-            if not billable_counts:
-                raise ValueError(
-                    "Model usage token counts don't follow expected pattern."
-                )
-            if len(billable_counts) > 1:
-                raise ValueError(
-                    "Ambiguous usage convention: cache-exclusive input and separate "
-                    "reasoning imply different billable prompt/completion counts. "
-                    "Clarify token accounting before scoring."
-                )
-            prompt_tokens, completion_tokens = billable_counts.pop()
-
-            if cache_read_input_tokens + cache_write_input_tokens > prompt_tokens:
-                raise ValueError("Cache categories exceed total prompt tokens")
-            if reasoning_tokens > completion_tokens:
-                raise ValueError("Reasoning tokens exceed total completion tokens")
             text_tokens = (
                 prompt_tokens - cache_read_input_tokens - cache_write_input_tokens
             )

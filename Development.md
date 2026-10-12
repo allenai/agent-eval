@@ -80,8 +80,18 @@ when cost accounting fails. Direct library callers should propagate the error
 rather than replace it with a partial, zero, or missing cost.
 
 All pricing paths, including custom prices, reconcile the same supported usage
-patterns before billing. Cache reads/writes are removed from inclusive input
-or added to exclusive input and priced once at their category rates. Reasoning
+patterns before billing. Cache reads/writes are added to exclusive input and
+priced once at their category rates. Cache-bearing records whose arithmetic
+assumes inclusive input are rejected: the same counts could come from a proxy
+that excludes caches from both input and total, causing silent undercharging.
+Neither a known model name nor a nonnegative cost establishes the usage contract.
+After confirming the producer's contract, normalize to Inspect ModelUsage:
+`input_tokens` excludes caches and `total_tokens` includes them. For confirmed
+legacy inclusive input, subtract caches from input and retain total. For confirmed
+cache-excluding input and total, retain input and add caches to total. Do not
+blindly apply either transformation. Valid historical cached logs may therefore
+need normalization before rescoring or publication; already-published results
+are not recomputed by this change. Reasoning
 is included in completion counts once, whether already in output or recorded
 separately. Custom tables with only input/output rates reject reported cache
 usage until cache rates are supplied; a missing rate is not a zero rate or an
@@ -96,6 +106,10 @@ library callers still receive `CostAccountingError`.
 
 `agenteval lb publish` validates saved costs before uploading any submission.
 Negative/non-finite costs, empty results, and truncated cost lists are rejected.
+Recorded usage is validated with the same price-independent accounting checks
+as scoring, so a positive saved cost cannot conceal ambiguous or inconsistent
+usage from an older scorer. Publication does not recalculate saved costs against
+current prices or modify already-published results.
 Missing costs require `--allow-missing-costs <submission-url>` and no reported
 model usage for that task (for example, a closed product without token counts).
 This flag cannot bypass failed accounting when token usage was reported. Its URL

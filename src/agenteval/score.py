@@ -20,6 +20,7 @@ from .log import (
     ModelUsageWithName,
     collect_model_usage,
     compute_model_cost,
+    normalize_model_usage,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,16 @@ def find_cost_problems(
                     f"{res.task_name}: {usage_count} sample usages for "
                     f"{sample_count} samples"
                 )
+        for sample_index, usages in enumerate(res.model_usages or [], start=1):
+            for model_usage in usages:
+                try:
+                    normalize_model_usage(model_usage.usage)
+                except ValueError as e:
+                    problems.append(
+                        f"{res.task_name}: sample {sample_index}, model "
+                        f"{model_usage.model}, usage "
+                        f"{model_usage.usage.model_dump(exclude_none=True)}: {e}"
+                    )
         if sample_count == 0:
             problems.append(f"{res.task_name}: no samples")
         if costs is not None:

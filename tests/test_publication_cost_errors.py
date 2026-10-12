@@ -69,6 +69,48 @@ def test_publish_validates_whole_batch_before_upload(
     expected_success,
     current_schema,
 ):
+    _assert_publish_batch(
+        monkeypatch,
+        costs,
+        allow_missing,
+        has_usage,
+        sample_count,
+        expected_success,
+        current_schema,
+    )
+
+
+@pytest.mark.parametrize("allow_missing", [False, True])
+def test_publish_rejects_positive_saved_cost_with_ambiguous_caches(
+    monkeypatch, allow_missing
+):
+    _assert_publish_batch(
+        monkeypatch,
+        [0.1],
+        allow_missing,
+        True,
+        1,
+        False,
+        True,
+        usage=ModelUsage(
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            input_tokens_cache_read=200,
+        ),
+    )
+
+
+def _assert_publish_batch(
+    monkeypatch,
+    costs,
+    allow_missing,
+    has_usage,
+    sample_count,
+    expected_success,
+    current_schema,
+    usage=None,
+):
     config = EvalConfig(
         suite_config=SuiteConfig(
             name="test",
@@ -133,7 +175,8 @@ def test_publish_validates_whole_batch_before_upload(
                     [
                         ModelUsageWithName(
                             model="gpt-5.6-sol",
-                            usage=ModelUsage(
+                            usage=usage
+                            or ModelUsage(
                                 input_tokens=1000, output_tokens=500, total_tokens=1500
                             ),
                         )

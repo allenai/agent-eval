@@ -131,3 +131,27 @@ def test_sample_count_survives_json_round_trip_without_usage():
     assert saved.sample_count == 2
     assert saved.model_usages is None
     assert find_cost_problems([saved]) == []
+
+
+@pytest.mark.parametrize("allow_missing", [False, True])
+def test_positive_saved_cost_cannot_hide_ambiguous_cache_usage(allow_missing):
+    result = _result([0.1])
+    result.model_usages = [
+        [
+            ModelUsageWithName(
+                model="gpt-5.6-sol",
+                usage=ModelUsage(
+                    input_tokens=1000,
+                    output_tokens=500,
+                    total_tokens=1500,
+                    input_tokens_cache_read=200,
+                ),
+            )
+        ]
+    ]
+    saved = TaskResult.model_validate_json(result.model_dump_json())
+    problems = find_cost_problems([saved], allow_missing=allow_missing)
+    assert any(
+        "sample 1" in problem and "Ambiguous cache accounting" in problem
+        for problem in problems
+    )
