@@ -232,6 +232,44 @@ def test_custom_cached_model_cannot_have_negative_uncached_input():
         )
 
 
+def test_custom_cached_model_requires_price_for_cache_writes():
+    with pytest.raises(
+        CostAccountingError,
+        match="Missing required price: cache_write_input_token_cost",
+    ):
+        _cost(
+            "moonshotai/kimi-k2.5-0127",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1600,
+            input_tokens_cache_read=200,
+            input_tokens_cache_write=100,
+        )
+
+
+def test_custom_cached_model_without_cache_writes_keeps_read_discount():
+    cost = _cost(
+        "moonshotai/kimi-k2.5-0127",
+        input_tokens=1000,
+        output_tokens=500,
+        total_tokens=1500,
+        input_tokens_cache_read=200,
+    )
+    assert cost == pytest.approx(800 * 6e-7 + 200 * 1e-7 + 500 * 3e-6)
+
+
+def test_custom_cached_model_explicit_zero_cache_write_price_is_valid():
+    cost = _cost(
+        "deepseek/deepseek-v4pro-preview",
+        input_tokens=1000,
+        output_tokens=500,
+        total_tokens=1800,
+        input_tokens_cache_read=200,
+        input_tokens_cache_write=100,
+    )
+    assert cost == pytest.approx(1000 * 4.35e-7 + 200 * 3.625e-9 + 500 * 8.7e-7)
+
+
 def test_anthropic_style_input_excludes_cache_read_and_write():
     model = "claude-sonnet-4-5"
     input_rate, cache_rate, output_rate = _rates(model)

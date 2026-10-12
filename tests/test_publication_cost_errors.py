@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -42,20 +43,24 @@ def test_unmatched_cost_allowance_fails_before_network_access(monkeypatch, allow
 
 
 @pytest.mark.parametrize(
-    "costs,allow_missing,has_usage,expected_success",
+    "costs,allow_missing,has_usage,sample_count,expected_success",
     [
-        ([-0.1], False, False, False),
-        ([-0.1], True, False, False),
-        (None, False, False, False),
-        ([], False, False, False),
-        ([None], False, False, False),
-        ([None], True, True, False),
-        ([0.1], False, False, True),
-        (None, True, False, True),
+        ([-0.1], False, False, 1, False),
+        ([-0.1], True, False, 1, False),
+        (None, False, False, 1, False),
+        ([], False, False, 1, False),
+        ([None], False, False, 1, False),
+        ([None], True, True, 1, False),
+        ([0.1], False, False, 1, True),
+        (None, True, False, 1, True),
+        ([0.1], False, False, 2, False),
+        ([0.1], True, False, 2, False),
+        ([0.1], False, False, None, False),
+        (None, True, False, None, True),
     ],
 )
 def test_publish_validates_whole_batch_before_upload(
-    monkeypatch, costs, allow_missing, has_usage, expected_success
+    monkeypatch, costs, allow_missing, has_usage, sample_count, expected_success
 ):
     config = EvalConfig(
         suite_config=SuiteConfig(
@@ -81,6 +86,14 @@ def test_publish_validates_whole_batch_before_upload(
         f"hf://datasets/example/submissions/{path}" for path in [good_path, bad_path]
     ]
     api = Mock()
+    uploaded_counts = []
+
+    def upload(*, folder_path, **_):
+        for path in [good_path, bad_path]:
+            payload = json.loads((Path(folder_path) / f"{path}.json").read_text())
+            uploaded_counts.append(payload["results"][0]["sample_count"])
+
+    api.upload_folder.side_effect = upload
     monkeypatch.setattr(huggingface_hub, "HfApi", lambda: api)
     features = load_dataset_features()
     monkeypatch.setattr(
@@ -102,6 +115,7 @@ def test_publish_validates_whole_batch_before_upload(
             result = TaskResult(
                 task_name="task_test",
                 metrics=[Metric(name="accuracy", value=1.0)],
+                sample_count=1 if path == good_path else sample_count,
                 model_costs=[0.1] if path == good_path else costs,
             )
             if path == bad_path and has_usage:
@@ -131,6 +145,7 @@ def test_publish_validates_whole_batch_before_upload(
     if expected_success:
         assert result.exit_code == 0, result.output
         api.upload_folder.assert_called_once()
+        assert uploaded_counts == [1, sample_count]
     else:
         assert result.exit_code != 0
         assert "Refusing to publish 1.0.0/test/second" in result.output

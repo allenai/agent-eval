@@ -99,6 +99,9 @@ class TaskResult(BaseModel):
     metrics: list[Metric]
     """List of metrics. Derived from Inspect `EvalLog.results.scores`."""
 
+    sample_count: int | None = Field(default=None, ge=0)
+    """Number of samples read from the log, including samples without model usage."""
+
     model_usages: list[list[ModelUsageWithName]] | None = None
     """List of model usage lists per sample. Derived from Inspect `EvalLog.samples`."""
 
@@ -121,15 +124,28 @@ def find_cost_problems(
         costs = res.model_costs
         has_usage = bool(res.model_usages and any(res.model_usages))
         allow_missing_here = allow_missing and not has_usage
-        if (
-            costs is not None
-            and res.model_usages is not None
-            and len(costs) != len(res.model_usages)
-        ):
-            problems.append(
-                f"{res.task_name}: {len(costs)} costs for "
-                f"{len(res.model_usages)} sample usages"
-            )
+        sample_count = res.sample_count
+        if res.model_usages is not None:
+            usage_count = len(res.model_usages)
+            if sample_count is None:
+                sample_count = usage_count
+            elif sample_count != usage_count:
+                problems.append(
+                    f"{res.task_name}: {usage_count} sample usages for "
+                    f"{sample_count} samples"
+                )
+        if sample_count == 0:
+            problems.append(f"{res.task_name}: no samples")
+        if costs is not None:
+            if sample_count is None:
+                problems.append(
+                    f"{res.task_name}: sample count unavailable; "
+                    "cannot verify cost coverage. Rescore from the evaluation logs."
+                )
+            elif len(costs) != sample_count:
+                problems.append(
+                    f"{res.task_name}: {len(costs)} costs for {sample_count} samples"
+                )
         if not costs:
             if not allow_missing_here:
                 problems.append(f"{res.task_name}: no model costs")
@@ -264,6 +280,7 @@ def process_eval_logs(
                 task_name=task_name,
                 eval_spec=eval_spec,
                 metrics=metrics,
+                sample_count=len(model_usages),
                 # Set to None to avoid incorrect pyarrow model usage type inference
                 model_usages=model_usages if has_model_usages else None,
                 model_costs=model_costs if has_model_usages else None,

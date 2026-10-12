@@ -140,6 +140,10 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 cache_write_tokens = model_usage.usage.input_tokens_cache_write or 0
                 cache_write_cost = pricing.cache_write_input_token_cost
                 if cache_write_cost is None:
+                    if cache_write_tokens:
+                        raise ValueError(
+                            "Missing required price: cache_write_input_token_cost"
+                        )
                     text_tokens = input_tokens - cache_read_tokens
                     cache_write_cost = 0
                 else:

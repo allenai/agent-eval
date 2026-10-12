@@ -6,7 +6,12 @@ from agenteval.score import TaskResult, find_cost_problems
 
 
 def _result(costs):
-    return TaskResult(task_name="t", metrics=[], model_costs=costs)
+    return TaskResult(
+        task_name="t",
+        metrics=[],
+        sample_count=max(len(costs or []), 1),
+        model_costs=costs,
+    )
 
 
 def test_valid_costs_pass():
@@ -40,7 +45,10 @@ def test_non_finite_cost_rejected_even_when_missing_allowed(cost):
 
 
 def test_empty_costs_and_results_rejected():
-    assert find_cost_problems([_result([])]) == ["t: no model costs"]
+    assert find_cost_problems([_result([])]) == [
+        "t: 0 costs for 1 samples",
+        "t: no model costs",
+    ]
     assert find_cost_problems([]) == ["No task results"]
     assert find_cost_problems(None, allow_missing=True) == ["No task results"]
 
@@ -64,13 +72,60 @@ def test_missing_cost_override_cannot_hide_reported_usage():
 
 def test_truncated_costs_rejected():
     result = _result([0.1])
+    result.sample_count = None
     result.model_usages = [[], []]
-    assert find_cost_problems([result]) == ["t: 1 costs for 2 sample usages"]
+    assert find_cost_problems([result]) == ["t: 1 costs for 2 samples"]
 
 
 def test_empty_costs_cannot_bypass_sample_coverage_check():
     result = _result([])
+    result.sample_count = None
     result.model_usages = [[], []]
     assert find_cost_problems([result], allow_missing=True) == [
-        "t: 0 costs for 2 sample usages"
+        "t: 0 costs for 2 samples"
     ]
+
+
+@pytest.mark.parametrize("costs", [[], [0.1], [0.1, 0.2, 0.3]])
+def test_cost_coverage_checked_without_usage_records(costs):
+    result = _result(costs)
+    result.sample_count = 2
+    assert result.model_usages is None
+    assert f"t: {len(costs)} costs for 2 samples" in find_cost_problems(
+        [result], allow_missing=True
+    )
+
+
+def test_legacy_costs_without_sample_count_or_usages_require_rescoring():
+    result = _result([0.1])
+    result.sample_count = None
+    assert any(
+        "cannot verify cost coverage" in problem
+        for problem in find_cost_problems([result], allow_missing=True)
+    )
+
+
+def test_sample_count_must_agree_with_usage_records():
+    result = _result([0.1, 0.2])
+    result.model_usages = [[]]
+    assert find_cost_problems([result]) == ["t: 1 sample usages for 2 samples"]
+
+
+def test_recorded_empty_task_cannot_publish_even_with_missing_cost_allowance():
+    result = _result(None)
+    result.sample_count = 0
+    assert find_cost_problems([result], allow_missing=True) == ["t: no samples"]
+
+
+def test_legacy_intentionally_unavailable_costs_remain_allowed():
+    result = _result(None)
+    result.sample_count = None
+    assert find_cost_problems([result], allow_missing=True) == []
+
+
+def test_sample_count_survives_json_round_trip_without_usage():
+    result = _result([0.1, 0.2])
+    saved = TaskResult.model_validate_json(result.model_dump_json())
+    assert saved.sample_count == 2
+    assert saved.model_usages is None
+    assert find_cost_problems([saved]) == []
