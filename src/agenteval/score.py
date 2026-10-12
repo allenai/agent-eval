@@ -2,6 +2,7 @@
 
 import logging
 from functools import cached_property
+from math import isfinite
 from typing import Any
 
 from inspect_ai.log import (
@@ -14,7 +15,13 @@ from inspect_ai.log import (
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from .config import Task
-from .log import ModelUsageWithName, collect_model_usage, compute_model_cost
+from .log import (
+    CostAccountingError,
+    ModelUsageWithName,
+    collect_model_usage,
+    compute_model_cost,
+    normalize_model_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +105,60 @@ class TaskResult(BaseModel):
 
     model_costs: list[float | None] | None = None
     """List of model costs per sample. Computed from `model_usages`."""
+
+
+def find_cost_problems(
+    results: list[TaskResult] | None, allow_missing: bool = False
+) -> list[str]:
+    """Describe per-sample costs that must block publication.
+
+    Invalid costs are always rejected. Missing costs can be explicitly allowed
+    only when there is no reported model usage to price.
+    """
+    problems = []
+    if not results:
+        return ["No task results"]
+    for res in results:
+        costs = res.model_costs
+        has_usage = bool(res.model_usages and any(res.model_usages))
+        allow_missing_here = allow_missing and not has_usage
+        sample_count = len(res.model_usages) if res.model_usages is not None else None
+        for sample_index, usages in enumerate(res.model_usages or [], start=1):
+            for model_usage in usages:
+                try:
+                    normalize_model_usage(model_usage.usage)
+                except ValueError as e:
+                    problems.append(
+                        f"{res.task_name}: sample {sample_index}, model "
+                        f"{model_usage.model}, usage "
+                        f"{model_usage.usage.model_dump(exclude_none=True)}: {e}"
+                    )
+        if costs is not None:
+            if sample_count is None:
+                problems.append(
+                    f"{res.task_name}: sample count unavailable; "
+                    "cannot verify cost coverage. Rescore from the evaluation logs."
+                )
+            elif len(costs) != sample_count:
+                problems.append(
+                    f"{res.task_name}: {len(costs)} costs for {sample_count} samples"
+                )
+        if not costs:
+            if not allow_missing_here:
+                problems.append(f"{res.task_name}: no model costs")
+            continue
+        negative = [i for i, c in enumerate(costs, start=1) if c is not None and c < 0]
+        if negative:
+            problems.append(f"{res.task_name}: negative cost at samples {negative}")
+        non_finite = [
+            i for i, c in enumerate(costs, start=1) if c is not None and not isfinite(c)
+        ]
+        if non_finite:
+            problems.append(f"{res.task_name}: non-finite cost at samples {non_finite}")
+        missing = [i for i, c in enumerate(costs, start=1) if c is None]
+        if missing and not allow_missing_here:
+            problems.append(f"{res.task_name}: missing cost at samples {missing}")
+    return problems
 
 
 def get_metrics(log: EvalLog) -> list[Metric]:
@@ -202,9 +263,19 @@ def process_eval_logs(
             errors.append(f"No metrics found for task {task_name}.")
             continue
         model_usages = get_model_usages(log)
-        model_costs: list[float | None] = [
-            compute_model_cost(usages) for usages in model_usages
-        ]
+        model_costs: list[float | None] = []
+        for sample_index, usages in enumerate(model_usages, start=1):
+            try:
+                model_costs.append(compute_model_cost(usages))
+            except CostAccountingError as e:
+                prior_errors = (
+                    "\nOther log processing errors:\n" + "\n".join(errors)
+                    if errors
+                    else ""
+                )
+                raise CostAccountingError(
+                    f"Task {task_name}, sample {sample_index}: {e}{prior_errors}"
+                ) from e
         has_model_usages = any(len(usages) > 0 for usages in model_usages)
         results.append(
             TaskResult(

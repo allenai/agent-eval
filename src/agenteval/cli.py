@@ -125,6 +125,7 @@ def cli():
 def score_command(
     log_dir: str,
 ):
+    from .log import CostAccountingError
     from .score import TaskResults, process_eval_logs
     from .summary import compute_summary_statistics
 
@@ -157,10 +158,13 @@ def score_command(
     with open(os.path.join(log_dir, EVAL_CONFIG_FILENAME), "r", encoding="utf-8") as f:
         eval_config = EvalConfig.model_validate_json(f.read())
 
-    log_processing_outcome = process_eval_logs(
-        log_dir,
-        reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
-    )
+    try:
+        log_processing_outcome = process_eval_logs(
+            log_dir,
+            reference_tasks=eval_config.suite_config.get_tasks(eval_config.split),
+        )
+    except CostAccountingError as e:
+        raise click.ClickException(str(e)) from e
 
     if log_processing_outcome.errors:
         click.echo("Errors processing logs")
@@ -481,15 +485,32 @@ cli.add_command(backfill_command)
     required=False,
     help="HuggingFace repo",
 )
-def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
+@click.option(
+    "--allow-missing-costs",
+    multiple=True,
+    help="Submission URL allowed to publish without per-sample costs "
+    "(e.g. a product with no token usage). Repeatable.",
+)
+def publish_lb_command(
+    repo_id: str,
+    submission_urls: tuple[str, ...],
+    allow_missing_costs: tuple[str, ...] = (),
+):
     from .leaderboard.models import LeaderboardSubmission, Readme
     from .leaderboard.schema_generator import load_dataset_features
     from .leaderboard.upload import compress_model_usages
-    from .score import TaskResults
+    from .score import TaskResults, find_cost_problems
 
     if not submission_urls:
         click.echo("At least one submission URL is required.")
         sys.exit(1)
+
+    unmatched_allowances = set(allow_missing_costs) - set(submission_urls)
+    if unmatched_allowances:
+        raise click.ClickException(
+            "--allow-missing-costs URLs must match a submission URL exactly: "
+            + ", ".join(sorted(unmatched_allowances))
+        )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         from huggingface_hub import HfApi, snapshot_download
@@ -584,6 +605,14 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
             results = TaskResults.model_validate_json(
                 open(local_scores_path).read()
             ).results
+            cost_problems = find_cost_problems(
+                results, allow_missing=submission_url in allow_missing_costs
+            )
+            if cost_problems:
+                click.echo(f"Refusing to publish {submission_path}: invalid costs")
+                for problem in cost_problems:
+                    click.echo(f"  - {problem}")
+                sys.exit(1)
             submission = SubmissionMetadata.model_validate_json(
                 open(local_submission_path).read()
             )
@@ -638,7 +667,7 @@ def publish_lb_command(repo_id: str, submission_urls: tuple[str, ...]):
         local_features = load_dataset_features()
         if local_features.arrow_schema != readme.features.arrow_schema:
             click.echo(
-                "Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
+                f"Schema in local dataset_features.yml does not match schema in hf://{repo_id}/README.md"
             )
             click.echo("Run 'update_readme.py sync-schema' to update it")
             sys.exit(1)

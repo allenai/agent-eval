@@ -1,3 +1,15 @@
+import os
+import sys
+
+# Freeze prices before importing any module that loads LiteLLM.
+if "litellm" in sys.modules:
+    raise RuntimeError(
+        "Set LITELLM_LOCAL_MODEL_COST_MAP=True before starting pytest and import "
+        "LiteLLM only after conftest.py; already loaded from "
+        f"{getattr(sys.modules['litellm'], '__file__', '<unknown>')}"
+    )
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
 import pytest
 from inspect_ai.model import ModelUsage
 

@@ -3,7 +3,7 @@
 # Setup
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,scoring]"
 ```
 
 For leaderboard viewing features: `pip install -e ".[dev,leaderboard]"`
@@ -11,10 +11,10 @@ For leaderboard viewing features: `pip install -e ".[dev,leaderboard]"`
 # Testing
 
 ```bash
-make test
+LITELLM_LOCAL_MODEL_COST_MAP=True make test
 ```
 
-For all tests including leaderboard: `make test-all` (requires `.[dev,leaderboard]`)
+For all tests including leaderboard: `LITELLM_LOCAL_MODEL_COST_MAP=True make test-all` (requires `.[dev,leaderboard]`)
 
 # Publication
 
@@ -51,3 +51,72 @@ The script will enforce that all config versions use the same data model for lea
 We do a couple of things in an effort to compute costs for things in a consistent way. One of these things is putting limits on the litellm version used (more details [here](https://github.com/allenai/astabench-issues/issues/391)).
 
 If you need to bump litellm, please also update the version of the `model_prices_and_context_window_backup.json` file we point to in `prep_litellm_cost_map()` in [cli.py](./src/agenteval/cli.py) to the version in the version of litellm you want to bump to (if you want a range, use the version from the upper limit). To do that, find the relevant release in the litellm repo, grab the corresponding SHA, and use it in `desired_model_costs_url`. In some cases, it may be desirable to rescore all the results of interest after doing this. More on this coming later.
+
+The version pin alone does not freeze LiteLLM's prices. Set
+`LITELLM_LOCAL_MODEL_COST_MAP=True` before starting Python to disable its live
+price-map fetch. The scoring CLI requires this setting and calls
+`prep_litellm_cost_map()` to load the map at the fixed release SHA. Direct library
+callers must initialize their pricing map before computing costs. The CLI check
+guards scoring; it cannot undo a live fetch triggered by an earlier LiteLLM
+import, so the variable must be set before Python starts. Tests set the
+environment variable in `conftest.py` before scoring imports and use the bundled
+map from the pinned scoring dependency. They fail if LiteLLM has already been
+imported before `conftest.py`, rather than silently using previously fetched prices.
+The command-line prefix also prevents live-map fetching by pytest plugins before
+`conftest.py`; the import-order guard still rejects preloaded LiteLLM.
+
+Required base token rates, explicit context-tier overrides for used categories,
+and explicit reasoning rates are checked for missing, negative, and non-finite
+values. Context-tier and reasoning fields absent from the fixed snapshot retain
+LiteLLM's documented fallback to base rates; the scorer cannot infer an omitted
+provider price or tier from token counts. A null override is an error rather than
+an instruction to fall back. Keep the version and snapshot synchronized and
+review their completeness when adding models.
+
+Scoring raises `CostAccountingError` for invalid token counts, unresolved usage
+patterns, missing model or required token-category prices, and negative or non-finite costs. Explicit zero prices are valid. The error
+identifies the task, 1-based sample position, and model; score artifacts are not written
+when cost accounting fails. Direct library callers should propagate the error
+rather than replace it with a partial, zero, or missing cost.
+
+All pricing paths, including custom prices, reconcile the same supported usage
+patterns before billing. Cache reads/writes are added to exclusive input and
+priced once at their category rates. Cache-bearing records whose arithmetic
+assumes inclusive input are rejected: the same counts could come from a proxy
+that excludes caches from both input and total, causing silent undercharging.
+Neither a known model name nor a nonnegative cost establishes the usage contract.
+After confirming the producer's contract, normalize to Inspect ModelUsage:
+`input_tokens` excludes caches and `total_tokens` includes them. For confirmed
+legacy inclusive input, subtract caches from input and retain total. For confirmed
+cache-excluding input and total, retain input and add caches to total. Do not
+blindly apply either transformation. Valid historical cached logs may therefore
+need normalization before rescoring or publication; already-published results
+are not recomputed by this change. Reasoning
+is included in completion counts once, whether already in output or recorded
+separately. Custom tables with only input/output rates reject reported cache
+usage until cache rates are supplied; a missing rate is not a zero rate or an
+instruction to charge the base input rate. A cache-write price does not determine
+the usage convention. If multiple supported conventions match and imply different
+billable counts (for example, cache tokens equal separately reported reasoning),
+scoring rejects the ambiguity. Matches implying identical counts are harmless,
+including absent cache/reasoning breakdowns. Missing or zero totals do not bypass
+reconciliation when input/output usage is nonzero, even with custom prices.
+The CLI prints accounting errors without a traceback and exits nonzero; direct
+library callers still receive `CostAccountingError`.
+
+`agenteval lb publish` validates saved costs before uploading any submission.
+Negative/non-finite costs, empty results, and truncated cost lists are rejected.
+Recorded usage is validated with the same price-independent accounting checks
+as scoring, so a positive saved cost cannot conceal ambiguous or inconsistent
+usage from an older scorer. Publication does not recalculate saved costs against
+current prices or modify already-published results.
+Missing costs require `--allow-missing-costs <submission-url>` and no reported
+model usage for that task (for example, a closed product without token counts).
+This flag cannot bypass failed accounting when token usage was reported. Its URL
+must exactly match a submission URL in the command. Publication diagnostics also
+use 1-based sample positions.
+
+Publication compares each task's cost-list length against its recorded usage
+list. Files with costs but no usage list cannot be verified and must be rescored.
+The missing-cost allowance still permits older product results with
+`model_costs=None` and no reported usage.
