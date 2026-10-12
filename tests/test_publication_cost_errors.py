@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -58,6 +59,7 @@ def test_unmatched_cost_allowance_fails_before_network_access(monkeypatch, allow
         (None, True, False, None, True),
     ],
 )
+@pytest.mark.parametrize("current_schema", [True, False])
 def test_publish_validates_whole_batch_before_upload(
     monkeypatch,
     costs,
@@ -65,6 +67,7 @@ def test_publish_validates_whole_batch_before_upload(
     has_usage,
     sample_count,
     expected_success,
+    current_schema,
 ):
     _assert_publish_batch(
         monkeypatch,
@@ -73,6 +76,7 @@ def test_publish_validates_whole_batch_before_upload(
         has_usage,
         sample_count,
         expected_success,
+        current_schema,
     )
 
 
@@ -87,6 +91,7 @@ def test_publish_rejects_positive_saved_cost_with_ambiguous_caches(
         True,
         1,
         False,
+        True,
         usage=ModelUsage(
             input_tokens=1000,
             output_tokens=500,
@@ -103,6 +108,7 @@ def _assert_publish_batch(
     has_usage,
     sample_count,
     expected_success,
+    current_schema,
     usage=None,
 ):
     config = EvalConfig(
@@ -129,8 +135,19 @@ def _assert_publish_batch(
         f"hf://datasets/example/submissions/{path}" for path in [good_path, bad_path]
     ]
     api = Mock()
+    uploaded_counts = []
+
+    def upload(*, folder_path, **_):
+        for path in [good_path, bad_path]:
+            payload = json.loads((Path(folder_path) / f"{path}.json").read_text())
+            uploaded_counts.append(payload["results"][0]["sample_count"])
+
+    api.upload_folder.side_effect = upload
     monkeypatch.setattr(huggingface_hub, "HfApi", lambda: api)
     features = load_dataset_features()
+    if not current_schema:
+        # The previous live schema had no optional per-task sample count.
+        del features["results"].feature["sample_count"]
     monkeypatch.setattr(
         Readme,
         "download_and_parse",
@@ -150,11 +167,7 @@ def _assert_publish_batch(
             result = TaskResult(
                 task_name="task_test",
                 metrics=[Metric(name="accuracy", value=1.0)],
-                model_usages=(
-                    [[]]
-                    if path == good_path
-                    else None if sample_count is None else [[]] * sample_count
-                ),
+                sample_count=1 if path == good_path else sample_count,
                 model_costs=[0.1] if path == good_path else costs,
             )
             if path == bad_path and has_usage:
@@ -182,10 +195,15 @@ def _assert_publish_batch(
 
     result = CliRunner().invoke(cli_module.cli, args)
 
-    if expected_success:
+    if expected_success and current_schema:
         assert result.exit_code == 0, result.output
         api.upload_folder.assert_called_once()
+        assert uploaded_counts == [1, sample_count]
     else:
         assert result.exit_code != 0
-        assert "Refusing to publish 1.0.0/test/second" in result.output
+        if expected_success:
+            assert "hf://example/results/README.md" in result.output
+            assert "sync-schema" in result.output
+        else:
+            assert "Refusing to publish 1.0.0/test/second" in result.output
         api.upload_folder.assert_not_called()
