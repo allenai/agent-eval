@@ -60,6 +60,16 @@ callers must initialize their pricing map before computing costs. Tests set the
 environment variable in `conftest.py` before scoring imports and use the bundled
 map from the pinned scoring dependency. They fail if LiteLLM has already been
 imported before `conftest.py`, rather than silently using previously fetched prices.
+The command-line prefix also prevents live-map fetching by pytest plugins before
+`conftest.py`; the import-order guard still rejects preloaded LiteLLM.
+
+Required base token rates, explicit context-tier overrides for used categories,
+and explicit reasoning rates are checked for missing, negative, and non-finite
+values. Context-tier and reasoning fields absent from the fixed snapshot retain
+LiteLLM's documented fallback to base rates; the scorer cannot infer an omitted
+provider price or tier from token counts. A null override is an error rather than
+an instruction to fall back. Keep the version and snapshot synchronized and
+review their completeness when adding models.
 
 Scoring raises `CostAccountingError` for invalid token counts, unresolved usage
 patterns, missing model or required token-category prices, and negative or non-finite costs. Explicit zero prices are valid. The error

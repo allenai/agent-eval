@@ -12,6 +12,7 @@ from agenteval.models import EvalConfig
 from agenteval.score import EvalSpec, Metric
 
 
+@pytest.mark.parametrize("prior_error", [False, True])
 @pytest.mark.parametrize(
     "model,total_tokens,cache_read",
     [
@@ -21,12 +22,17 @@ from agenteval.score import EvalSpec, Metric
     ],
 )
 def test_scoring_failure_identifies_sample_and_preserves_artifacts(
-    monkeypatch, tmp_path, model, total_tokens, cache_read
+    monkeypatch, tmp_path, model, total_tokens, cache_read, prior_error
 ):
     task = Task(name="task_test", path="task.py", primary_metric="accuracy")
+    missing_metrics_task = Task(
+        name="missing_metrics", path="missing.py", primary_metric="accuracy"
+    )
     config = EvalConfig(
         suite_config=SuiteConfig(
-            name="test", version="1.0.0", splits=[Split(name="test", tasks=[task])]
+            name="test",
+            version="1.0.0",
+            splits=[Split(name="test", tasks=[missing_metrics_task, task])],
         ),
         split="test",
         inspect_command=["inspect", "eval", "task.py"],
@@ -42,12 +48,28 @@ def test_scoring_failure_identifies_sample_and_preserves_artifacts(
     log = SimpleNamespace(
         eval=SimpleNamespace(task="task_test", task_registry_name="task.py")
     )
-    monkeypatch.setattr(
-        score_module, "list_eval_logs", lambda _: [SimpleNamespace(name="log")]
+    prior_log = SimpleNamespace(
+        eval=SimpleNamespace(task="missing_metrics", task_registry_name="missing.py")
     )
-    monkeypatch.setattr(score_module, "read_eval_log", lambda *_, **__: log)
     monkeypatch.setattr(
-        score_module, "get_metrics", lambda _: [Metric(name="accuracy", value=1.0)]
+        score_module,
+        "list_eval_logs",
+        lambda _: [
+            SimpleNamespace(name=name)
+            for name in (["prior", "log"] if prior_error else ["log"])
+        ],
+    )
+    monkeypatch.setattr(
+        score_module,
+        "read_eval_log",
+        lambda name, **__: prior_log if name == "prior" else log,
+    )
+    monkeypatch.setattr(
+        score_module,
+        "get_metrics",
+        lambda loaded: (
+            [] if loaded is prior_log else [Metric(name="accuracy", value=1.0)]
+        ),
     )
     monkeypatch.setattr(EvalSpec, "from_eval_log", lambda _: EvalSpec(model=model))
     valid_usage = ModelUsageWithName(
@@ -74,6 +96,9 @@ def test_scoring_failure_identifies_sample_and_preserves_artifacts(
     assert isinstance(result.exception, CostAccountingError)
     assert "Task task_test, sample 2:" in str(result.exception)
     assert model in str(result.exception)
+    assert "usage {" in str(result.exception)
+    if prior_error:
+        assert "No metrics found for task missing_metrics." in str(result.exception)
     assert all(artifact.read_text() == "previous result" for artifact in artifacts)
     for artifact in artifacts:
         artifact.unlink()

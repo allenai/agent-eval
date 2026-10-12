@@ -1,8 +1,11 @@
 """Utilities for computing model usages and costs from Inspect eval logs."""
 
+import re
 from logging import getLogger
 from math import isfinite
+from typing import Any
 
+import litellm
 from inspect_ai.log import (  # type: ignore[attr-defined]
     Event,
     ModelEvent,
@@ -12,7 +15,7 @@ from inspect_ai.log import (  # type: ignore[attr-defined]
     StepEvent,
 )
 from inspect_ai.model import ModelUsage
-from litellm import cost_per_token, get_model_info, model_cost
+from litellm import cost_per_token, get_model_info
 from litellm.types.utils import PromptTokensDetailsWrapper, Usage
 from pydantic import BaseModel
 
@@ -99,6 +102,15 @@ def adapt_model_name(model: str) -> str:
         return model
 
 
+def _validate_price(rate: Any, field: str) -> float:
+    if rate is None:
+        raise ValueError(f"Missing required price: {field}")
+    rate = float(rate)
+    if rate < 0 or not isfinite(rate):
+        raise ValueError(f"Invalid price {field}: {rate}")
+    return rate
+
+
 def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
     """
     Compute aggregate cost for a list of ModelUsageWithName objects.
@@ -125,12 +137,18 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 raise ValueError(f"Negative token counts: {counts}")
 
             if model_usage.model in CUSTOM_PRICING.keys():
-
+                pricing_without_cache = CUSTOM_PRICING[model_usage.model]
+                for count, field in (
+                    (input_tokens, "input_cost_per_token"),
+                    (output_tokens, "output_cost_per_token"),
+                ):
+                    if count:
+                        _validate_price(pricing_without_cache.get(field), field)
                 prompt_cost, completion_cost = cost_per_token(
                     model=model_usage.model,
                     prompt_tokens=input_tokens,
                     completion_tokens=output_tokens,
-                    custom_cost_per_token=CUSTOM_PRICING[model_usage.model],
+                    custom_cost_per_token=pricing_without_cache,
                 )
 
             elif model_usage.model in CUSTOM_PRICING_WITH_CACHE.keys():
@@ -150,6 +168,14 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     text_tokens = input_tokens
                 if text_tokens < 0:
                     raise ValueError("Derived uncached input token count is negative")
+                for count, field in (
+                    (text_tokens, "input_cost_per_token"),
+                    (output_tokens, "output_cost_per_token"),
+                    (cache_read_tokens, "cache_read_input_token_cost"),
+                    (cache_write_tokens, "cache_write_input_token_cost"),
+                ):
+                    if count:
+                        _validate_price(getattr(pricing, field), field)
                 prompt_cost = (
                     text_tokens * pricing.input_cost_per_token
                     + cache_read_tokens * pricing.cache_read_input_token_cost
@@ -172,7 +198,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                         cache_read_input_tokens + cache_write_input_tokens
                         > input_tokens
                     ):
-                        raise CostAccountingError(
+                        raise ValueError(
                             f"Model {model_usage.model}: cache read/write tokens "
                             f"({cache_read_input_tokens} + {cache_write_input_tokens}) "
                             f"exceed input tokens "
@@ -222,7 +248,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 price_key = get_model_info(adapt_model_name(model_usage.model))["key"]
                 # get_model_info() replaces missing base prices with zero.
                 # Check the source entry so absence cannot become free usage.
-                price_info = model_cost[price_key]
+                price_info = litellm.model_cost[price_key]
                 for count, price_field in (
                     (text_tokens, "input_cost_per_token"),
                     (completion_tokens, "output_cost_per_token"),
@@ -230,12 +256,23 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     (cache_write_input_tokens, "cache_creation_input_token_cost"),
                 ):
                     if count:
-                        rate = price_info.get(price_field)
-                        if rate is None:
-                            raise ValueError(f"Missing required price: {price_field}")
-                        rate = float(rate)
-                        if rate < 0 or not isfinite(rate):
-                            raise ValueError(f"Invalid price {price_field}: {rate}")
+                        _validate_price(price_info.get(price_field), price_field)
+                        # Reject malformed context overrides before LiteLLM can
+                        # silently fall back to a base rate or mask a bad component.
+                        for field, rate in price_info.items():
+                            match = re.fullmatch(
+                                re.escape(price_field) + r"_above_(\d+)(k?)_tokens",
+                                field,
+                            )
+                            if match:
+                                threshold = int(match[1]) * (1000 if match[2] else 1)
+                                if prompt_tokens > threshold:
+                                    _validate_price(rate, field)
+                if reasoning_tokens and "output_cost_per_reasoning_token" in price_info:
+                    _validate_price(
+                        price_info["output_cost_per_reasoning_token"],
+                        "output_cost_per_reasoning_token",
+                    )
 
                 prompt_tokens_wrapper = PromptTokensDetailsWrapper(
                     cached_tokens=cache_read_input_tokens, text_tokens=text_tokens
@@ -257,7 +294,7 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                 )
 
             if prompt_cost < 0 or completion_cost < 0:
-                raise CostAccountingError(
+                raise ValueError(
                     f"Model {model_usage.model}: negative cost "
                     f"(prompt {prompt_cost}, completion {completion_cost})."
                 )

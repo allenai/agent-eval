@@ -5,26 +5,28 @@ from agenteval.log import ModelUsageWithName
 from agenteval.score import TaskResult, find_cost_problems
 
 
-def _result(costs):
+def _result(costs, sample_count=1):
     return TaskResult(
         task_name="t",
         metrics=[],
-        sample_count=max(len(costs or []), 1),
+        sample_count=sample_count,
         model_costs=costs,
     )
 
 
 def test_valid_costs_pass():
-    assert find_cost_problems([_result([0.1, 0.0])]) == []
+    assert find_cost_problems([_result([0.1, 0.0], sample_count=2)]) == []
 
 
 def test_negative_cost_rejected_even_when_missing_allowed():
-    problems = find_cost_problems([_result([0.1, -0.2])], allow_missing=True)
+    problems = find_cost_problems(
+        [_result([0.1, -0.2], sample_count=2)], allow_missing=True
+    )
     assert problems == ["t: negative cost at samples [2]"]
 
 
 def test_missing_costs_rejected_by_default():
-    assert find_cost_problems([_result([0.1, None])]) == [
+    assert find_cost_problems([_result([0.1, None], sample_count=2)]) == [
         "t: missing cost at samples [2]"
     ]
     assert find_cost_problems([_result(None)]) == ["t: no model costs"]
@@ -106,7 +108,7 @@ def test_legacy_costs_without_sample_count_or_usages_require_rescoring():
 
 
 def test_sample_count_must_agree_with_usage_records():
-    result = _result([0.1, 0.2])
+    result = _result([0.1, 0.2], sample_count=2)
     result.model_usages = [[]]
     assert find_cost_problems([result]) == ["t: 1 sample usages for 2 samples"]
 
@@ -124,7 +126,7 @@ def test_legacy_intentionally_unavailable_costs_remain_allowed():
 
 
 def test_sample_count_survives_json_round_trip_without_usage():
-    result = _result([0.1, 0.2])
+    result = _result([0.1, 0.2], sample_count=2)
     saved = TaskResult.model_validate_json(result.model_dump_json())
     assert saved.sample_count == 2
     assert saved.model_usages is None

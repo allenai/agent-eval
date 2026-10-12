@@ -1,5 +1,8 @@
 """Tests for compute_model_cost token-count conventions."""
 
+from copy import deepcopy
+
+import litellm
 import pytest
 from inspect_ai.model import ModelUsage
 from litellm import get_model_info, model_cost
@@ -160,6 +163,145 @@ def test_explicit_zero_cache_write_price_is_valid(monkeypatch):
         ) == pytest.approx(1000 * input_rate + 5000 * read_rate + 500 * output_rate)
     finally:
         get_model_info.cache_clear()
+
+
+def test_price_validation_uses_rebound_active_map(monkeypatch):
+    # Library callers can replace the map after importing the scoring module.
+    replacement = deepcopy(litellm.model_cost)
+    replacement["gpt-5.6-sol"]["input_cost_per_token"] = None
+    monkeypatch.setattr(litellm, "model_cost", replacement)
+    get_model_info.cache_clear()
+    try:
+        with pytest.raises(CostAccountingError, match="Missing required price"):
+            _cost(
+                "gpt-5.6-sol", input_tokens=1000, output_tokens=500, total_tokens=1500
+            )
+    finally:
+        get_model_info.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["openai/gpt-5.6-sol", "gemini/gemini-2.5-flash", "vertex_ai/gemini-2.5-pro"],
+)
+def test_provider_qualified_model_resolves_source_prices(model):
+    key = get_model_info(model)["key"]
+    assert key in litellm.model_cost
+    info = litellm.model_cost[key]
+    assert _cost(
+        model, input_tokens=1000, output_tokens=500, total_tokens=1500
+    ) == pytest.approx(
+        1000 * info["input_cost_per_token"] + 500 * info["output_cost_per_token"]
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_cost_per_token",
+        "output_cost_per_token",
+        "cache_read_input_token_cost",
+        "cache_creation_input_token_cost",
+    ],
+)
+@pytest.mark.parametrize("rate", [None, -1e-9, float("nan"), float("inf")])
+def test_invalid_active_context_price_fails_loudly(monkeypatch, field, rate):
+    model = "gpt-5.6-sol"
+    tier_field = field + "_above_272k_tokens"
+    monkeypatch.setitem(model_cost, model, {**model_cost[model], tier_field: rate})
+    get_model_info.cache_clear()
+    try:
+        with pytest.raises(CostAccountingError, match=tier_field):
+            _cost(
+                model,
+                input_tokens=273000,
+                output_tokens=500,
+                total_tokens=273500,
+                input_tokens_cache_read=200000,
+                input_tokens_cache_write=1000,
+            )
+    finally:
+        get_model_info.cache_clear()
+
+
+def test_context_tier_counts_cache_reads_and_writes_once():
+    input_rate, read_rate, output_rate = _rates("gpt-5.6-sol", "_above_272k_tokens")
+    write_rate = model_cost["gpt-5.6-sol"][
+        "cache_creation_input_token_cost_above_272k_tokens"
+    ]
+    assert _cost(
+        "gpt-5.6-sol",
+        input_tokens=72000,
+        output_tokens=500,
+        total_tokens=273500,
+        input_tokens_cache_read=200000,
+        input_tokens_cache_write=1000,
+    ) == pytest.approx(
+        72000 * input_rate + 200000 * read_rate + 1000 * write_rate + 500 * output_rate
+    )
+
+
+@pytest.mark.parametrize("rate", [None, -1e-9, float("nan"), float("inf")])
+def test_invalid_explicit_reasoning_rate_fails_loudly(monkeypatch, rate):
+    model = "gemini/gemini-2.5-flash"
+    field = "output_cost_per_reasoning_token"
+    monkeypatch.setitem(model_cost, model, {**model_cost[model], field: rate})
+    get_model_info.cache_clear()
+    try:
+        with pytest.raises(CostAccountingError, match=field):
+            _cost(
+                model,
+                input_tokens=1000,
+                output_tokens=200,
+                reasoning_tokens=300,
+                total_tokens=1500,
+            )
+    finally:
+        get_model_info.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_cost_per_token",
+        "output_cost_per_token",
+        "cache_read_input_token_cost",
+        "cache_write_input_token_cost",
+    ],
+)
+@pytest.mark.parametrize("rate", [None, -1e-9, float("nan"), float("inf")])
+def test_invalid_custom_cached_rate_fails_with_field_name(monkeypatch, field, rate):
+    model = "deepseek/deepseek-v4pro-preview"
+    pricing = log_module.CUSTOM_PRICING_WITH_CACHE[model].model_copy(
+        update={field: rate}
+    )
+    monkeypatch.setitem(log_module.CUSTOM_PRICING_WITH_CACHE, model, pricing)
+    with pytest.raises(CostAccountingError, match=field):
+        _cost(
+            model,
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1800,
+            input_tokens_cache_read=200,
+            input_tokens_cache_write=100,
+        )
+
+
+@pytest.mark.parametrize("field", ["input_cost_per_token", "output_cost_per_token"])
+@pytest.mark.parametrize("rate", [None, -1e-9, float("nan"), float("inf")])
+def test_invalid_custom_rate_fails_with_field_name(monkeypatch, field, rate):
+    model = "grok-3"
+    pricing = {**log_module.CUSTOM_PRICING[model], field: rate}
+    monkeypatch.setitem(log_module.CUSTOM_PRICING, model, pricing)
+    with pytest.raises(CostAccountingError, match=field):
+        _cost(model, input_tokens=1000, output_tokens=500, total_tokens=1500)
+
+
+@pytest.mark.parametrize("invalid_cost", [-1.0, float("nan")])
+def test_invalid_cost_diagnostic_includes_usage(monkeypatch, invalid_cost):
+    monkeypatch.setattr(log_module, "cost_per_token", lambda **_: (invalid_cost, 0.0))
+    with pytest.raises(CostAccountingError, match="usage .*input_tokens.*1000"):
+        _cost("gpt-5.6-sol", input_tokens=1000, output_tokens=500, total_tokens=1500)
 
 
 def test_unrecognized_token_pattern_fails_loudly():

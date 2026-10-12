@@ -271,8 +271,13 @@ def process_eval_logs(
             try:
                 model_costs.append(compute_model_cost(usages))
             except CostAccountingError as e:
+                prior_errors = (
+                    "\nOther log processing errors:\n" + "\n".join(errors)
+                    if errors
+                    else ""
+                )
                 raise CostAccountingError(
-                    f"Task {task_name}, sample {sample_index}: {e}"
+                    f"Task {task_name}, sample {sample_index}: {e}{prior_errors}"
                 ) from e
         has_model_usages = any(len(usages) > 0 for usages in model_usages)
         results.append(
