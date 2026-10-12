@@ -143,6 +143,8 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     cache_write_cost = 0
                 else:
                     text_tokens = input_tokens
+                if text_tokens < 0:
+                    raise ValueError("Derived uncached input token count is negative")
                 prompt_cost = (
                     text_tokens * pricing.input_cost_per_token
                     + cache_read_tokens * pricing.cache_read_input_token_cost
@@ -207,6 +209,11 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float:
                     raise ValueError(
                         "Model usage token counts don't follow expected pattern."
                     )
+
+                if cache_read_input_tokens + cache_write_input_tokens > prompt_tokens:
+                    raise ValueError("Cache categories exceed total prompt tokens")
+                if reasoning_tokens > completion_tokens:
+                    raise ValueError("Reasoning tokens exceed total completion tokens")
 
                 prompt_tokens_wrapper = PromptTokensDetailsWrapper(
                     cached_tokens=cache_read_input_tokens, text_tokens=text_tokens

@@ -1,3 +1,7 @@
+import pytest
+from inspect_ai.model import ModelUsage
+
+from agenteval.log import ModelUsageWithName
 from agenteval.score import TaskResult, find_cost_problems
 
 
@@ -25,3 +29,40 @@ def test_missing_costs_allowed_explicitly():
     assert (
         find_cost_problems([_result(None), _result([None])], allow_missing=True) == []
     )
+
+
+@pytest.mark.parametrize("cost", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_cost_rejected_even_when_missing_allowed(cost):
+    assert any(
+        "non-finite cost" in problem
+        for problem in find_cost_problems([_result([cost])], allow_missing=True)
+    )
+
+
+def test_empty_costs_and_results_rejected():
+    assert find_cost_problems([_result([])]) == ["t: no model costs"]
+    assert find_cost_problems([]) == ["No task results"]
+    assert find_cost_problems(None, allow_missing=True) == ["No task results"]
+
+
+def test_missing_cost_override_cannot_hide_reported_usage():
+    result = _result([None])
+    result.model_usages = [
+        [
+            ModelUsageWithName(
+                model="gpt-5.6-sol",
+                usage=ModelUsage(
+                    input_tokens=1000, output_tokens=500, total_tokens=1500
+                ),
+            )
+        ]
+    ]
+    assert find_cost_problems([result], allow_missing=True) == [
+        "t: missing cost at samples [0]"
+    ]
+
+
+def test_truncated_costs_rejected():
+    result = _result([0.1])
+    result.model_usages = [[], []]
+    assert find_cost_problems([result]) == ["t: 1 costs for 2 sample usages"]

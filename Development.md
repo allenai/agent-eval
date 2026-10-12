@@ -65,3 +65,9 @@ patterns, missing model prices, and negative or non-finite costs. The error
 identifies the task, sample position, and model; score artifacts are not written
 when cost accounting fails. Direct library callers should propagate the error
 rather than replace it with a partial, zero, or missing cost.
+
+`agenteval lb publish` validates saved costs before uploading any submission.
+Negative/non-finite costs, empty results, and truncated cost lists are rejected.
+Missing costs require `--allow-missing-costs <submission-url>` and no reported
+model usage for that task (for example, a closed product without token counts).
+This flag cannot bypass failed accounting when token usage was reported.

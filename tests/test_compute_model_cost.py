@@ -150,6 +150,41 @@ def test_invalid_price_result_fails_loudly(monkeypatch, cost):
         _cost("gpt-5.6-sol", input_tokens=1000, output_tokens=500, total_tokens=1500)
 
 
+def test_gemini_cache_categories_cannot_exceed_input():
+    with pytest.raises(CostAccountingError, match="Cache categories exceed"):
+        _cost(
+            "gemini/gemini-2.5-flash",
+            input_tokens=1000,
+            output_tokens=500,
+            reasoning_tokens=400,
+            total_tokens=1900,
+            input_tokens_cache_read=800,
+            input_tokens_cache_write=800,
+        )
+
+
+def test_reasoning_cannot_exceed_inclusive_output():
+    with pytest.raises(CostAccountingError, match="Reasoning tokens exceed"):
+        _cost(
+            "gpt-5.6-sol",
+            input_tokens=1000,
+            output_tokens=500,
+            reasoning_tokens=600,
+            total_tokens=1500,
+        )
+
+
+def test_custom_cached_model_cannot_have_negative_uncached_input():
+    with pytest.raises(CostAccountingError, match="Derived uncached input"):
+        _cost(
+            "moonshotai/kimi-k2.5-0127",
+            input_tokens=1000,
+            output_tokens=500,
+            total_tokens=1500,
+            input_tokens_cache_read=1001,
+        )
+
+
 def test_anthropic_style_input_excludes_cache_read_and_write():
     model = "claude-sonnet-4-5"
     input_rate, cache_rate, output_rate = _rates(model)

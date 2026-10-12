@@ -2,6 +2,7 @@
 
 import logging
 from functools import cached_property
+from math import isfinite
 from typing import Any
 
 from inspect_ai.log import (
@@ -110,21 +111,35 @@ def find_cost_problems(
 ) -> list[str]:
     """Describe per-sample costs that must block publication.
 
-    Negative costs are always rejected. Missing costs are rejected unless
-    `allow_missing`, for submissions with no token usage to price.
+    Invalid costs are always rejected. Missing costs can be explicitly allowed
+    only when there is no reported model usage to price.
     """
     problems = []
+    if not results:
+        return ["No task results"]
     for res in results or []:
         costs = res.model_costs
-        if costs is None:
-            if not allow_missing:
+        has_usage = bool(res.model_usages and any(res.model_usages))
+        allow_missing_here = allow_missing and not has_usage
+        if not costs:
+            if not allow_missing_here:
                 problems.append(f"{res.task_name}: no model costs")
             continue
+        if res.model_usages is not None and len(costs) != len(res.model_usages):
+            problems.append(
+                f"{res.task_name}: {len(costs)} costs for "
+                f"{len(res.model_usages)} sample usages"
+            )
         negative = [i for i, c in enumerate(costs) if c is not None and c < 0]
         if negative:
             problems.append(f"{res.task_name}: negative cost at samples {negative}")
+        non_finite = [
+            i for i, c in enumerate(costs) if c is not None and not isfinite(c)
+        ]
+        if non_finite:
+            problems.append(f"{res.task_name}: non-finite cost at samples {non_finite}")
         missing = [i for i, c in enumerate(costs) if c is None]
-        if missing and not allow_missing:
+        if missing and not allow_missing_here:
             problems.append(f"{res.task_name}: missing cost at samples {missing}")
     return problems
 
