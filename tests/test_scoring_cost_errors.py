@@ -122,3 +122,41 @@ def test_scoring_failure_identifies_sample_and_preserves_artifacts(
     result = CliRunner().invoke(cli_module.cli, ["score", str(tmp_path)])
     assert result.exit_code != 0
     assert not any(artifact.exists() for artifact in artifacts)
+
+
+@pytest.mark.parametrize("has_usage", [True, False])
+def test_scoring_records_sample_count_even_without_usage(monkeypatch, has_usage):
+    log = SimpleNamespace(
+        eval=SimpleNamespace(task="task_test", task_registry_name="task.py")
+    )
+    monkeypatch.setattr(
+        score_module, "list_eval_logs", lambda _: [SimpleNamespace(name="log")]
+    )
+    monkeypatch.setattr(score_module, "read_eval_log", lambda *_, **__: log)
+    monkeypatch.setattr(
+        score_module, "get_metrics", lambda _: [Metric(name="accuracy", value=1.0)]
+    )
+    monkeypatch.setattr(EvalSpec, "from_eval_log", lambda _: EvalSpec(model="test"))
+    usage = ModelUsageWithName(
+        model="gpt-5.6-sol",
+        usage=ModelUsage(input_tokens=1000, output_tokens=500, total_tokens=1500),
+    )
+    monkeypatch.setattr(
+        score_module,
+        "get_model_usages",
+        lambda _: [[usage], []] if has_usage else [[], []],
+    )
+    task = Task(name="task_test", path="task.py", primary_metric="accuracy")
+
+    processed = score_module.process_eval_logs("logs", [task])
+    saved = score_module.TaskResults.model_validate_json(
+        score_module.TaskResults(results=processed.results).model_dump_json()
+    ).results[0]
+
+    assert saved.sample_count == 2
+    assert (saved.model_usages is not None) == has_usage
+    if has_usage:
+        assert saved.model_costs is not None
+        assert len(saved.model_costs) == 2
+    else:
+        assert saved.model_costs is None
