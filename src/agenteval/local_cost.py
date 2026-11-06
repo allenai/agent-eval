@@ -41,6 +41,32 @@ class CostPerTokenWithCache(BaseModel):
     output_cost_per_token: float
     cache_read_input_token_cost: float
     cache_write_input_token_cost: float | None = None
+    # Anthropic-style tiered pricing: a request whose prompt (input + cache read
+    # + cache write tokens) exceeds the threshold is billed at long_context rates.
+    long_context_threshold_tokens: int | None = None
+    long_context: "CostPerTokenWithCache | None" = None
+
+
+CLAUDE_SONNET_5_5 = CostPerTokenWithCache(
+    input_cost_per_token=2e-06,
+    output_cost_per_token=1e-05,
+    cache_read_input_token_cost=2e-07,
+    cache_write_input_token_cost=2.5e-06,
+)
+
+CLAUDE_HAIKU_5_5 = CostPerTokenWithCache(
+    input_cost_per_token=1e-07,
+    output_cost_per_token=5e-07,
+    cache_read_input_token_cost=1e-08,
+    cache_write_input_token_cost=1.25e-07,
+    long_context_threshold_tokens=100_000,
+    long_context=CostPerTokenWithCache(
+        input_cost_per_token=5e-07,
+        output_cost_per_token=2.5e-06,
+        cache_read_input_token_cost=5e-08,
+        cache_write_input_token_cost=6.25e-07,
+    ),
+)
 
 
 # Like CUSTOM_PRICING, but for models that also have a cache read discount.
@@ -72,6 +98,17 @@ CUSTOM_PRICING_WITH_CACHE = {
         cache_read_input_token_cost=8e-08,
         cache_write_input_token_cost=1e-06,
     ),
+    # Costs from https://platform.claude.com/docs/en/about-claude/pricing
+    # Inspect usage does not separate 5-minute from 1-hour cache writes, so cache
+    # writes are priced at the 5-minute (1.25x input) rate.
+    **{
+        name: CLAUDE_SONNET_5_5
+        for name in ("claude-sonnet-5-5", "anthropic/claude-sonnet-5-5")
+    },
+    **{
+        name: CLAUDE_HAIKU_5_5
+        for name in ("claude-haiku-5-5", "anthropic/claude-haiku-5-5")
+    },
     # costs from https://platform.moonshot.ai/docs/guide/kimi-k2-5-quickstart
     "moonshotai/kimi-k2.5-0127": CostPerTokenWithCache(
         input_cost_per_token=6e-07,
