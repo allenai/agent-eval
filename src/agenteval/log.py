@@ -122,9 +122,21 @@ def compute_model_cost(model_usages: list[ModelUsageWithName]) -> float | None:
                 cache_write_cost = pricing.cache_write_input_token_cost
                 if cache_write_cost is None:
                     text_tokens = input_tokens - cache_read_tokens
+                    prompt_tokens = input_tokens
                     cache_write_cost = 0
                 else:
                     text_tokens = input_tokens
+                    prompt_tokens = (
+                        input_tokens + cache_read_tokens + cache_write_tokens
+                    )
+                if (
+                    pricing.long_context is not None
+                    and pricing.long_context_threshold_tokens is not None
+                    and prompt_tokens > pricing.long_context_threshold_tokens
+                ):
+                    pricing = pricing.long_context
+                    if pricing.cache_write_input_token_cost is not None:
+                        cache_write_cost = pricing.cache_write_input_token_cost
                 prompt_cost = (
                     text_tokens * pricing.input_cost_per_token
                     + cache_read_tokens * pricing.cache_read_input_token_cost
