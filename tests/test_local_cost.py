@@ -1,16 +1,18 @@
-import os
+import json
+from importlib.resources import files
 
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+import pytest
+from inspect_ai.model import ModelUsage
 
-import pytest  # noqa: E402
-from inspect_ai.model import ModelUsage  # noqa: E402
-from litellm import model_cost as litellm_model_cost  # noqa: E402
+from agenteval.local_cost import CUSTOM_PRICING, CUSTOM_PRICING_WITH_CACHE
+from agenteval.log import ModelUsageWithName, compute_model_cost
 
-from agenteval.local_cost import (  # noqa: E402
-    CUSTOM_PRICING,
-    CUSTOM_PRICING_WITH_CACHE,
+# Read the pinned LiteLLM's bundled map directly: litellm.model_cost may hold
+# the remote map if another module imported litellm without
+# LITELLM_LOCAL_MODEL_COST_MAP set.
+BUNDLED_LITELLM_COST_MAP = json.loads(
+    files("litellm").joinpath("model_prices_and_context_window_backup.json").read_text()
 )
-from agenteval.log import ModelUsageWithName, compute_model_cost  # noqa: E402
 
 # Local supplements may add models the pinned LiteLLM snapshot lacks, but must
 # not change a rate LiteLLM already supplies (that would shift existing costs).
@@ -24,7 +26,7 @@ NEW_CLAUDE_KEYS = [
 
 @pytest.mark.parametrize("model", NEW_CLAUDE_KEYS)
 def test_supplement_does_not_override_litellm(model):
-    assert model not in litellm_model_cost
+    assert model not in BUNDLED_LITELLM_COST_MAP
 
 
 def test_supplement_tables_do_not_overlap():
